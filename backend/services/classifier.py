@@ -52,7 +52,7 @@ no code fences):
   "is_relevant": true or false,
   "confidence": "High" or "Medium" or "Low",
   "topics": ["topic1", "topic2"],
-  "summary": "One sentence summarising the MP's position or action.",
+  "summary": "One sentence summarising the MP's position or action. Use surname only (e.g. 'Sunak' not 'Rishi Sunak').",
   "position_signal": "What this reveals about the MP's stance on the topic.",
   "verbatim_quote": "Up to 3 sentences verbatim from the text, or a description of the action."
 }}

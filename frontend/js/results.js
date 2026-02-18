@@ -65,12 +65,45 @@ async function loadResults(scanId) {
     document.getElementById('results-section').style.display = '';
 }
 
+function trimQuote(text, max = 70) {
+    if (!text) return text;
+    const words = text.split(/\s+/);
+    if (words.length <= max) return text;
+    return words.slice(0, max).join(' ') + '…';
+}
+
+function boldKeywords(html, keywords) {
+    if (!keywords || keywords.length === 0) return html;
+    // Sort longest first to avoid partial matches
+    const sorted = [...keywords].sort((a, b) => b.length - a.length);
+    for (const kw of sorted) {
+        const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const re = new RegExp(`(${escaped})`, 'gi');
+        html = html.replace(re, '<strong>$1</strong>');
+    }
+    return html;
+}
+
+function getKeywordsForTopics(topicNames) {
+    if (!state.topics || !topicNames) return [];
+    const keywords = [];
+    for (const t of state.topics) {
+        if (topicNames.includes(t.name)) {
+            keywords.push(...(t.keywords || []));
+        }
+    }
+    return keywords;
+}
+
 function renderResults(results) {
     const tbody = document.getElementById('resultsBody');
     tbody.innerHTML = '';
 
     if (results.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="empty-state">No results found.</td></tr>';
+        const msg = state.currentScanId
+            ? 'No relevant results found for this scan.'
+            : 'Select a scan from Scan History or start a new scan to see results.';
+        tbody.innerHTML = `<tr><td colspan="7" class="empty-state-preview">${msg}</td></tr>`;
         return;
     }
 
@@ -80,20 +113,18 @@ function renderResults(results) {
         // Parse topics JSON
         let topics = r.topics;
         try { topics = JSON.parse(r.topics); } catch (e) {}
-        if (Array.isArray(topics)) topics = topics.join(', ');
+        const topicNames = Array.isArray(topics) ? topics : [];
+        const topicsStr = topicNames.join(', ');
 
         // Format date as dd/mm/yy
         const dateStr = formatDate(r.activity_date);
 
-        // Confidence class
-        const confClass = `confidence-${(r.confidence || '').toLowerCase()}`;
-
-        // New badge
-        const isNew = r.first_seen_scan_id === r.scan_id;
-        const newBadge = isNew ? '<span class="new-badge">New</span>' : '';
-
-        // Quote with link
-        let quoteHtml = escapeHtml(r.verbatim_quote || '—');
+        // Quote with keyword bolding and word limit
+        const trimmedQuote = trimQuote(r.verbatim_quote || '—', 70);
+        let quoteHtml = escapeHtml(trimmedQuote);
+        // Bold matched keywords from matched topics
+        const matchedKeywords = getKeywordsForTopics(topicNames);
+        quoteHtml = boldKeywords(quoteHtml, matchedKeywords);
         if (r.source_url) {
             quoteHtml = `<a href="${escapeHtml(r.source_url)}" target="_blank" class="quote-link">${quoteHtml}</a>`;
         }
@@ -110,15 +141,16 @@ function renderResults(results) {
         const escapedType = escapeHtml(r.member_type || '');
         const escapedConstituency = escapeHtml(r.constituency || '');
 
+        // Merged Party + Type column
+        const typeSmall = r.member_type ? `<br>${typePill(r.member_type)}` : '';
+
         tr.innerHTML = `
-            <td>${escapeHtml(r.member_name)}${newBadge}</td>
-            <td>${partyPill(r.party || '—')}</td>
-            <td>${typePill(r.member_type || '—')}</td>
-            <td>${escapeHtml(topics || '—')}</td>
-            <td>${escapeHtml(r.summary || '—')}<br><small><strong>${dateStr}</strong></small></td>
-            <td>${escapeHtml(r.forum || '—')}</td>
+            <td>${escapeHtml(r.member_name)}</td>
+            <td>${partyPill(r.party || '—')}${typeSmall}</td>
+            <td>${escapeHtml(topicsStr || '—')}</td>
+            <td>${escapeHtml(r.summary || '—')}</td>
+            <td>${escapeHtml(r.forum || '—')}<br><small><strong>${dateStr}</strong></small></td>
             <td>${quoteHtml}</td>
-            <td><span class="${confClass}">${escapeHtml(r.confidence || '—')}</span></td>
             <td><button class="${btnClass}" title="${btnTitle}"
                 data-result-id="${r.id}"
                 data-member-name="${escapedName}"
@@ -271,13 +303,6 @@ document.querySelectorAll('#resultsTable th[data-col]').forEach(th => {
             let valA = getCellValue(a, currentSort.col);
             let valB = getCellValue(b, currentSort.col);
 
-            // Confidence ordering: High > Medium > Low
-            if (currentSort.col === 'confidence') {
-                const order = { 'High': 3, 'Medium': 2, 'Low': 1 };
-                valA = order[valA] || 0;
-                valB = order[valB] || 0;
-            }
-
             if (valA < valB) return currentSort.dir === 'asc' ? -1 : 1;
             if (valA > valB) return currentSort.dir === 'asc' ? 1 : -1;
             return 0;
@@ -295,7 +320,10 @@ function getCellValue(row, col) {
         return String(topics || '').toLowerCase();
     }
     if (col === 'summary') {
-        return String(row.summary || '').toLowerCase() + ' ' + String(row.activity_date || '');
+        return String(row.summary || '').toLowerCase();
+    }
+    if (col === 'forum') {
+        return String(row.forum || '').toLowerCase() + ' ' + String(row.activity_date || '');
     }
     return String(row[col] || '').toLowerCase();
 }
@@ -314,15 +342,17 @@ async function loadAudit(scanId) {
         const summary = data.summary || {};
         const entries = data.entries || [];
 
+        const listDiv = document.getElementById('auditList');
+        const summaryDiv = document.getElementById('auditSummary');
+
         if (entries.length === 0) {
-            auditSection.style.display = 'none';
+            // Show empty state instead of hiding
+            summaryDiv.innerHTML = '';
+            listDiv.innerHTML = '<p class="empty-state-preview">No discarded items for this scan.</p>';
             return;
         }
 
-        auditSection.style.display = '';
-
         // Render summary counts
-        const summaryDiv = document.getElementById('auditSummary');
         let summaryHtml = '';
         if (summary.procedural_filter) {
             summaryHtml += `<div class="audit-count">
@@ -339,7 +369,6 @@ async function loadAudit(scanId) {
         summaryDiv.innerHTML = summaryHtml;
 
         // Render entries
-        const listDiv = document.getElementById('auditList');
         let listHtml = '';
         for (const e of entries) {
             const isProcedural = e.classification === 'procedural_filter';
@@ -358,8 +387,11 @@ async function loadAudit(scanId) {
             setupAuditToggle(btn);
         });
     } catch (err) {
-        // Audit not available for older scans — just hide
-        auditSection.style.display = 'none';
+        // Audit not available for older scans — show empty state
+        const listDiv = document.getElementById('auditList');
+        const summaryDiv = document.getElementById('auditSummary');
+        summaryDiv.innerHTML = '';
+        listDiv.innerHTML = '<p class="empty-state-preview">No audit data available for this scan.</p>';
     }
 }
 
@@ -469,8 +501,24 @@ async function loadHistory() {
     for (const s of pageScans) {
         const div = document.createElement('div');
         div.className = 'history-item';
+
+        // Format the scan conducted date/time
+        let conductedStr = '';
+        if (s.created_at) {
+            const d = new Date(s.created_at);
+            if (!isNaN(d)) {
+                const dd = String(d.getDate()).padStart(2, '0');
+                const mm = String(d.getMonth() + 1).padStart(2, '0');
+                const yy = String(d.getFullYear()).slice(-2);
+                const hh = String(d.getHours()).padStart(2, '0');
+                const mi = String(d.getMinutes()).padStart(2, '0');
+                conductedStr = `${dd}/${mm}/${yy} ${hh}:${mi}`;
+            }
+        }
+
         div.innerHTML = `
-            <span class="history-date">${s.start_date} to ${s.end_date}</span>
+            <span class="history-date">${formatDate(s.start_date)} to ${formatDate(s.end_date)}</span>
+            <span class="history-conducted">${conductedStr}</span>
             <span>${s.total_relevant || 0} results</span>
             <span class="history-status ${s.status}">${s.status}</span>
         `;

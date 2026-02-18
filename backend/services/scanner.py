@@ -16,6 +16,7 @@ from backend.database import (
     insert_result,
     insert_audit_log_batch,
 )
+from backend.config import KEYWORD_PARALLELISM
 from backend.services.parliament import ParliamentAPIClient, Contribution
 from backend.services.classifier import TopicClassifier, is_procedural
 
@@ -79,6 +80,11 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
         "sent_to_classifier": 0,
         "classified_relevant": 0,
         "classified_discarded": 0,
+        "kw_status": {},           # {keyword: "active"|"done"} — absent = pending
+        "kw_counts": {},           # {keyword: api_result_count}
+        "total_keywords": 0,
+        "completed_keywords": 0,
+        "search_done": False,
     }
 
     async def _update_with_stats(progress, **kwargs):
@@ -114,74 +120,220 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
         all_keywords.update(kws)
 
     total_keywords = len(all_keywords)
+    stats["total_keywords"] = total_keywords
     logger.info(
         "Scan %d: %d topics, %d keywords, date range %s to %s",
         scan_id, len(selected_topics), total_keywords, start_date, end_date,
     )
 
-    # ---- PHASE 1: API Search (0-60% progress) ----
+    # ---- PIPELINED SEARCH + CLASSIFICATION ----
+    # Search and classification run concurrently: as each keyword's results
+    # arrive they are incrementally deduped, pre-filtered, and fed to the
+    # classifier via an asyncio.Queue — no waiting for all keywords to finish.
+
     stats["phase"] = "Searching Parliament APIs..."
     client = ParliamentAPIClient()
-    all_contributions: list[Contribution] = []
     keyword_list = sorted(all_keywords)
 
-    try:
-        for i, keyword in enumerate(keyword_list):
+    # Shared state (protected by progress_lock)
+    keyword_sem = asyncio.Semaphore(KEYWORD_PARALLELISM)
+    progress_lock = asyncio.Lock()
+    completed_keywords = 0
+    total_api_results = 0
+    seen: dict[str, Contribution] = {}       # incremental dedup registry
+    procedural_items: list[Contribution] = []
+    queued_for_classify = 0                   # how many sent to classifier
+
+    # Pipeline queue: search → classification
+    classify_queue: asyncio.Queue[Contribution | None] = asyncio.Queue()
+
+    # Classifier setup (sees ALL topics for cross-topic detection)
+    classifier = TopicClassifier(all_topics_dict)
+    classify_sem = asyncio.Semaphore(10)
+    total_relevant = 0
+    not_relevant_audit: list[tuple] = []
+    classified_count = 0
+    search_done = False
+
+    # ---- Producer: keyword search with incremental dedup + pre-filter ----
+
+    async def _search_keyword(kw: str):
+        nonlocal completed_keywords, total_api_results, queued_for_classify
+        async with keyword_sem:
             if cancel_event.is_set():
-                await update_scan_progress(db, scan_id, status="cancelled")
                 return
 
-            base_progress = (i / total_keywords) * 60
+            # Mark keyword as actively being searched
+            async with progress_lock:
+                stats["kw_status"][kw] = "active"
 
             async def on_source_start(source_name, source_idx, total_src):
-                sub_progress = base_progress + (source_idx / total_src) * (60 / total_keywords)
-                stats["phase"] = f'Searching {source_name}: "{keyword}" ({i+1}/{total_keywords})'
-                await _update_with_stats(sub_progress)
+                async with progress_lock:
+                    progress = (completed_keywords / total_keywords) * 60
+                    classify_part = ""
+                    if classified_count > 0:
+                        classify_part = f" | Classifying {classified_count}/{queued_for_classify}"
+                    stats["phase"] = (
+                        f'Searching "{kw}" ({completed_keywords + 1}/{total_keywords} done)'
+                        + classify_part
+                    )
+                    await _update_with_stats(progress)
 
             results = await client.search_all(
-                keyword, start_date, end_date, cancel_event, on_source_start,
+                kw, start_date, end_date, cancel_event, on_source_start,
                 enabled_sources=enabled_sources,
             )
 
-            # Track per-source counts
-            for c in results:
-                src = c.source_type
-                stats["per_source"][src] = stats["per_source"].get(src, 0) + 1
+            # Incremental dedup + pre-filter under lock, then enqueue
+            async with progress_lock:
+                completed_keywords += 1
+                total_api_results += len(results)
+                stats["total_api_results"] = total_api_results
 
-            all_contributions.extend(results)
-            stats["total_api_results"] = len(all_contributions)
+                # Mark keyword as done with result count
+                stats["kw_status"][kw] = "done"
+                stats["kw_counts"][kw] = len(results)
+                stats["completed_keywords"] = completed_keywords
 
+                for c in results:
+                    src = c.source_type
+                    stats["per_source"][src] = stats["per_source"].get(src, 0) + 1
+
+                    key = f"{c.source_type}:{c.id}"
+                    if key in seen:
+                        # Merge keywords onto existing entry (already queued)
+                        existing = seen[key]
+                        for mk in c.matched_keywords:
+                            if mk not in existing.matched_keywords:
+                                existing.matched_keywords.append(mk)
+                    else:
+                        seen[key] = c
+                        if is_procedural(c.text, c.source_type):
+                            procedural_items.append(c)
+                            stats["removed_by_prefilter"] = len(procedural_items)
+                        else:
+                            queued_for_classify += 1
+                            stats["sent_to_classifier"] = queued_for_classify
+                            await classify_queue.put(c)
+
+                # Update dedup count incrementally and force progress write
+                stats["unique_after_dedup"] = len(seen)
+                progress = (completed_keywords / total_keywords) * 60
+                await _update_with_stats(min(progress, 59))
+
+    async def _run_all_searches():
+        nonlocal search_done
+        tasks = [_search_keyword(kw) for kw in keyword_list]
+        await asyncio.gather(*tasks)
+        search_done = True
+        stats["search_done"] = True
+        await classify_queue.put(None)  # sentinel: no more items
+
+    # ---- Consumer: concurrent classification from queue ----
+
+    async def _classify_one(contribution: Contribution):
+        nonlocal classified_count, total_relevant
+        async with classify_sem:
+            if cancel_event.is_set():
+                return
+            classification = await classifier.classify(contribution)
+
+            if classification:
+                # Enrich with member info and store immediately
+                member_info = {"name": "", "party": "", "member_type": "", "constituency": ""}
+                if contribution.member_id:
+                    member_info = await client.lookup_member(contribution.member_id)
+
+                dedup_key = f"{contribution.source_type}:{contribution.id}"
+                topics_json = json.dumps(classification["topics"])
+
+                await insert_result(
+                    db,
+                    scan_id,
+                    dedup_key=dedup_key,
+                    member_name=contribution.member_name,
+                    member_id=contribution.member_id,
+                    party=member_info.get("party", ""),
+                    member_type=member_info.get("member_type", ""),
+                    constituency=member_info.get("constituency", ""),
+                    topics=topics_json,
+                    summary=classification["summary"],
+                    activity_date=contribution.date.strftime("%Y-%m-%d"),
+                    forum=_forum_label(contribution),
+                    verbatim_quote=classification.get("verbatim_quote", ""),
+                    source_url=contribution.url,
+                    confidence=classification["confidence"],
+                    position_signal=classification.get("position_signal", ""),
+                    source_type=contribution.source_type,
+                    raw_text=contribution.text[:2000],
+                )
+
+            async with progress_lock:
+                classified_count += 1
+
+                if classification:
+                    total_relevant += 1
+                    stats["classified_relevant"] = total_relevant
+                    src = contribution.source_type
+                    stats["per_source_relevant"][src] = (
+                        stats["per_source_relevant"].get(src, 0) + 1
+                    )
+                else:
+                    stats["classified_discarded"] += 1
+                    not_relevant_audit.append((
+                        scan_id, contribution.member_name, contribution.source_type,
+                        contribution.text[:200], "not_relevant",
+                        contribution.date.strftime("%Y-%m-%d") if contribution.date else "",
+                        contribution.context or "", contribution.text[:2000],
+                    ))
+
+                # Update progress periodically
+                if classified_count % 2 == 0 or classified_count <= 5:
+                    if search_done:
+                        progress = 60 + (classified_count / max(queued_for_classify, 1)) * 35
+                        stats["phase"] = f"Classifying {classified_count}/{queued_for_classify}..."
+                    else:
+                        search_pct = (completed_keywords / total_keywords) * 60
+                        progress = search_pct
+                        stats["phase"] = (
+                            f"Searching ({completed_keywords}/{total_keywords} done)"
+                            f" | Classifying {classified_count}/{queued_for_classify}..."
+                        )
+                    await _update_with_stats(
+                        min(progress, 95),
+                        total_relevant=total_relevant,
+                    )
+
+    async def _classification_consumer():
+        pending: set[asyncio.Task] = set()
+        while True:
+            if cancel_event.is_set():
+                break
+            item = await classify_queue.get()
+            if item is None:
+                break
+            task = asyncio.create_task(_classify_one(item))
+            pending.add(task)
+            task.add_done_callback(pending.discard)
+        # Wait for all in-flight classifications to finish
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+
+    # ---- Run search + classification concurrently ----
+    search_task = asyncio.create_task(_run_all_searches())
+    classify_task = asyncio.create_task(_classification_consumer())
+
+    try:
+        await search_task
+        await classify_task
     finally:
         await client.close()
 
-    if cancel_event.is_set():
-        await update_scan_progress(db, scan_id, status="cancelled")
-        return
-
-    total_api_results = len(all_contributions)
-    stats["phase"] = "Deduplicating results..."
-    await _update_with_stats(60, total_api_results=total_api_results)
-
-    # ---- Deduplicate ----
-    unique = _dedup_contributions(all_contributions)
-    stats["unique_after_dedup"] = len(unique)
-    logger.info("Scan %d: %d API results -> %d unique", scan_id, total_api_results, len(unique))
-
-    # ---- PHASE 2: Pre-filter (60-65% progress) ----
-    stats["phase"] = "Pre-filtering procedural content..."
-    await _update_with_stats(62)
-
-    filtered = []
-    procedural_items = []
-    for c in unique:
-        if is_procedural(c.text, c.source_type):
-            procedural_items.append(c)
-        else:
-            filtered.append(c)
-
-    stats["removed_by_prefilter"] = len(procedural_items)
+    # Log summary stats
+    stats["unique_after_dedup"] = len(seen)
+    logger.info("Scan %d: %d API results -> %d unique", scan_id, total_api_results, len(seen))
     logger.info("Scan %d: %d after pre-filter (removed %d procedural)",
-                scan_id, len(filtered), len(procedural_items))
+                scan_id, queued_for_classify, len(procedural_items))
 
     # Batch insert procedural audit entries
     if procedural_items:
@@ -193,68 +345,6 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
         ]
         await insert_audit_log_batch(db, audit_rows)
 
-    if cancel_event.is_set():
-        await update_scan_progress(db, scan_id, status="cancelled")
-        return
-
-    # ---- PHASE 3: LLM Classification (65-95% progress) ----
-    total_to_classify = len(filtered)
-    stats["sent_to_classifier"] = total_to_classify
-    stats["phase"] = f"Classifying {total_to_classify} contributions with AI..."
-    await _update_with_stats(65, total_sent_to_llm=total_to_classify)
-
-    # Classifier sees ALL topics for cross-topic detection
-    classifier = TopicClassifier(all_topics_dict)
-    relevant_results: list[tuple[Contribution, dict]] = []
-    not_relevant_audit: list[tuple] = []
-    completed_count = 0
-
-    sem = asyncio.Semaphore(10)
-
-    async def classify_one(i: int, contribution: Contribution):
-        nonlocal completed_count
-        async with sem:
-            if cancel_event.is_set():
-                return None
-
-            result = await classifier.classify(contribution)
-            completed_count += 1
-
-            if result:
-                stats["classified_relevant"] += 1
-                src = contribution.source_type
-                stats["per_source_relevant"][src] = stats["per_source_relevant"].get(src, 0) + 1
-                return (contribution, result)
-            else:
-                stats["classified_discarded"] += 1
-                not_relevant_audit.append((
-                    scan_id, contribution.member_name, contribution.source_type,
-                    contribution.text[:200], "not_relevant",
-                    contribution.date.strftime("%Y-%m-%d") if contribution.date else "",
-                    contribution.context or "", contribution.text[:2000],
-                ))
-
-            # Update progress periodically
-            if completed_count % 5 == 0:
-                progress = 65 + (completed_count / max(total_to_classify, 1)) * 30
-                stats["phase"] = f"Classifying {completed_count}/{total_to_classify}..."
-                await _update_with_stats(progress)
-
-            return None
-
-    # Process classification in batches for faster cancellation
-    all_results = []
-    batch_size = 10
-    for batch_start in range(0, len(filtered), batch_size):
-        if cancel_event.is_set():
-            break
-        batch = filtered[batch_start:batch_start + batch_size]
-        batch_tasks = [classify_one(i, c) for i, c in enumerate(batch, batch_start)]
-        batch_results = await asyncio.gather(*batch_tasks)
-        all_results.extend(batch_results)
-
-    relevant_results = [r for r in all_results if r is not None]
-
     # Batch insert not-relevant audit entries
     if not_relevant_audit:
         await insert_audit_log_batch(db, not_relevant_audit)
@@ -263,49 +353,10 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
         await update_scan_progress(db, scan_id, status="cancelled")
         return
 
-    total_relevant = len(relevant_results)
     logger.info("Scan %d: %d/%d classified as relevant",
-                scan_id, total_relevant, total_to_classify)
+                scan_id, total_relevant, queued_for_classify)
 
-    # ---- PHASE 4: Enrich & Store (95-100% progress) ----
-    stats["phase"] = f"Storing {total_relevant} results..."
-    await _update_with_stats(95, total_relevant=total_relevant)
-
-    # Re-open API client for member lookups
-    client = ParliamentAPIClient()
-    try:
-        for contribution, classification in relevant_results:
-            member_info = {"name": "", "party": "", "member_type": "", "constituency": ""}
-            if contribution.member_id:
-                member_info = await client.lookup_member(contribution.member_id)
-
-            dedup_key = f"{contribution.source_type}:{contribution.id}"
-            topics_json = json.dumps(classification["topics"])
-
-            await insert_result(
-                db,
-                scan_id,
-                dedup_key=dedup_key,
-                member_name=contribution.member_name,
-                member_id=contribution.member_id,
-                party=member_info.get("party", ""),
-                member_type=member_info.get("member_type", ""),
-                constituency=member_info.get("constituency", ""),
-                topics=topics_json,
-                summary=classification["summary"],
-                activity_date=contribution.date.strftime("%Y-%m-%d"),
-                forum=_forum_label(contribution),
-                verbatim_quote=classification.get("verbatim_quote", ""),
-                source_url=contribution.url,
-                confidence=classification["confidence"],
-                position_signal=classification.get("position_signal", ""),
-                source_type=contribution.source_type,
-                raw_text=contribution.text[:2000],
-            )
-    finally:
-        await client.close()
-
-    # Mark complete
+    # Mark complete (results already stored inline during classification)
     stats["phase"] = "Scan complete"
     await update_scan_progress(
         db, scan_id,

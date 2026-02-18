@@ -12,7 +12,7 @@ load_dotenv(PROJECT_ROOT / ".env", override=True)
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
 
-DATABASE_PATH = PROJECT_ROOT / "backend" / "parly_monitor.db"
+DATABASE_PATH = Path(os.getenv("DATABASE_PATH", str(PROJECT_ROOT / "backend" / "parly_monitor.db")))
 
 # Parliament API base URLs
 HANSARD_API_BASE = "https://hansard-api.parliament.uk"
@@ -25,3 +25,4 @@ MEMBERS_API_BASE = "https://members-api.parliament.uk"
 # Rate limiting
 REQUEST_DELAY = 0.2  # seconds between Parliament API calls
 CLASSIFIER_DELAY = 0.1  # seconds between Anthropic API calls
+KEYWORD_PARALLELISM = int(os.getenv("KEYWORD_PARALLELISM", "12"))  # max concurrent keyword searches

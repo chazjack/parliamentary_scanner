@@ -20,10 +20,10 @@
     viewYear = today.getFullYear();
     viewMonth = today.getMonth();
 
-    // Set sensible defaults (last 7 days)
+    // Set sensible defaults (last 2 days)
     const defaultEnd = new Date(today);
     const defaultStart = new Date(today);
-    defaultStart.setDate(defaultStart.getDate() - 7);
+    defaultStart.setDate(defaultStart.getDate() - 2);
     setRange(defaultStart, defaultEnd);
 
     // Toggle dropdown

@@ -38,11 +38,11 @@ const state = {
     eventSource: null,
 };
 
-// Set default date range (past 7 days)
+// Set default date range (past 2 days)
 function setDefaultDates() {
     const end = new Date();
     const start = new Date();
-    start.setDate(end.getDate() - 7);
+    start.setDate(end.getDate() - 2);
 
     document.getElementById('startDate').value = start.toISOString().split('T')[0];
     document.getElementById('endDate').value = end.toISOString().split('T')[0];
@@ -70,4 +70,78 @@ document.addEventListener('DOMContentLoaded', async () => {
     setDefaultDates();
     await loadTopics();
     await loadHistory();
+
+    // Collapse topics by default
+    const topicList = document.getElementById('topicList');
+    const toggleIcon = document.querySelector('#topic-manager .toggle-icon');
+    if (topicList && !topicList.classList.contains('collapsed')) {
+        topicList.classList.add('collapsed');
+        if (toggleIcon) toggleIcon.classList.add('collapsed');
+        if (typeof renderTopicPills === 'function') renderTopicPills();
+    }
+
+    // Show empty results prompt
+    const resultsSection = document.getElementById('results-section');
+    if (resultsSection) {
+        renderResults([]);
+    }
+
+    // Show empty audit section prompt
+    const auditSection = document.getElementById('audit-section');
+    const auditList = document.getElementById('auditList');
+    if (auditSection && auditList) {
+        auditList.innerHTML = '<p class="empty-state-preview">No discarded items yet. Run a scan to see results.</p>';
+    }
+
+    // ---- Sidebar TOC scroll tracking ----
+    initTocScrollTracking();
 });
+
+function initTocScrollTracking() {
+    const tocLinks = document.querySelectorAll('.toc-link');
+    const sections = [];
+    tocLinks.forEach(link => {
+        const href = link.getAttribute('href');
+        if (href && href.startsWith('#')) {
+            const section = document.getElementById(href.slice(1));
+            if (section) sections.push({ link, section });
+        }
+    });
+
+    if (sections.length === 0) return;
+
+    // IntersectionObserver to track which section is in view
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                tocLinks.forEach(l => l.classList.remove('active'));
+                const match = sections.find(s => s.section === entry.target);
+                if (match) match.link.classList.add('active');
+            }
+        });
+    }, { rootMargin: '-10% 0px -70% 0px' });
+
+    sections.forEach(({ section }) => observer.observe(section));
+
+    // Click handler: smooth scroll
+    tocLinks.forEach(link => {
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            const targetId = link.getAttribute('href').slice(1);
+            const target = document.getElementById(targetId);
+            if (target) {
+                target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        });
+    });
+
+    // Show/hide "Discarded Items" TOC link based on audit section visibility
+    const auditLink = document.getElementById('tocAuditLink');
+    const auditSection = document.getElementById('audit-section');
+    if (auditLink && auditSection) {
+        const auditObserver = new MutationObserver(() => {
+            auditLink.style.display = auditSection.style.display === 'none' ? 'none' : '';
+        });
+        auditObserver.observe(auditSection, { attributes: true, attributeFilter: ['style'] });
+    }
+}

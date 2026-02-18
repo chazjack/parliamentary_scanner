@@ -104,7 +104,7 @@ async def scan_progress(scan_id: int):
                 active_scan_events.pop(scan_id, None)
                 break
 
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.3)
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 

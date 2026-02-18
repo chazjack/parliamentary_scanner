@@ -601,6 +601,24 @@ async def get_master_result_ids(db: aiosqlite.Connection) -> list[int]:
     return [row["result_id"] for row in await cursor.fetchall()]
 
 
+async def cleanup_stuck_scans(db: aiosqlite.Connection):
+    """Mark any scans left in 'running' or 'pending' state as 'error' on startup.
+
+    This handles the case where the server was killed mid-scan.
+    """
+    await db.execute(
+        "UPDATE scans SET status = 'error', error_message = 'Server restarted during scan' "
+        "WHERE status IN ('running', 'pending')"
+    )
+    await db.commit()
+    cursor = await db.execute(
+        "SELECT changes()"
+    )
+    row = await cursor.fetchone()
+    if row and row[0] > 0:
+        logger.info("Cleaned up %d stuck scan(s) from previous run", row[0])
+
+
 async def remove_master_activity_by_result(db: aiosqlite.Connection, result_id: int) -> bool:
     """Remove a result's link to the master list. Cleans up empty master entries."""
     cursor = await db.execute(

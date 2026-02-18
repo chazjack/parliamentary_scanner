@@ -1,7 +1,7 @@
 /* Parliamentary Scanner — Topic management UI */
 
-// Track which topics are checked (by ID). Null means "use default: all checked".
-let checkedTopicIds = null;
+// Track which topics are checked (by ID). Empty set means none checked by default.
+let checkedTopicIds = new Set();
 
 // Undo stack for topic/keyword changes
 let undoStack = [];
@@ -52,7 +52,7 @@ function renderTopics() {
 
     for (const topic of state.topics) {
         // Determine if this topic should be checked
-        const isChecked = checkedTopicIds === null || checkedTopicIds.has(topic.id);
+        const isChecked = checkedTopicIds.has(topic.id);
 
         const el = document.createElement('div');
         el.className = 'topic-item';
@@ -104,7 +104,7 @@ function renderTopicPills() {
     pillsContainer.classList.add('visible');
 
     for (const topic of state.topics) {
-        const isChecked = checkedTopicIds === null || checkedTopicIds.has(topic.id);
+        const isChecked = checkedTopicIds.has(topic.id);
         const pill = document.createElement('button');
         pill.className = 'topic-pill' + (isChecked ? ' active' : '');
         pill.textContent = topic.name;
@@ -127,11 +127,6 @@ function renderTopicPills() {
 }
 
 function toggleTopicPill(topicId, pillEl) {
-    // Ensure we have a Set to track state
-    if (checkedTopicIds === null) {
-        checkedTopicIds = new Set(state.topics.map(t => t.id));
-    }
-
     if (checkedTopicIds.has(topicId)) {
         checkedTopicIds.delete(topicId);
         pillEl.classList.remove('active');

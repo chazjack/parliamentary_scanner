@@ -17,11 +17,22 @@
         <button class="tab-btn" data-tab="record" onclick="switchTab('record')">Record</button>
     </nav>
 
+    <!-- Sidebar Table of Contents -->
+    <nav class="page-toc" id="pageToc">
+        <a class="toc-link active" href="#controls">Search</a>
+        <a class="toc-link" href="#topic-manager">Topics & Keywords</a>
+        <a class="toc-link" href="#history-section">Scan History</a>
+        <a class="toc-link" href="#results-section">Results</a>
+        <a class="toc-link" href="#audit-section" id="tocAuditLink" style="display:none;">Discarded Items</a>
+    </nav>
+
     <main>
         <!-- ===== Scanner Tab ===== -->
         <div id="tab-scanner">
+            <!-- Grouped Control Card -->
+            <section class="control-group-card">
             <!-- Scan Controls -->
-            <section id="controls">
+            <div id="controls">
                 <div class="control-row">
                     <div class="date-picker-wrapper" id="datePickerWrapper">
                         <button class="date-picker-display placeholder" id="datePickerDisplay">Select date range</button>
@@ -29,22 +40,48 @@
                         <input type="hidden" id="startDate">
                         <input type="hidden" id="endDate">
                     </div>
-                    <button id="scanBtn" class="btn btn-primary">Scan</button>
+                    <button id="scanBtn" class="btn btn-scan">Scan</button>
                     <button id="cancelBtn" class="btn btn-danger" style="display:none;">Cancel</button>
                 </div>
-            </section>
+            </div>
+
+            <hr class="control-divider">
 
             <!-- Source Toggles -->
-            <section id="source-toggles">
+            <div id="source-toggles">
+                <span class="source-label">SOURCES:</span>
                 <div class="source-toggle-row">
-                    <span class="source-label">Sources:</span>
-                    <button class="source-btn active" data-source="hansard">Hansard</button>
-                    <button class="source-btn active" data-source="written_questions">Written Questions</button>
-                    <button class="source-btn active" data-source="written_statements">Written Statements</button>
-                    <button class="source-btn active" data-source="edms">EDMs</button>
-                    <button class="source-btn active" data-source="bills">Bills</button>
-                    <button class="source-btn active" data-source="divisions">Divisions</button>
+                    <button class="source-btn active" data-source="hansard" data-description="Records of debates in Commons and Lords">Hansard</button>
+                    <button class="source-btn active" data-source="written_questions" data-description="Questions tabled by MPs to government ministers">Written Questions</button>
+                    <button class="source-btn active" data-source="written_statements" data-description="Formal statements by ministers">Written Statements</button>
+                    <button class="source-btn active" data-source="edms" data-description="Motions signed by MPs to show support for a cause">EDMs</button>
+                    <button class="source-btn active" data-source="bills" data-description="Proposed legislation being considered by Parliament">Bills</button>
+                    <button class="source-btn active" data-source="divisions" data-description="Recorded votes in the House of Commons">Divisions</button>
                 </div>
+            </div>
+
+            <hr class="control-divider">
+
+            <!-- Topic Manager -->
+            <div id="topic-manager">
+                <div class="section-header" id="topicToggle">
+                    <span class="source-label">TOPICS & KEYWORDS:</span>
+                    <div style="display:flex;align-items:center;gap:12px">
+                        <div class="btn-split" onclick="event.stopPropagation()">
+                            <button class="btn-split-left" id="selectAllTopics" onclick="toggleAllTopics(true)">All</button>
+                            <button id="selectNoneTopics" onclick="toggleAllTopics(false)">None</button>
+                        </div>
+                        <button class="btn-undo disabled" id="undoBtn" onclick="event.stopPropagation(); undoLastAction()" title="Undo">&#8617;</button>
+                        <span class="toggle-icon">&#9660;</span>
+                    </div>
+                </div>
+                <div id="topicPills" class="topic-pills"></div>
+                <div id="topicList" class="topic-container"></div>
+                <div class="topic-add">
+                    <input type="text" id="newTopicName" placeholder="New topic name...">
+                    <button id="addTopicBtn" class="btn btn-small">Add Topic</button>
+                </div>
+            </div>
             </section>
 
             <!-- Progress -->
@@ -70,28 +107,11 @@
                 </div>
                 <div id="progressContent">
                     <p id="progressLabel">Preparing scan...</p>
-                    <div id="detailedStats" class="detailed-stats" style="display:none;"></div>
-                </div>
-            </section>
-
-            <!-- Topic Manager -->
-            <section id="topic-manager">
-                <div class="section-header" id="topicToggle">
-                    <h2>Topics & Keywords</h2>
-                    <div style="display:flex;align-items:center;gap:12px">
-                        <div class="btn-split" onclick="event.stopPropagation()">
-                            <button class="btn-split-left" id="selectAllTopics" onclick="toggleAllTopics(true)">All</button>
-                            <button id="selectNoneTopics" onclick="toggleAllTopics(false)">None</button>
-                        </div>
-                        <button class="btn-undo disabled" id="undoBtn" onclick="event.stopPropagation(); undoLastAction()" title="Undo">&#8617;</button>
-                        <span class="toggle-icon">&#9660;</span>
+                    <div id="progressPanels" style="display:none;">
+                        <div id="keywordProgress" class="keyword-progress-panel"></div>
+                        <div id="pipelineStats" class="pipeline-stats-row"></div>
+                        <div id="sourceCirclesRow" class="source-circles-row" style="display:none;"></div>
                     </div>
-                </div>
-                <div id="topicPills" class="topic-pills"></div>
-                <div id="topicList" class="topic-container"></div>
-                <div class="topic-add">
-                    <input type="text" id="newTopicName" placeholder="New topic name...">
-                    <button id="addTopicBtn" class="btn btn-small">Add Topic</button>
                 </div>
             </section>
 
@@ -102,7 +122,7 @@
             </section>
 
             <!-- Results -->
-            <section id="results-section" style="display:none;">
+            <section id="results-section">
                 <div class="results-header">
                     <h2>Results</h2>
                     <button id="exportBtn" class="btn btn-small" title="Export to Excel" style="display:inline-flex;align-items:center;padding:6px 8px;">
@@ -117,12 +137,10 @@
                             <tr>
                                 <th data-col="member_name">Name</th>
                                 <th data-col="party">Party</th>
-                                <th data-col="member_type">Type</th>
                                 <th data-col="topics">Topic(s)</th>
                                 <th data-col="summary">Summary</th>
                                 <th data-col="forum">Forum</th>
                                 <th data-col="verbatim_quote">Quote / Action</th>
-                                <th data-col="confidence">Confidence</th>
                                 <th></th>
                             </tr>
                         </thead>
@@ -132,9 +150,9 @@
             </section>
 
             <!-- Audit Panel -->
-            <section id="audit-section" style="display:none;">
+            <section id="audit-section">
                 <div class="section-header" id="auditToggle">
-                    <h2>Audit: Discarded Items</h2>
+                    <h2>Discarded Items</h2>
                     <span class="toggle-icon">&#9660;</span>
                 </div>
                 <div id="auditSummary" class="audit-summary"></div>
@@ -147,11 +165,15 @@
             <section id="record-section">
                 <div class="results-header">
                     <h2>Master Stakeholder List</h2>
-                    <button class="btn btn-small" title="Export to Excel" style="display:inline-flex;align-items:center;padding:6px 8px;" onclick="window.location.href='/api/master/export'">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-                        </svg>
-                    </button>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <input type="text" id="masterSearchInput" placeholder="Search..." style="padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:0.8rem;width:160px;" oninput="filterMasterList()">
+                        <button class="btn-undo disabled" id="masterUndoBtn" onclick="undoMasterDelete()" title="Undo delete" style="display:none;">&#8617;</button>
+                        <button class="btn btn-small" title="Export to Excel" style="display:inline-flex;align-items:center;padding:6px 8px;" onclick="window.location.href='/api/master/export'">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
                 <div class="table-container">
                     <table id="masterTable">

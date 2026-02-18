@@ -4,7 +4,12 @@ const scanBtn = document.getElementById('scanBtn');
 const cancelBtn = document.getElementById('cancelBtn');
 const progressSection = document.getElementById('progress-section');
 const progressLabel = document.getElementById('progressLabel');
-const detailedStats = document.getElementById('detailedStats');
+const progressPanels = document.getElementById('progressPanels');
+const keywordProgressPanel = document.getElementById('keywordProgress');
+const pipelineStatsRow = document.getElementById('pipelineStats');
+const sourceCirclesRow = document.getElementById('sourceCirclesRow');
+
+let _liveResultsInterval = null;
 
 scanBtn.addEventListener('click', startScan);
 cancelBtn.addEventListener('click', cancelScan);
@@ -34,13 +39,21 @@ async function startScan() {
         return;
     }
 
+    // Build topic-keyword mapping for progress display (before UI changes)
+    const selectedTopics = state.topics.filter(t => topicIds.includes(t.id));
+    state.scanTopicGroups = selectedTopics
+        .map(t => ({ name: t.name, keywords: [...t.keywords] }))
+        .filter(g => g.keywords.length > 0);
+
     scanBtn.disabled = true;
     cancelBtn.style.display = '';
     progressSection.style.display = '';
     progressLabel.textContent = 'Starting scan...';
-    detailedStats.style.display = 'none';
-    detailedStats.innerHTML = '';
-    document.getElementById('results-section').style.display = 'none';
+    progressPanels.style.display = 'none';
+    keywordProgressPanel.innerHTML = '';
+    pipelineStatsRow.innerHTML = '';
+    sourceCirclesRow.style.display = 'none';
+    sourceCirclesRow.innerHTML = '';
     document.getElementById('audit-section').style.display = 'none';
 
     // Reset stage indicator
@@ -88,11 +101,16 @@ function connectSSE(scanId) {
     const es = new EventSource(`/api/scans/${scanId}/progress`);
     state.eventSource = es;
 
+    // Show results section and start live-polling for results
+    document.getElementById('results-section').style.display = '';
+    _startLiveResults(scanId);
+
     es.onmessage = (event) => {
         const data = JSON.parse(event.data);
 
         if (data.error) {
             es.close();
+            _stopLiveResults();
             progressLabel.textContent = friendlyError(data.error);
             resetScanUI();
             return;
@@ -110,25 +128,32 @@ function connectSSE(scanId) {
 
         progressLabel.textContent = phaseText;
 
-        // Update stage indicator based on phase text
+        // Update stage indicator and progress panels
         if (statsObj) {
             updateStageIndicator(statsObj);
-            renderDetailedStats(statsObj);
+            progressPanels.style.display = '';
+            renderKeywordChips(statsObj);
+            renderPipelineBoxes(statsObj);
+            renderSourceCircles(statsObj);
         }
 
         if (data.status === 'completed') {
             es.close();
             state.eventSource = null;
+            _stopLiveResults();
             onScanComplete(scanId, data, statsObj);
         } else if (data.status === 'cancelled') {
             es.close();
             state.eventSource = null;
+            _stopLiveResults();
             progressLabel.textContent = 'Scan cancelled.';
             resetScanUI();
+            loadResults(scanId);  // show whatever results were saved
             loadHistory();
         } else if (data.status === 'error') {
             es.close();
             state.eventSource = null;
+            _stopLiveResults();
             progressLabel.textContent = 'Scan failed: ' + friendlyError(data.error_message);
             resetScanUI();
             loadHistory();
@@ -138,9 +163,24 @@ function connectSSE(scanId) {
     es.onerror = () => {
         es.close();
         state.eventSource = null;
+        _stopLiveResults();
         progressLabel.textContent = 'Connection lost. Check scan history for results.';
         resetScanUI();
     };
+}
+
+function _startLiveResults(scanId) {
+    _stopLiveResults();
+    _liveResultsInterval = setInterval(() => {
+        loadResults(scanId);
+    }, 5000);
+}
+
+function _stopLiveResults() {
+    if (_liveResultsInterval) {
+        clearInterval(_liveResultsInterval);
+        _liveResultsInterval = null;
+    }
 }
 
 async function cancelScan() {
@@ -159,9 +199,12 @@ async function onScanComplete(scanId, data, statsObj) {
     // Mark all stages complete
     setStageCompleted(3);
 
-    // Show final detailed stats
+    // Show final progress panels
     if (statsObj) {
-        renderDetailedStats(statsObj);
+        progressPanels.style.display = '';
+        renderKeywordChips(statsObj);
+        renderPipelineBoxes(statsObj);
+        renderSourceCircles(statsObj);
     }
 
     // Show minimize button (keep progress visible)
@@ -244,74 +287,119 @@ function toggleProgressContent() {
     btn.classList.toggle('collapsed');
 }
 
-/* ---- Detailed Stats ---- */
+/* ---- Keyword Chips (full width panel) ---- */
 
-function renderDetailedStats(stats) {
-    detailedStats.style.display = '';
+function renderKeywordChips(stats) {
+    if (!state.scanTopicGroups || !keywordProgressPanel) return;
 
-    const totalApi = stats.total_api_results || 0;
-    const uniqueAfterDedup = stats.unique_after_dedup || 0;
-    const dupeCount = totalApi - uniqueAfterDedup;
+    const kwStatus = stats.kw_status || {};
+    const kwCounts = stats.kw_counts || {};
+    const totalKw = stats.total_keywords || 0;
+    const completedKw = stats.completed_keywords || 0;
 
-    let html = '';
+    let html = `<div class="kw-summary">Keywords: ${completedKw} / ${totalKw}</div>`;
 
-    // Main stat cards
-    const cards = [
-        {
-            value: totalApi,
-            label: dupeCount > 0 ? `Keyword Results (${dupeCount} dupes)` : 'Keyword Results',
-            cls: '',
-        },
-        { value: stats.sent_to_classifier || 0, label: 'Sent to Classifier', cls: '' },
-        { value: stats.classified_relevant || 0, label: 'Relevant', cls: 'stat-relevant' },
-        { value: stats.classified_discarded || 0, label: 'Discarded', cls: 'stat-discarded' },
+    for (const group of state.scanTopicGroups) {
+        html += '<div class="kw-topic-group">';
+        html += `<div class="kw-topic-header">${escapeHtml(group.name)}</div>`;
+        html += '<div class="kw-chip-list">';
+
+        for (const kw of group.keywords) {
+            const status = kwStatus[kw] || 'pending';
+            let chipClass = 'kw-chip';
+            let countBadge = '';
+
+            if (status === 'done') {
+                chipClass += ' kw-done';
+                const count = kwCounts[kw] || 0;
+                countBadge = `<span class="kw-count">${count}</span>`;
+            } else if (status === 'active') {
+                chipClass += ' kw-active';
+            }
+
+            html += `<span class="${chipClass}">${escapeHtml(kw)}${countBadge}</span>`;
+        }
+
+        html += '</div></div>';
+    }
+
+    keywordProgressPanel.innerHTML = html;
+}
+
+/* ---- Pipeline Stat Boxes (horizontal row) ---- */
+
+function renderPipelineBoxes(stats) {
+    if (!pipelineStatsRow) return;
+
+    const boxes = [
+        { label: 'Keyword Results', value: stats.total_api_results || 0, cls: '' },
+        { label: 'Sent to Classifier', value: stats.sent_to_classifier || 0, cls: '' },
+        { label: 'Relevant', value: stats.classified_relevant || 0, cls: 'pipe-box-relevant' },
+        { label: 'Discarded', value: stats.classified_discarded || 0, cls: 'pipe-box-discarded' },
     ];
 
-    for (const card of cards) {
-        html += `<div class="stat-card ${card.cls}">
-            <div class="stat-value">${card.value}</div>
-            <div class="stat-label">${card.label}</div>
+    let html = '';
+    for (const box of boxes) {
+        html += `<div class="pipe-box ${box.cls}">
+            <div class="pipe-box-value">${box.value}</div>
+            <div class="pipe-box-label">${box.label}</div>
         </div>`;
     }
 
-    // Per-source relevant cards — same size, shown for all enabled sources
+    pipelineStatsRow.innerHTML = html;
+}
+
+/* ---- Source Circles (below both columns) ---- */
+
+function renderSourceCircles(stats) {
+    if (!sourceCirclesRow) return;
+
     const perSourceRelevant = stats.per_source_relevant || {};
     const sourceLabels = {
         'hansard': 'Hansard', 'written_questions': 'Written Qs',
         'written_statements': 'Written Stmts', 'edms': 'EDMs',
         'bills': 'Bills', 'divisions': 'Divisions',
     };
-    // Map source_type keys (from API results) to display labels
-    const sourceTypeLabels = {
-        'hansard': 'Hansard', 'written_question': 'Written Qs',
-        'written_statement': 'Written Stmts', 'edm': 'EDMs',
-        'bill': 'Bills', 'division': 'Divisions',
+    const sourceCircleClass = {
+        'hansard': 'source-hansard', 'written_questions': 'source-written-qs',
+        'written_statements': 'source-written-stmts', 'edms': 'source-edms',
+        'bills': 'source-bills', 'divisions': 'source-divisions',
+    };
+    const keyToType = {
+        'hansard': 'hansard', 'written_questions': 'written_question',
+        'written_statements': 'written_statement', 'edms': 'edm',
+        'bills': 'bill', 'divisions': 'division',
     };
 
-    // Get enabled sources from toggle buttons
     const enabledSources = Array.from(document.querySelectorAll('.source-btn.active'))
         .map(btn => btn.dataset.source);
 
-    if (enabledSources.length > 0) {
-        // Map enabled source keys to source_type keys used in stats
-        const keyToType = {
-            'hansard': 'hansard', 'written_questions': 'written_question',
-            'written_statements': 'written_statement', 'edms': 'edm',
-            'bills': 'bill', 'divisions': 'division',
-        };
-
-        for (const srcKey of enabledSources) {
-            const srcType = keyToType[srcKey] || srcKey;
-            const count = perSourceRelevant[srcType] || 0;
-            const label = sourceLabels[srcKey] || srcKey;
-            html += `<div class="stat-card stat-source">
-                <div class="stat-value">${count}</div>
-                <div class="stat-label">${label}</div>
-            </div>`;
-        }
+    if (enabledSources.length === 0) {
+        sourceCirclesRow.style.display = 'none';
+        return;
     }
 
-    detailedStats.innerHTML = html;
+    // Only show once classification has started producing results
+    const hasRelevant = Object.values(perSourceRelevant).some(v => v > 0);
+    if (!hasRelevant) {
+        sourceCirclesRow.style.display = 'none';
+        return;
+    }
+
+    let html = '';
+    for (const srcKey of enabledSources) {
+        const srcType = keyToType[srcKey] || srcKey;
+        const count = perSourceRelevant[srcType] || 0;
+        const label = sourceLabels[srcKey] || srcKey;
+        const circleCls = sourceCircleClass[srcKey] || '';
+        html += `<div class="stat-circle ${circleCls}">
+            <div class="stat-value">${count}</div>
+            <div class="stat-label">${label}</div>
+        </div>`;
+    }
+
+    sourceCirclesRow.innerHTML = html;
+    sourceCirclesRow.style.display = '';
 }
 
 function friendlyError(msg) {
@@ -330,6 +418,7 @@ function friendlyError(msg) {
 function resetScanUI() {
     scanBtn.disabled = false;
     cancelBtn.style.display = 'none';
+    _stopLiveResults();
 }
 
 // Source toggle buttons

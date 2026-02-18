@@ -34,6 +34,39 @@ def _strip_html(text: str) -> str:
     return re.sub(r"\s+", " ", clean).strip()
 
 
+def _slugify(text: str) -> str:
+    """Convert text to URL-friendly slug."""
+    slug = text.lower().strip()
+    slug = re.sub(r"[^a-z0-9\s-]", "", slug)
+    slug = re.sub(r"[\s]+", "-", slug)
+    return slug.strip("-")
+
+
+def _build_hansard_url(
+    house: str, dt: datetime, debate_section_ext_id: str,
+    debate_title: str, contrib_ext_id: str,
+) -> str:
+    """Build correct Hansard URL for a contribution.
+
+    Format: https://hansard.parliament.uk/{house}/{date}/debates/{sectionId}/{slug}#contribution-{contribId}
+    Fallback: search URL if DebateSectionExtId unavailable.
+    """
+    if not debate_section_ext_id or not contrib_ext_id:
+        if contrib_ext_id:
+            return f"https://hansard.parliament.uk/search/contribution?contributionId={contrib_ext_id}"
+        return ""
+
+    house_lower = house.lower() if house else "commons"
+    date_str = dt.strftime("%Y-%m-%d")
+    title_slug = _slugify(debate_title) if debate_title else "debate"
+
+    return (
+        f"https://hansard.parliament.uk/{house_lower}/{date_str}"
+        f"/debates/{debate_section_ext_id}/{title_slug}"
+        f"#contribution-{contrib_ext_id}"
+    )
+
+
 @dataclass
 class Contribution:
     """Normalised parliamentary contribution from any source."""
@@ -53,6 +86,9 @@ class Contribution:
 class ParliamentAPIClient:
     """Async client for all UK Parliament APIs."""
 
+    # Per-host semaphores for rate limiting (max 2 concurrent per host)
+    _host_semaphores: dict[str, asyncio.Semaphore] = {}
+
     def __init__(self):
         self.client = httpx.AsyncClient(
             timeout=60.0,
@@ -64,32 +100,43 @@ class ParliamentAPIClient:
     async def close(self):
         await self.client.aclose()
 
+    @classmethod
+    def _get_host_sem(cls, url: str) -> asyncio.Semaphore:
+        """Get or create a per-host semaphore (max 2 concurrent)."""
+        from urllib.parse import urlparse
+        host = urlparse(url).hostname or url
+        if host not in cls._host_semaphores:
+            cls._host_semaphores[host] = asyncio.Semaphore(2)
+        return cls._host_semaphores[host]
+
     async def _get(self, url: str, params: dict, max_retries: int = 3) -> dict | None:
-        """GET with retry and exponential backoff."""
-        for attempt in range(max_retries):
-            try:
-                await asyncio.sleep(REQUEST_DELAY)
-                resp = await self.client.get(url, params=params)
-                resp.raise_for_status()
-                return resp.json()
-            except httpx.HTTPStatusError as e:
-                if e.response.status_code == 429:
-                    wait = 2 ** (attempt + 1)
-                    logger.warning("Rate limited on %s, waiting %ds", url, wait)
-                    await asyncio.sleep(wait)
-                    continue
-                logger.error("HTTP %s for %s: %s", e.response.status_code, url, e)
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(2 ** attempt)
-                    continue
-                return None
-            except httpx.RequestError as e:
-                logger.error("Request error for %s: %s", url, e)
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(2 ** attempt)
-                    continue
-                return None
-        return None
+        """GET with per-host rate limiting, retry and exponential backoff."""
+        host_sem = self._get_host_sem(url)
+        async with host_sem:
+            for attempt in range(max_retries):
+                try:
+                    await asyncio.sleep(REQUEST_DELAY)
+                    resp = await self.client.get(url, params=params)
+                    resp.raise_for_status()
+                    return resp.json()
+                except httpx.HTTPStatusError as e:
+                    if e.response.status_code == 429:
+                        wait = 2 ** (attempt + 1)
+                        logger.warning("Rate limited on %s, waiting %ds", url, wait)
+                        await asyncio.sleep(wait)
+                        continue
+                    logger.error("HTTP %s for %s: %s", e.response.status_code, url, e)
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(2 ** attempt)
+                        continue
+                    return None
+                except httpx.RequestError as e:
+                    logger.error("Request error for %s: %s", url, e)
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(2 ** attempt)
+                        continue
+                    return None
+            return None
 
     # ---- Members API (enrichment) ----
 
@@ -164,18 +211,19 @@ class ParliamentAPIClient:
                     continue
 
                 contrib_ext_id = item.get("ContributionExtId", "")
+                debate_section_ext_id = item.get("DebateSectionExtId", "")
                 sitting_date = item.get("SittingDate", "")
                 try:
                     dt = datetime.fromisoformat(sitting_date.replace("Z", "+00:00"))
                 except (ValueError, AttributeError):
                     dt = datetime.now()
 
-                url = ""
-                if contrib_ext_id:
-                    url = f"https://hansard.parliament.uk/search/contribution?contributionId={contrib_ext_id}"
-
                 house = item.get("House", "")
                 debate_title = item.get("DebateSection", "") or item.get("HansardSection", "")
+
+                url = _build_hansard_url(
+                    house, dt, debate_section_ext_id, debate_title, contrib_ext_id
+                )
 
                 contributions.append(Contribution(
                     id=contrib_ext_id or item.get("ItemId", ""),
@@ -637,15 +685,13 @@ class ParliamentAPIClient:
         on_source_start=None,
         enabled_sources: list[str] | None = None,
     ) -> list[Contribution]:
-        """Search all 6 API sources for a keyword.
+        """Search all 6 API sources for a keyword in parallel.
 
         Args:
             on_source_start: Optional async callback(source_name, source_index, total_sources)
                 called before each source is searched.
             enabled_sources: Optional list of source keys to search. If None, all sources are searched.
         """
-        results = []
-
         all_sources = [
             ("Hansard", "hansard", self.search_hansard),
             ("Written Questions", "written_questions", self.search_written_questions),
@@ -661,18 +707,27 @@ class ParliamentAPIClient:
         else:
             sources = all_sources
 
-        for idx, (name, key, method) in enumerate(sources):
+        if on_source_start:
+            await on_source_start(f"all sources", 0, len(sources))
+
+        async def _search_one(name, method):
             if cancel_event and cancel_event.is_set():
-                logger.info("Scan cancelled during %s search", name)
-                break
-            if on_source_start:
-                await on_source_start(name, idx, len(sources))
+                return []
             try:
                 logger.info("Searching %s for '%s'", name, keyword)
                 found = await method(keyword, start_date, end_date)
-                results.extend(found)
                 logger.info("  -> %d results from %s", len(found), name)
+                return found
             except Exception as e:
                 logger.error("Error searching %s for '%s': %s", name, keyword, e)
+                return []
+
+        # Search all sources in parallel (per-host semaphore handles rate limiting)
+        tasks = [_search_one(name, method) for name, key, method in sources]
+        source_results = await asyncio.gather(*tasks)
+
+        results = []
+        for found in source_results:
+            results.extend(found)
 
         return results

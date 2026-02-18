@@ -6,8 +6,10 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from backend.database import init_db
+from backend.database import init_db, get_db, cleanup_stuck_scans
 from backend.routers import topics, scans, results, master
+
+logger = logging.getLogger(__name__)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,9 +28,21 @@ app.include_router(master.router)
 @app.on_event("startup")
 async def startup():
     await init_db()
+
+    # Clean up any scans left in "running" state from a previous crash
+    db = await get_db()
+    try:
+        await cleanup_stuck_scans(db)
+    finally:
+        await db.close()
+
     # Wire up the scan runner so the scans router can launch scans
-    from backend.services.scanner import run_scan
-    scans.register_scan_runner(run_scan)
+    try:
+        from backend.services.scanner import run_scan
+        scans.register_scan_runner(run_scan)
+    except Exception as e:
+        logger.error(f"Failed to import scanner: {e}")
+        # Server will start but scans won't work
 
 
 # Serve frontend static files (must be last so API routes take priority)
