@@ -5,9 +5,12 @@ import json
 import logging
 from datetime import datetime
 
+import anthropic as _anthropic
+
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
+from backend.config import ANTHROPIC_API_KEY, ANTHROPIC_MODEL
 from backend.database import (
     get_db, get_scan, get_scan_results, get_audit_log,
     get_audit_summary, get_audit_entry, get_all_topics, insert_result,
@@ -17,6 +20,32 @@ from backend.models import AuditReclassifyRequest
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["results"])
+
+
+@router.get("/classifier/health")
+async def classifier_health():
+    """Check Anthropic API connectivity and model availability."""
+    if not ANTHROPIC_API_KEY:
+        return {"status": "error", "message": "ANTHROPIC_API_KEY is not set on the server"}
+
+    try:
+        client = _anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY, timeout=10.0)
+        await client.messages.create(
+            model=ANTHROPIC_MODEL,
+            max_tokens=5,
+            messages=[{"role": "user", "content": "Hi"}],
+        )
+        return {"status": "ok", "model": ANTHROPIC_MODEL}
+    except _anthropic.AuthenticationError:
+        return {"status": "error", "message": "Invalid API key"}
+    except _anthropic.NotFoundError:
+        return {"status": "error", "message": f"Model not found: {ANTHROPIC_MODEL}"}
+    except _anthropic.APITimeoutError:
+        return {"status": "error", "message": "Anthropic API timed out"}
+    except _anthropic.APIError as e:
+        return {"status": "error", "message": str(e)}
+    except Exception as e:
+        return {"status": "error", "message": f"Unexpected error: {e}"}
 
 
 @router.get("/scans/{scan_id}/stats")

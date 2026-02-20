@@ -108,8 +108,11 @@ class TopicClassifier:
     """Async classifier using Claude Haiku 4.5 with prompt caching."""
 
     def __init__(self, topics_with_keywords: dict[str, list[str]]):
+        if not ANTHROPIC_API_KEY:
+            logger.error("ANTHROPIC_API_KEY is not set — classifier will not work")
         self.client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY, timeout=30.0)
         self.model = ANTHROPIC_MODEL
+        self.api_errors = 0  # tracks persistent API failures (not content-based rejections)
 
         # Build system prompt with topics
         topics_str = ""
@@ -181,6 +184,7 @@ class TopicClassifier:
                 if attempt < 2:
                     await asyncio.sleep(1)
                     continue
+                self.api_errors += 1
                 return None
 
             except anthropic.RateLimitError:
@@ -194,6 +198,7 @@ class TopicClassifier:
                 if attempt < 2:
                     await asyncio.sleep(2 ** attempt)
                     continue
+                self.api_errors += 1
                 return None
 
             except anthropic.APIError as e:
@@ -201,6 +206,8 @@ class TopicClassifier:
                 if attempt < 2:
                     await asyncio.sleep(2 ** attempt)
                     continue
+                self.api_errors += 1
                 return None
 
+        self.api_errors += 1
         return None

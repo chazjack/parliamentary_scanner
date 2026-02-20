@@ -80,6 +80,7 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
         "sent_to_classifier": 0,
         "classified_relevant": 0,
         "classified_discarded": 0,
+        "classifier_api_errors": 0,
         "kw_status": {},           # {keyword: "active"|"done"} — absent = pending
         "kw_counts": {},           # {keyword: api_result_count}
         "total_keywords": 0,
@@ -280,6 +281,7 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
                     )
                 else:
                     stats["classified_discarded"] += 1
+                    stats["classifier_api_errors"] = classifier.api_errors
                     not_relevant_audit.append((
                         scan_id, contribution.member_name, contribution.source_type,
                         contribution.text[:200], "not_relevant",
@@ -355,9 +357,13 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
 
     logger.info("Scan %d: %d/%d classified as relevant",
                 scan_id, total_relevant, queued_for_classify)
+    if classifier.api_errors:
+        logger.error("Scan %d: %d classifier API errors — check ANTHROPIC_API_KEY and model name",
+                     scan_id, classifier.api_errors)
 
     # Mark complete (results already stored inline during classification)
     stats["phase"] = "Scan complete"
+    stats["classifier_api_errors"] = classifier.api_errors
     await update_scan_progress(
         db, scan_id,
         status="completed",

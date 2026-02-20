@@ -340,6 +340,62 @@ header h1 {
     cursor: not-allowed;
 }
 
+/* API Status Indicator */
+.api-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: 1px solid transparent;
+    white-space: nowrap;
+    cursor: default;
+    margin-left: auto;
+}
+
+.api-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.api-status--checking {
+    background: #edf2f7;
+    border-color: #cbd5e0;
+    color: #718096;
+}
+.api-status--checking .api-status-dot {
+    background: #a0aec0;
+    animation: pulse-grey 1.5s infinite;
+}
+
+.api-status--ok {
+    background: #f0fff4;
+    border-color: #9ae6b4;
+    color: #276749;
+}
+.api-status--ok .api-status-dot {
+    background: #38a169;
+}
+
+.api-status--error {
+    background: #fff5f5;
+    border-color: #feb2b2;
+    color: #c53030;
+    cursor: help;
+}
+.api-status--error .api-status-dot {
+    background: #e53e3e;
+}
+
+@keyframes pulse-grey {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+
 .btn-small {
     padding: 6px 14px;
     font-size: 0.8rem;
@@ -962,6 +1018,26 @@ header h1 {
 
 .pipe-box.pipe-box-discarded .pipe-box-value {
     color: #742a2a;
+}
+
+.pipe-box.pipe-box-error {
+    background: #feebc8;
+    border: 1px solid #dd6b20;
+}
+
+.pipe-box.pipe-box-error .pipe-box-value {
+    color: #7b341e;
+}
+
+.api-error-warning {
+    width: 100%;
+    margin-top: 8px;
+    padding: 8px 12px;
+    background: #feebc8;
+    border: 1px solid #dd6b20;
+    border-radius: 6px;
+    color: #7b341e;
+    font-size: 0.82rem;
 }
 
 /* History */

@@ -76,11 +76,39 @@ function switchTab(tabName) {
     }
 }
 
+// API health check
+async function checkApiHealth() {
+    const el = document.getElementById('apiStatus');
+    if (!el) return;
+
+    el.className = 'api-status api-status--checking';
+    el.querySelector('.api-status-label').textContent = 'Checking API...';
+    el.title = 'Checking AI classifier connection...';
+
+    try {
+        const data = await API.get('/api/classifier/health');
+        if (data.status === 'ok') {
+            el.className = 'api-status api-status--ok';
+            el.querySelector('.api-status-label').textContent = 'API connected';
+            el.title = `Connected to ${data.model}`;
+        } else {
+            el.className = 'api-status api-status--error';
+            el.querySelector('.api-status-label').textContent = 'AI Error';
+            el.title = data.message || 'Classifier API error';
+        }
+    } catch {
+        el.className = 'api-status api-status--error';
+        el.querySelector('.api-status-label').textContent = 'AI Error';
+        el.title = 'Could not reach classifier API';
+    }
+}
+
 // Initialise app
 document.addEventListener('DOMContentLoaded', async () => {
     setDefaultDates();
     await loadTopics();
     await loadHistory();
+    checkApiHealth();
 
     // Collapse topics by default
     const topicList = document.getElementById('topicList');

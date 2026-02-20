@@ -346,6 +346,22 @@ function renderPipelineBoxes(stats) {
         </div>`;
     }
 
+    const apiErrors = stats.classifier_api_errors || 0;
+    if (apiErrors > 0) {
+        html += `<div class="pipe-box pipe-box-error">
+            <div class="pipe-box-value">${apiErrors}</div>
+            <div class="pipe-box-label">API Errors</div>
+        </div>`;
+        // Show warning below the boxes
+        const existing = pipelineStatsRow.parentElement.querySelector('.api-error-warning');
+        if (!existing) {
+            const warn = document.createElement('p');
+            warn.className = 'api-error-warning';
+            warn.textContent = '⚠ Classifier API errors detected. Check that ANTHROPIC_API_KEY is set on the server and the model name is correct.';
+            pipelineStatsRow.parentElement.appendChild(warn);
+        }
+    }
+
     pipelineStatsRow.innerHTML = html;
 }
 
