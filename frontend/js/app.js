@@ -117,6 +117,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadTopics();
     await loadHistory();
     checkApiHealth();
+    setInterval(checkApiHealth, 60000); // recheck every 60 seconds
 
     // Collapse topics by default
     const topicList = document.getElementById('topicList');
