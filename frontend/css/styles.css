@@ -66,6 +66,15 @@ main {
 header {
     padding: 24px 0 8px;
     margin-bottom: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.header-logo {
+    height: 40px;
+    width: auto;
+    flex-shrink: 0;
 }
 
 header h1 {
