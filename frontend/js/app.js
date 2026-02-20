@@ -58,10 +58,18 @@ function switchTab(tabName) {
     // Toggle tab content
     document.getElementById('tab-scanner').style.display = tabName === 'scanner' ? '' : 'none';
     document.getElementById('tab-record').style.display = tabName === 'record' ? '' : 'none';
+    document.getElementById('tab-lookahead').style.display = tabName === 'lookahead' ? '' : 'none';
+
+    // Hide sidebar TOC on non-scanner tabs
+    const toc = document.getElementById('pageToc');
+    if (toc) toc.style.display = tabName === 'scanner' ? '' : 'none';
 
     // Load data for the active tab
     if (tabName === 'record') {
         loadMasterListTable();
+    }
+    if (tabName === 'lookahead') {
+        initLookahead();
     }
 }
 
@@ -95,6 +103,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // ---- Sidebar TOC scroll tracking ----
     initTocScrollTracking();
+
+    // Default to Look Ahead tab
+    switchTab('lookahead');
 });
 
 function initTocScrollTracking() {

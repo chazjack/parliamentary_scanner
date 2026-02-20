@@ -13,7 +13,8 @@
 
     <!-- Tab Navigation -->
     <nav class="tab-nav">
-        <button class="tab-btn active" data-tab="scanner" onclick="switchTab('scanner')">Scanner</button>
+        <button class="tab-btn active" data-tab="lookahead" onclick="switchTab('lookahead')">Look Ahead</button>
+        <button class="tab-btn" data-tab="scanner" onclick="switchTab('scanner')">Scanner</button>
         <button class="tab-btn" data-tab="record" onclick="switchTab('record')">Record</button>
     </nav>
 
@@ -28,7 +29,7 @@
 
     <main>
         <!-- ===== Scanner Tab ===== -->
-        <div id="tab-scanner">
+        <div id="tab-scanner" style="display:none;">
             <!-- Grouped Control Card -->
             <section class="control-group-card">
             <!-- Scan Controls -->
@@ -197,6 +198,86 @@
                 <p id="masterEmpty" class="empty-state" style="display:none;">No stakeholders yet. Add members from scan results using the + button.</p>
             </section>
         </div>
+        <!-- ===== Look Ahead Tab ===== -->
+        <div id="tab-lookahead">
+            <!-- Top controls: date nav + view toggle + refresh -->
+            <section class="control-group-card" style="margin-bottom:16px;">
+                <div class="lookahead-controls">
+                    <div class="lookahead-nav">
+                        <button class="btn-small" id="laPrevWeek" title="Previous week">&larr;</button>
+                        <span class="lookahead-date-label" id="laDateLabel">This Week</span>
+                        <button class="btn-small" id="laNextWeek" title="Next week">&rarr;</button>
+                        <button class="btn-small" id="laToday" title="Jump to this week">Today</button>
+                    </div>
+                    <div class="lookahead-view-toggle">
+                        <button class="la-view-btn active" data-view="week">Week</button>
+                        <button class="la-view-btn" data-view="list">List</button>
+                    </div>
+                    <button class="btn-small" id="laRefreshBtn" title="Refresh from Parliament">&#8635; Refresh</button>
+                </div>
+            </section>
+
+            <!-- Main area: filter sidebar + content -->
+            <div class="la-main-area">
+                <!-- Filter Sidebar -->
+                <aside class="la-filter-sidebar">
+                    <!-- Sources / Event Types -->
+                    <div class="la-filter-section">
+                        <span class="source-label">SOURCES</span>
+                        <label class="la-filter-item"><input type="checkbox" class="la-type-checkbox" data-type="debate" checked> Debates</label>
+                        <label class="la-filter-item"><input type="checkbox" class="la-type-checkbox" data-type="oral_questions" checked> Oral Qs</label>
+                        <label class="la-filter-item"><input type="checkbox" class="la-type-checkbox" data-type="committee" checked> Committees</label>
+                        <label class="la-filter-item"><input type="checkbox" class="la-type-checkbox" data-type="bill_stage" checked> Bill Stages</label>
+                        <label class="la-filter-item"><input type="checkbox" class="la-type-checkbox" data-type="westminster_hall" checked> Westminster Hall</label>
+                        <label class="la-filter-item"><input type="checkbox" class="la-type-checkbox" data-type="statement" checked> Statements</label>
+                        <label class="la-filter-item"><input type="checkbox" class="la-type-checkbox" data-type="general_committee" checked> Gen. Committees</label>
+                    </div>
+
+                    <!-- House -->
+                    <div class="la-filter-section">
+                        <span class="source-label">HOUSE</span>
+                        <label class="la-filter-item"><input type="checkbox" class="la-house-checkbox" data-house="Commons" checked> Commons</label>
+                        <label class="la-filter-item"><input type="checkbox" class="la-house-checkbox" data-house="Lords" checked> Lords</label>
+                    </div>
+
+                    <!-- Topics -->
+                    <div class="la-filter-section">
+                        <span class="source-label">TOPICS</span>
+                        <label class="la-filter-item"><input type="checkbox" id="laShowAll" checked> Show all</label>
+                        <label class="la-filter-item"><input type="checkbox" id="laStarredOnly"> Starred only</label>
+                        <div id="laTopicCheckboxes" class="la-topic-checkboxes"></div>
+                    </div>
+                </aside>
+
+                <!-- Content area -->
+                <div class="la-content-area">
+                    <!-- Week View -->
+                    <section id="la-week-view" class="la-week-container"></section>
+
+                    <!-- List View (hidden by default) -->
+                    <section id="la-list-view" style="display:none;">
+                        <div class="la-list-card">
+                            <div class="table-container">
+                                <table id="laListTable">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Time</th>
+                                            <th>Event</th>
+                                            <th>Type</th>
+                                            <th>House</th>
+                                            <th>Location</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="laListBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
     </main>
 
     <script src="/js/app.js"></script>
@@ -205,5 +286,6 @@
     <script src="/js/scanner.js"></script>
     <script src="/js/results.js"></script>
     <script src="/js/master.js"></script>
+    <script src="/js/lookahead.js"></script>
 </body>
 </html>

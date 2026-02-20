@@ -104,6 +104,42 @@ CREATE TABLE IF NOT EXISTS master_activities (
     result_id INTEGER NOT NULL REFERENCES results(id) ON DELETE CASCADE,
     UNIQUE(master_id, result_id)
 );
+
+CREATE TABLE IF NOT EXISTS lookahead_events (
+    id TEXT PRIMARY KEY,
+    source TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    event_type TEXT NOT NULL,
+    category TEXT,
+    type TEXT,
+    house TEXT,
+    location TEXT,
+    start_date TEXT NOT NULL,
+    start_time TEXT,
+    end_time TEXT,
+    committee_name TEXT,
+    inquiry_name TEXT,
+    bill_name TEXT,
+    source_url TEXT NOT NULL,
+    members TEXT,
+    raw_json TEXT,
+    fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_la_start_date ON lookahead_events(start_date);
+
+CREATE TABLE IF NOT EXISTS lookahead_starred (
+    event_id TEXT PRIMARY KEY,
+    note TEXT DEFAULT '',
+    starred_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS lookahead_cache_meta (
+    cache_key TEXT PRIMARY KEY,
+    fetched_at TIMESTAMP NOT NULL,
+    event_count INTEGER DEFAULT 0
+);
 """
 
 # Default topics and keywords seeded on first run (from v1 config)
@@ -641,3 +677,122 @@ async def remove_master_activity_by_result(db: aiosqlite.Connection, result_id: 
 
     await db.commit()
     return True
+
+
+# --- Look Ahead query helpers ---
+
+
+async def upsert_lookahead_events(db: aiosqlite.Connection, events: list[dict]):
+    """Batch upsert lookahead events."""
+    for ev in events:
+        await db.execute(
+            """INSERT OR REPLACE INTO lookahead_events
+            (id, source, title, description, event_type, category, type, house,
+             location, start_date, start_time, end_time, committee_name,
+             inquiry_name, bill_name, source_url, members, raw_json, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)""",
+            (
+                ev["id"], ev["source"], ev["title"], ev.get("description", ""),
+                ev["event_type"], ev.get("category", ""), ev.get("type", ""),
+                ev.get("house", ""), ev.get("location", ""),
+                ev["start_date"], ev.get("start_time", ""), ev.get("end_time", ""),
+                ev.get("committee_name", ""), ev.get("inquiry_name", ""),
+                ev.get("bill_name", ""), ev["source_url"],
+                ev.get("members", "[]"), ev.get("raw_json", "{}"),
+            ),
+        )
+    await db.commit()
+
+
+async def get_lookahead_events(
+    db: aiosqlite.Connection,
+    start_date: str,
+    end_date: str,
+    event_types: list[str] | None = None,
+    houses: list[str] | None = None,
+    keywords: list[str] | None = None,
+    starred_only: bool = False,
+) -> list[dict]:
+    """Query cached events with optional filters."""
+    sql = """
+        SELECT e.*,
+               CASE WHEN s.event_id IS NOT NULL THEN 1 ELSE 0 END AS is_starred
+        FROM lookahead_events e
+        LEFT JOIN lookahead_starred s ON s.event_id = e.id
+        WHERE e.start_date >= ? AND e.start_date <= ?
+    """
+    params: list = [start_date, end_date]
+
+    if event_types:
+        placeholders = ",".join("?" for _ in event_types)
+        sql += f" AND e.event_type IN ({placeholders})"
+        params.extend(event_types)
+
+    if houses:
+        placeholders = ",".join("?" for _ in houses)
+        sql += f" AND e.house IN ({placeholders})"
+        params.extend(houses)
+
+    if keywords:
+        kw_clauses = []
+        for kw in keywords:
+            kw_clauses.append("(e.title LIKE ? OR e.description LIKE ?)")
+            params.extend([f"%{kw}%", f"%{kw}%"])
+        sql += f" AND ({' OR '.join(kw_clauses)})"
+
+    if starred_only:
+        sql += " AND s.event_id IS NOT NULL"
+
+    sql += " ORDER BY e.start_date, e.start_time"
+    cursor = await db.execute(sql, params)
+    return [dict(row) for row in await cursor.fetchall()]
+
+
+async def star_lookahead_event(db: aiosqlite.Connection, event_id: str) -> bool:
+    """Star a lookahead event. Returns True if newly starred."""
+    cursor = await db.execute(
+        "INSERT OR IGNORE INTO lookahead_starred (event_id) VALUES (?)",
+        (event_id,),
+    )
+    await db.commit()
+    return cursor.rowcount > 0
+
+
+async def unstar_lookahead_event(db: aiosqlite.Connection, event_id: str) -> bool:
+    """Unstar a lookahead event. Returns True if was starred."""
+    cursor = await db.execute(
+        "DELETE FROM lookahead_starred WHERE event_id = ?", (event_id,)
+    )
+    await db.commit()
+    return cursor.rowcount > 0
+
+
+async def get_lookahead_cache_meta(
+    db: aiosqlite.Connection, cache_key: str
+) -> dict | None:
+    """Get cache metadata for a key."""
+    cursor = await db.execute(
+        "SELECT * FROM lookahead_cache_meta WHERE cache_key = ?", (cache_key,)
+    )
+    row = await cursor.fetchone()
+    return dict(row) if row else None
+
+
+async def set_lookahead_cache_meta(
+    db: aiosqlite.Connection, cache_key: str, event_count: int
+):
+    """Set cache metadata for a key."""
+    await db.execute(
+        """INSERT OR REPLACE INTO lookahead_cache_meta (cache_key, fetched_at, event_count)
+           VALUES (?, CURRENT_TIMESTAMP, ?)""",
+        (cache_key, event_count),
+    )
+    await db.commit()
+
+
+async def clear_old_lookahead_events(db: aiosqlite.Connection, before_date: str):
+    """Remove lookahead events with start_date before the given date."""
+    await db.execute(
+        "DELETE FROM lookahead_events WHERE start_date < ?", (before_date,)
+    )
+    await db.commit()

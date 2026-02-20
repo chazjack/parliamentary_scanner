@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from backend.database import init_db, get_db, cleanup_stuck_scans
-from backend.routers import topics, scans, results, master
+from backend.routers import topics, scans, results, master, lookahead
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,7 @@ app.include_router(topics.router)
 app.include_router(scans.router)
 app.include_router(results.router)
 app.include_router(master.router)
+app.include_router(lookahead.router)
 
 
 @app.on_event("startup")

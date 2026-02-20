@@ -1905,3 +1905,569 @@ header h1 {
         padding: 6px 12px;
     }
 }
+
+
+/* ========== LOOK AHEAD TAB ========== */
+
+/* Event type colour variables */
+:root {
+    --event-debate: #2563eb;
+    --event-oral-qs: #7c3aed;
+    --event-committee: #0891b2;
+    --event-bill-stage: #dc2626;
+    --event-westminster-hall: #ca8a04;
+    --event-statement: #16a34a;
+    --event-gen-committee: #9333ea;
+}
+
+/* Controls row */
+.lookahead-controls {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.lookahead-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.lookahead-date-label {
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--primary);
+    min-width: 130px;
+    text-align: center;
+}
+
+/* View toggle (Week / List) */
+.lookahead-view-toggle {
+    display: inline-flex;
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-left: auto;
+}
+
+.la-view-btn {
+    padding: 6px 16px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    background: white;
+    border: 2px solid var(--primary);
+    color: var(--primary);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.la-view-btn.active {
+    background: var(--primary);
+    color: white;
+}
+
+.la-view-btn:first-child {
+    border-radius: var(--radius) 0 0 var(--radius);
+    border-right: none;
+}
+
+.la-view-btn:last-child {
+    border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+/* Event type toggle buttons */
+.la-type-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+}
+
+.la-type-btn {
+    padding: 5px 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    border: 2px solid var(--text-light);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: all 0.2s;
+    background: white;
+    color: var(--text-light);
+    position: relative;
+}
+
+.la-type-btn[data-type="debate"] { border-color: var(--event-debate); color: var(--event-debate); }
+.la-type-btn[data-type="debate"].active { background: var(--event-debate); color: white; }
+.la-type-btn[data-type="oral_questions"] { border-color: var(--event-oral-qs); color: var(--event-oral-qs); }
+.la-type-btn[data-type="oral_questions"].active { background: var(--event-oral-qs); color: white; }
+.la-type-btn[data-type="committee"] { border-color: var(--event-committee); color: var(--event-committee); }
+.la-type-btn[data-type="committee"].active { background: var(--event-committee); color: white; }
+.la-type-btn[data-type="bill_stage"] { border-color: var(--event-bill-stage); color: var(--event-bill-stage); }
+.la-type-btn[data-type="bill_stage"].active { background: var(--event-bill-stage); color: white; }
+.la-type-btn[data-type="westminster_hall"] { border-color: var(--event-westminster-hall); color: var(--event-westminster-hall); }
+.la-type-btn[data-type="westminster_hall"].active { background: var(--event-westminster-hall); color: white; }
+.la-type-btn[data-type="statement"] { border-color: var(--event-statement); color: var(--event-statement); }
+.la-type-btn[data-type="statement"].active { background: var(--event-statement); color: white; }
+.la-type-btn[data-type="general_committee"] { border-color: var(--event-gen-committee); color: var(--event-gen-committee); }
+.la-type-btn[data-type="general_committee"].active { background: var(--event-gen-committee); color: white; }
+
+.la-type-btn.active:hover { opacity: 0.85; }
+.la-type-btn:not(.active):hover { opacity: 0.7; }
+
+/* Tooltip on hover */
+.la-type-btn[data-description]:hover::after {
+    content: attr(data-description);
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0;
+    background: var(--text);
+    color: white;
+    padding: 6px 10px;
+    border-radius: var(--radius);
+    font-size: 0.75rem;
+    font-weight: 400;
+    white-space: nowrap;
+    z-index: 1000;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    pointer-events: none;
+    line-height: 1.3;
+}
+
+/* House toggle buttons */
+.la-house-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.la-house-btn {
+    padding: 5px 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    border: 2px solid var(--primary);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: all 0.2s;
+    background: white;
+    color: var(--primary);
+}
+
+.la-house-btn.active {
+    background: var(--primary);
+    color: white;
+}
+
+.la-house-btn.active:hover { opacity: 0.85; }
+.la-house-btn:not(.active):hover { opacity: 0.7; }
+
+/* Topic filter header */
+.la-topic-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.la-filter-toggles {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+}
+
+.la-checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.8rem;
+    color: var(--text-light);
+    cursor: pointer;
+    user-select: none;
+}
+
+.la-checkbox-label input[type="checkbox"] {
+    cursor: pointer;
+}
+
+/* Topic pills in Look Ahead */
+.la-topic-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+    transition: opacity 0.2s;
+}
+
+/* ========== Look Ahead Sidebar Layout ========== */
+
+.la-main-area {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+}
+
+.la-filter-sidebar {
+    width: 180px;
+    min-width: 180px;
+    flex-shrink: 0;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    position: sticky;
+    top: 20px;
+}
+
+.la-filter-section {
+    margin-bottom: 16px;
+}
+
+.la-filter-section:last-child {
+    margin-bottom: 0;
+}
+
+.la-filter-section .source-label {
+    display: block;
+    margin-bottom: 6px;
+}
+
+.la-filter-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    padding: 2px 0;
+    color: var(--text);
+    user-select: none;
+}
+
+.la-filter-item input[type="checkbox"] {
+    cursor: pointer;
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+}
+
+.la-topic-checkboxes {
+    margin-top: 6px;
+    transition: opacity 0.2s;
+}
+
+.la-topic-filter-item {
+    font-size: 0.8rem;
+}
+
+.la-content-area {
+    flex: 1;
+    min-width: 0;
+}
+
+/* ========== Week View ========== */
+
+.la-week-container {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 8px;
+}
+
+.la-day-column {
+    flex: 1;
+    min-width: 180px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.la-day-column.la-today {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 1px var(--primary);
+}
+
+.la-day-header {
+    background: var(--primary);
+    color: white;
+    padding: 8px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.85rem;
+    gap: 6px;
+}
+
+.la-day-column.la-today .la-day-header {
+    background: var(--primary-light);
+}
+
+.la-day-name {
+    font-weight: 700;
+}
+
+.la-day-date {
+    font-size: 0.75rem;
+    opacity: 0.8;
+}
+
+.la-day-count {
+    background: rgba(255,255,255,0.2);
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    margin-left: auto;
+}
+
+.la-day-events {
+    padding: 4px;
+    flex: 1;
+    overflow-y: auto;
+    max-height: 600px;
+}
+
+.la-no-events {
+    padding: 16px;
+    text-align: center;
+    color: var(--text-light);
+    font-style: italic;
+    font-size: 0.8rem;
+}
+
+/* Event Card */
+.la-event-card {
+    margin: 4px 0;
+    padding: 8px 10px;
+    border-left: 4px solid var(--primary);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    font-size: 0.8rem;
+    transition: box-shadow 0.15s;
+}
+
+.la-event-card:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+.la-event-time {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text-light);
+    display: block;
+    margin-bottom: 2px;
+}
+
+.la-event-title {
+    font-weight: 600;
+    font-size: 0.8rem;
+    line-height: 1.3;
+    margin-bottom: 4px;
+}
+
+.la-event-link {
+    color: inherit;
+    text-decoration: none;
+}
+
+.la-event-link:hover {
+    text-decoration: underline;
+}
+
+.la-event-detail {
+    font-size: 0.7rem;
+    color: var(--text-light);
+    margin-bottom: 4px;
+    line-height: 1.3;
+}
+
+.la-event-meta {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.la-event-type-badge {
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    white-space: nowrap;
+    color: white;
+}
+
+.la-event-house {
+    font-size: 0.7rem;
+    color: var(--text-light);
+}
+
+
+/* Star button */
+.la-star-btn {
+    background: none;
+    border: none;
+    font-size: 1rem;
+    cursor: pointer;
+    color: #cbd5e0;
+    padding: 0 2px;
+    line-height: 1;
+    transition: color 0.15s;
+    margin-left: auto;
+}
+
+.la-star-btn:hover {
+    color: #ca8a04;
+}
+
+.la-star-btn.starred {
+    color: #ca8a04;
+}
+
+/* ========== List View ========== */
+
+.la-list-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+}
+
+#laListTable {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+#laListTable th {
+    background: var(--primary);
+    color: white;
+    padding: 10px 8px;
+    text-align: left;
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+    white-space: nowrap;
+}
+
+#laListTable td {
+    padding: 8px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+}
+
+#laListTable tbody tr:hover {
+    background: #f7fafc;
+}
+
+.la-list-date {
+    white-space: nowrap;
+    font-weight: 600;
+}
+
+.la-list-detail {
+    font-size: 0.75rem;
+    color: var(--text-light);
+    margin-top: 2px;
+}
+
+/* Empty message */
+.la-empty-message {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-light);
+    font-style: italic;
+}
+
+/* ========== Look Ahead Responsive ========== */
+
+@media (max-width: 1200px) {
+    .la-week-container {
+        gap: 6px;
+    }
+
+    .la-day-column {
+        min-width: 160px;
+    }
+}
+
+@media (max-width: 768px) {
+    .la-main-area {
+        flex-direction: column;
+    }
+
+    .la-filter-sidebar {
+        width: 100%;
+        min-width: auto;
+        position: static;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        padding: 12px 16px;
+    }
+
+    .la-filter-section {
+        margin-bottom: 0;
+        min-width: 140px;
+    }
+
+    .la-week-container {
+        flex-direction: column;
+    }
+
+    .la-day-column {
+        min-width: auto;
+    }
+
+    .la-day-events {
+        max-height: 300px;
+    }
+
+    .lookahead-controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .lookahead-view-toggle {
+        margin-left: 0;
+    }
+
+    .lookahead-nav {
+        justify-content: center;
+    }
+
+    .la-list-card {
+        padding: 12px 16px;
+    }
+
+    #laListTable {
+        font-size: 0.8rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .la-type-btn {
+        font-size: 0.7rem;
+        padding: 4px 8px;
+        flex: 1 1 auto;
+    }
+
+    .la-event-card {
+        padding: 6px 8px;
+    }
+
+    .lookahead-date-label {
+        font-size: 0.9rem;
+        min-width: auto;
+    }
+
+    #laListTable {
+        font-size: 0.75rem;
+    }
+
+    #laListTable th,
+    #laListTable td {
+        padding: 6px 4px;
+    }
+}

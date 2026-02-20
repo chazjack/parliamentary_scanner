@@ -21,6 +21,11 @@ EDM_API_BASE = "https://oralquestionsandmotions-api.parliament.uk"
 BILLS_API_BASE = "https://bills-api.parliament.uk"
 DIVISIONS_API_BASE = "https://commonsvotes-api.parliament.uk"
 MEMBERS_API_BASE = "https://members-api.parliament.uk"
+WHATSON_API_BASE = "https://whatson-api.parliament.uk"
+COMMITTEES_API_BASE = "https://committees-api.parliament.uk"
+
+# Look Ahead cache
+LOOKAHEAD_CACHE_TTL = 7200  # seconds (2 hours)
 
 # Rate limiting
 REQUEST_DELAY = 0.2  # seconds between Parliament API calls
