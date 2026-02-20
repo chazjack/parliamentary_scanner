@@ -50,6 +50,9 @@ function setDefaultDates() {
 
 // Tab switching
 function switchTab(tabName) {
+    // Update URL hash so refresh restores the correct tab
+    history.replaceState(null, '', '#' + tabName);
+
     // Toggle tab buttons
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.tab === tabName);
@@ -104,8 +107,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ---- Sidebar TOC scroll tracking ----
     initTocScrollTracking();
 
-    // Default to Look Ahead tab
-    switchTab('lookahead');
+    // Switch to tab from URL hash, defaulting to Look Ahead
+    const validTabs = ['lookahead', 'scanner', 'record'];
+    const hash = window.location.hash.slice(1);
+    switchTab(validTabs.includes(hash) ? hash : 'lookahead');
+});
+
+// Handle browser back/forward navigation
+window.addEventListener('hashchange', () => {
+    const validTabs = ['lookahead', 'scanner', 'record'];
+    const hash = window.location.hash.slice(1);
+    if (validTabs.includes(hash)) switchTab(hash);
 });
 
 function initTocScrollTracking() {
