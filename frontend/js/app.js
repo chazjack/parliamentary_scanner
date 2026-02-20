@@ -85,21 +85,29 @@ async function checkApiHealth() {
     el.querySelector('.api-status-label').textContent = 'Checking API...';
     el.title = 'Checking AI classifier connection...';
 
+    // Abort if no response within 12 seconds
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
+
     try {
-        const data = await API.get('/api/classifier/health');
+        const res = await fetch('/api/classifier/health', { signal: controller.signal });
+        clearTimeout(timer);
+        const data = await res.json();
+
         if (data.status === 'ok') {
             el.className = 'api-status api-status--ok';
             el.querySelector('.api-status-label').textContent = 'API connected';
             el.title = `Connected to ${data.model}`;
         } else {
             el.className = 'api-status api-status--error';
-            el.querySelector('.api-status-label').textContent = 'AI Error';
+            el.querySelector('.api-status-label').textContent = 'API not connected';
             el.title = data.message || 'Classifier API error';
         }
     } catch {
+        clearTimeout(timer);
         el.className = 'api-status api-status--error';
-        el.querySelector('.api-status-label').textContent = 'AI Error';
-        el.title = 'Could not reach classifier API';
+        el.querySelector('.api-status-label').textContent = 'API not connected';
+        el.title = 'Could not reach classifier — check server logs';
     }
 }
 

@@ -37,12 +37,11 @@ async def classifier_health():
         )
         return {"status": "ok", "model": ANTHROPIC_MODEL}
     except _anthropic.AuthenticationError:
-        return {"status": "error", "message": "Invalid API key"}
-    except _anthropic.NotFoundError:
-        return {"status": "error", "message": f"Model not found: {ANTHROPIC_MODEL}"}
+        return {"status": "error", "message": "Invalid or missing API key"}
     except _anthropic.APITimeoutError:
-        return {"status": "error", "message": "Anthropic API timed out"}
+        return {"status": "error", "message": "Anthropic API timed out — check network/firewall"}
     except _anthropic.APIError as e:
+        # Covers model-not-found, rate limits, server errors, etc.
         return {"status": "error", "message": str(e)}
     except Exception as e:
         return {"status": "error", "message": f"Unexpected error: {e}"}

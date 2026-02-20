@@ -352,7 +352,8 @@ header h1 {
     border: 1px solid transparent;
     white-space: nowrap;
     cursor: default;
-    margin-left: auto;
+    margin-left: auto;  /* push to right in flex row */
+    flex-shrink: 0;
 }
 
 .api-status-dot {
