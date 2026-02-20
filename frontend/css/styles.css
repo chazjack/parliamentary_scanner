@@ -42,25 +42,12 @@ body {
     padding: 0 20px 40px;
     max-width: 1400px;
     margin: 0 auto;
-    display: flex;
-    flex-wrap: wrap;
     overflow-x: hidden;
 }
 
-/* Header and tab-nav span full width */
-header, .tab-nav {
-    width: 100%;
-    flex: 0 0 100%;
-    order: -2;  /* Ensure these come first */
-}
-
-/* Sidebar + main sit side by side */
 main {
-    flex: 1 1 0;
-    min-width: 0;
-    /* width: 100% removed - let flex handle sizing */
+    width: 100%;
     overflow-x: hidden;
-    order: -1;  /* Keep with sidebar */
 }
 
 header {
@@ -1592,61 +1579,10 @@ header h1 {
     color: var(--text-light);
 }
 
-/* Sidebar Table of Contents */
-.page-toc {
-    position: sticky;
-    top: 20px;
-    width: 160px;
-    min-width: 160px;
-    max-width: 160px;
-    flex-shrink: 0;
-    flex-basis: 160px;
-    padding-top: 12px;
-    height: fit-content;
-    margin-right: 16px;
-    box-sizing: border-box;
-    order: -1;  /* Keep with main content */
-}
-
-.toc-link {
-    display: block;
-    padding: 7px 12px;
-    font-size: 0.8rem;
-    color: var(--text-light);
-    text-decoration: none;
-    border-left: 3px solid transparent;
-    transition: all 0.15s;
-}
-
-.toc-link:hover {
-    color: var(--text);
-}
-
-.toc-link.active {
-    font-weight: 700;
-    color: var(--primary);
-    border-left-color: var(--primary);
-}
 
 /* ========== RESPONSIVE DESIGN ========== */
 
-/* Hide sidebar at widths where it doesn't fit */
 @media (max-width: 1200px) {
-    .page-toc {
-        display: none;
-    }
-
-    main {
-        width: 100%;
-        max-width: 100%;
-        flex: 1 1 100%;
-    }
-
-    body {
-        overflow-x: hidden;
-    }
-
-    /* Reduce some spacing */
     .control-group-card,
     #history-section,
     #results-section,
@@ -1655,7 +1591,6 @@ header h1 {
         margin-bottom: 12px;
     }
 
-    /* Make source buttons wrap better */
     .source-toggle-row {
         gap: 6px;
     }

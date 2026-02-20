@@ -63,10 +63,6 @@ function switchTab(tabName) {
     document.getElementById('tab-record').style.display = tabName === 'record' ? '' : 'none';
     document.getElementById('tab-lookahead').style.display = tabName === 'lookahead' ? '' : 'none';
 
-    // Hide sidebar TOC on non-scanner tabs
-    const toc = document.getElementById('pageToc');
-    if (toc) toc.style.display = tabName === 'scanner' ? '' : 'none';
-
     // Load data for the active tab
     if (tabName === 'record') {
         loadMasterListTable();
@@ -141,9 +137,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         auditList.innerHTML = '<p class="empty-state-preview">No discarded items yet. Run a scan to see results.</p>';
     }
 
-    // ---- Sidebar TOC scroll tracking ----
-    initTocScrollTracking();
-
     // Switch to tab from URL hash, defaulting to Look Ahead
     const validTabs = ['lookahead', 'scanner', 'record'];
     const hash = window.location.hash.slice(1);
@@ -157,51 +150,3 @@ window.addEventListener('hashchange', () => {
     if (validTabs.includes(hash)) switchTab(hash);
 });
 
-function initTocScrollTracking() {
-    const tocLinks = document.querySelectorAll('.toc-link');
-    const sections = [];
-    tocLinks.forEach(link => {
-        const href = link.getAttribute('href');
-        if (href && href.startsWith('#')) {
-            const section = document.getElementById(href.slice(1));
-            if (section) sections.push({ link, section });
-        }
-    });
-
-    if (sections.length === 0) return;
-
-    // IntersectionObserver to track which section is in view
-    const observer = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting) {
-                tocLinks.forEach(l => l.classList.remove('active'));
-                const match = sections.find(s => s.section === entry.target);
-                if (match) match.link.classList.add('active');
-            }
-        });
-    }, { rootMargin: '-10% 0px -70% 0px' });
-
-    sections.forEach(({ section }) => observer.observe(section));
-
-    // Click handler: smooth scroll
-    tocLinks.forEach(link => {
-        link.addEventListener('click', (e) => {
-            e.preventDefault();
-            const targetId = link.getAttribute('href').slice(1);
-            const target = document.getElementById(targetId);
-            if (target) {
-                target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }
-        });
-    });
-
-    // Show/hide "Discarded Items" TOC link based on audit section visibility
-    const auditLink = document.getElementById('tocAuditLink');
-    const auditSection = document.getElementById('audit-section');
-    if (auditLink && auditSection) {
-        const auditObserver = new MutationObserver(() => {
-            auditLink.style.display = auditSection.style.display === 'none' ? 'none' : '';
-        });
-        auditObserver.observe(auditSection, { attributes: true, attributeFilter: ['style'] });
-    }
-}
