@@ -63,6 +63,9 @@ async def scan_progress(scan_id: int):
     async def event_stream():
         last_progress = -1.0
         last_phase = ""
+        loop = asyncio.get_event_loop()
+        last_keepalive = loop.time()
+
         while True:
             db = await get_db()
             try:
@@ -90,6 +93,11 @@ async def scan_progress(scan_id: int):
                 yield f"data: {json.dumps(payload)}\n\n"
                 last_progress = progress
                 last_phase = phase
+                last_keepalive = loop.time()
+            elif loop.time() - last_keepalive > 15:
+                # Keep connection alive through proxies/CDNs that drop idle streams
+                yield ": keepalive\n\n"
+                last_keepalive = loop.time()
 
             if status in ("completed", "cancelled", "error"):
                 final = {

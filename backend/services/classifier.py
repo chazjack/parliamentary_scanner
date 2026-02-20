@@ -108,7 +108,7 @@ class TopicClassifier:
     """Async classifier using Claude Haiku 4.5 with prompt caching."""
 
     def __init__(self, topics_with_keywords: dict[str, list[str]]):
-        self.client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+        self.client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY, timeout=30.0)
         self.model = ANTHROPIC_MODEL
 
         # Build system prompt with topics
@@ -188,6 +188,13 @@ class TopicClassifier:
                 logger.warning("Anthropic rate limited, waiting %ds", wait)
                 await asyncio.sleep(wait)
                 continue
+
+            except anthropic.APITimeoutError:
+                logger.warning("Anthropic timeout for %s (attempt %d)", contribution.id, attempt + 1)
+                if attempt < 2:
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+                return None
 
             except anthropic.APIError as e:
                 logger.error("Anthropic API error for %s: %s", contribution.id, e)
