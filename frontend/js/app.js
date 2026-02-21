@@ -62,6 +62,7 @@ function switchTab(tabName) {
     document.getElementById('tab-scanner').style.display = tabName === 'scanner' ? '' : 'none';
     document.getElementById('tab-record').style.display = tabName === 'record' ? '' : 'none';
     document.getElementById('tab-lookahead').style.display = tabName === 'lookahead' ? '' : 'none';
+    document.getElementById('tab-alerts').style.display = tabName === 'alerts' ? '' : 'none';
 
     // Load data for the active tab
     if (tabName === 'record') {
@@ -69,6 +70,9 @@ function switchTab(tabName) {
     }
     if (tabName === 'lookahead') {
         initLookahead();
+    }
+    if (tabName === 'alerts') {
+        loadAlerts();
     }
 }
 
@@ -138,14 +142,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Switch to tab from URL hash, defaulting to Look Ahead
-    const validTabs = ['lookahead', 'scanner', 'record'];
+    const validTabs = ['lookahead', 'scanner', 'record', 'alerts'];
     const hash = window.location.hash.slice(1);
     switchTab(validTabs.includes(hash) ? hash : 'lookahead');
 });
 
 // Handle browser back/forward navigation
 window.addEventListener('hashchange', () => {
-    const validTabs = ['lookahead', 'scanner', 'record'];
+    const validTabs = ['lookahead', 'scanner', 'record', 'alerts'];
     const hash = window.location.hash.slice(1);
     if (validTabs.includes(hash)) switchTab(hash);
 });

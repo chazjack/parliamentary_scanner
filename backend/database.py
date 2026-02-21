@@ -140,6 +140,46 @@ CREATE TABLE IF NOT EXISTS lookahead_cache_meta (
     fetched_at TIMESTAMP NOT NULL,
     event_count INTEGER DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS email_alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    alert_type TEXT NOT NULL,
+    enabled INTEGER DEFAULT 1,
+    cadence TEXT DEFAULT 'weekly',
+    day_of_week TEXT DEFAULT 'monday',
+    send_time TEXT DEFAULT '09:00',
+    timezone TEXT DEFAULT 'Europe/London',
+    topic_ids TEXT,
+    sources TEXT,
+    scan_period_days INTEGER DEFAULT 7,
+    lookahead_days INTEGER DEFAULT 7,
+    event_types TEXT,
+    houses TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_run_at TIMESTAMP,
+    last_run_status TEXT,
+    last_run_error TEXT
+);
+
+CREATE TABLE IF NOT EXISTS alert_recipients (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    alert_id INTEGER NOT NULL REFERENCES email_alerts(id) ON DELETE CASCADE,
+    email TEXT NOT NULL,
+    UNIQUE(alert_id, email)
+);
+
+CREATE TABLE IF NOT EXISTS alert_run_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    alert_id INTEGER NOT NULL REFERENCES email_alerts(id) ON DELETE CASCADE,
+    run_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    status TEXT NOT NULL,
+    scan_id INTEGER,
+    recipients_count INTEGER DEFAULT 0,
+    results_count INTEGER DEFAULT 0,
+    error_message TEXT
+);
 """
 
 # Default topics and keywords seeded on first run (from v1 config)
@@ -254,6 +294,18 @@ async def init_db():
             await db.execute("ALTER TABLE audit_log ADD COLUMN full_text TEXT")
             await db.commit()
             logger.info("Migrated audit_log: added full_text column")
+
+        # Migration: add trigger and alert_id columns to scans if not present
+        cursor = await db.execute("PRAGMA table_info(scans)")
+        scan_columns = [row[1] for row in await cursor.fetchall()]
+        if "trigger" not in scan_columns:
+            await db.execute("ALTER TABLE scans ADD COLUMN trigger TEXT DEFAULT 'manual'")
+            await db.commit()
+            logger.info("Migrated scans: added trigger column")
+        if "alert_id" not in scan_columns:
+            await db.execute("ALTER TABLE scans ADD COLUMN alert_id INTEGER")
+            await db.commit()
+            logger.info("Migrated scans: added alert_id column")
 
         # Check if topics table is empty — seed defaults if so
         cursor = await db.execute("SELECT COUNT(*) FROM topics")
@@ -796,3 +848,187 @@ async def clear_old_lookahead_events(db: aiosqlite.Connection, before_date: str)
         "DELETE FROM lookahead_events WHERE start_date < ?", (before_date,)
     )
     await db.commit()
+
+
+# --- Email Alert query helpers ---
+
+
+async def get_all_alerts(db: aiosqlite.Connection) -> list[dict]:
+    """Get all alerts with their recipients."""
+    cursor = await db.execute("SELECT * FROM email_alerts ORDER BY created_at DESC")
+    alerts = []
+    for row in await cursor.fetchall():
+        alert = dict(row)
+        rcpt_cursor = await db.execute(
+            "SELECT email FROM alert_recipients WHERE alert_id = ?", (alert["id"],)
+        )
+        alert["recipients"] = [r["email"] for r in await rcpt_cursor.fetchall()]
+        alerts.append(alert)
+    return alerts
+
+
+async def get_alert(db: aiosqlite.Connection, alert_id: int) -> dict | None:
+    """Get a single alert with recipients."""
+    cursor = await db.execute("SELECT * FROM email_alerts WHERE id = ?", (alert_id,))
+    row = await cursor.fetchone()
+    if not row:
+        return None
+    alert = dict(row)
+    rcpt_cursor = await db.execute(
+        "SELECT email FROM alert_recipients WHERE alert_id = ?", (alert_id,)
+    )
+    alert["recipients"] = [r["email"] for r in await rcpt_cursor.fetchall()]
+    return alert
+
+
+async def create_alert(db: aiosqlite.Connection, data: dict) -> int:
+    """Create an alert and its recipients. Returns alert ID."""
+    cursor = await db.execute(
+        """INSERT INTO email_alerts
+        (name, alert_type, enabled, cadence, day_of_week, send_time, timezone,
+         topic_ids, sources, scan_period_days, lookahead_days, event_types, houses)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            data["name"], data["alert_type"], data.get("enabled", 1),
+            data.get("cadence", "weekly"), data.get("day_of_week", "monday"),
+            data.get("send_time", "09:00"), data.get("timezone", "Europe/London"),
+            json.dumps(data.get("topic_ids", [])),
+            json.dumps(data.get("sources", [])),
+            data.get("scan_period_days", 7),
+            data.get("lookahead_days", 7),
+            json.dumps(data.get("event_types")) if data.get("event_types") else None,
+            json.dumps(data.get("houses")) if data.get("houses") else None,
+        ),
+    )
+    alert_id = cursor.lastrowid
+
+    for email in data.get("recipients", []):
+        await db.execute(
+            "INSERT OR IGNORE INTO alert_recipients (alert_id, email) VALUES (?, ?)",
+            (alert_id, email),
+        )
+    await db.commit()
+    return alert_id
+
+
+async def update_alert(db: aiosqlite.Connection, alert_id: int, data: dict) -> bool:
+    """Update an alert's configuration and recipients."""
+    fields = []
+    params = []
+    field_map = {
+        "name": "name", "alert_type": "alert_type", "enabled": "enabled",
+        "cadence": "cadence", "day_of_week": "day_of_week",
+        "send_time": "send_time", "timezone": "timezone",
+        "scan_period_days": "scan_period_days", "lookahead_days": "lookahead_days",
+    }
+    for key, col in field_map.items():
+        if key in data:
+            fields.append(f"{col} = ?")
+            params.append(data[key])
+
+    # JSON fields
+    for key in ("topic_ids", "sources", "event_types", "houses"):
+        if key in data:
+            fields.append(f"{key} = ?")
+            params.append(json.dumps(data[key]) if data[key] is not None else None)
+
+    if fields:
+        fields.append("updated_at = CURRENT_TIMESTAMP")
+        params.append(alert_id)
+        await db.execute(
+            f"UPDATE email_alerts SET {', '.join(fields)} WHERE id = ?", params
+        )
+
+    # Replace recipients if provided
+    if "recipients" in data:
+        await db.execute("DELETE FROM alert_recipients WHERE alert_id = ?", (alert_id,))
+        for email in data["recipients"]:
+            await db.execute(
+                "INSERT OR IGNORE INTO alert_recipients (alert_id, email) VALUES (?, ?)",
+                (alert_id, email),
+            )
+
+    await db.commit()
+    return True
+
+
+async def delete_alert(db: aiosqlite.Connection, alert_id: int) -> bool:
+    """Delete an alert and its recipients (CASCADE)."""
+    cursor = await db.execute("DELETE FROM email_alerts WHERE id = ?", (alert_id,))
+    await db.commit()
+    return cursor.rowcount > 0
+
+
+async def toggle_alert(db: aiosqlite.Connection, alert_id: int, enabled: bool) -> bool:
+    """Enable or disable an alert."""
+    cursor = await db.execute(
+        "UPDATE email_alerts SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (1 if enabled else 0, alert_id),
+    )
+    await db.commit()
+    return cursor.rowcount > 0
+
+
+async def update_alert_run_status(
+    db: aiosqlite.Connection,
+    alert_id: int,
+    status: str,
+    error: str | None = None,
+):
+    """Update last_run fields on an alert."""
+    await db.execute(
+        """UPDATE email_alerts SET
+            last_run_at = CURRENT_TIMESTAMP,
+            last_run_status = ?,
+            last_run_error = ?
+        WHERE id = ?""",
+        (status, error, alert_id),
+    )
+    await db.commit()
+
+
+async def insert_alert_run_log(
+    db: aiosqlite.Connection,
+    alert_id: int,
+    status: str,
+    scan_id: int | None = None,
+    recipients_count: int = 0,
+    results_count: int = 0,
+    error_message: str | None = None,
+) -> int:
+    """Log an alert execution run."""
+    cursor = await db.execute(
+        """INSERT INTO alert_run_log
+        (alert_id, status, scan_id, recipients_count, results_count, error_message)
+        VALUES (?, ?, ?, ?, ?, ?)""",
+        (alert_id, status, scan_id, recipients_count, results_count, error_message),
+    )
+    await db.commit()
+    return cursor.lastrowid
+
+
+async def get_alert_run_history(
+    db: aiosqlite.Connection, alert_id: int, limit: int = 20
+) -> list[dict]:
+    """Get run history for an alert."""
+    cursor = await db.execute(
+        "SELECT * FROM alert_run_log WHERE alert_id = ? ORDER BY run_at DESC LIMIT ?",
+        (alert_id, limit),
+    )
+    return [dict(row) for row in await cursor.fetchall()]
+
+
+async def get_enabled_alerts(db: aiosqlite.Connection) -> list[dict]:
+    """Get all enabled alerts with recipients (for scheduler)."""
+    cursor = await db.execute(
+        "SELECT * FROM email_alerts WHERE enabled = 1"
+    )
+    alerts = []
+    for row in await cursor.fetchall():
+        alert = dict(row)
+        rcpt_cursor = await db.execute(
+            "SELECT email FROM alert_recipients WHERE alert_id = ?", (alert["id"],)
+        )
+        alert["recipients"] = [r["email"] for r in await rcpt_cursor.fetchall()]
+        alerts.append(alert)
+    return alerts

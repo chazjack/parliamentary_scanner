@@ -2460,6 +2460,29 @@ header h1 {
     }
 }
 
+/* ========== ALERTS TAB ========== */
+
+.alert-actions-cell {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.alert-actions-cell .btn-small {
+    padding: 4px 10px;
+    font-size: 0.75rem;
+}
+
+#alertsTable td {
+    padding: 8px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+}
+
+#alertsTable tbody tr:hover {
+    background: #f7fafc;
+}
+
 @media (max-width: 480px) {
     .la-type-btn {
         font-size: 0.7rem;

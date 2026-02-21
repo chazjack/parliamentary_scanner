@@ -25,6 +25,16 @@ def register_scan_runner(fn):
 
 @router.post("", status_code=201)
 async def start_scan(body: ScanCreate):
+    # Check if a scheduled scan is running
+    try:
+        from backend.services.scheduler import get_scan_lock
+        scan_lock = get_scan_lock()
+        if scan_lock.locked():
+            from fastapi import HTTPException as _HTTPException
+            raise _HTTPException(409, "A scheduled scan is currently running. Please try again shortly.")
+    except ImportError:
+        pass
+
     db = await get_db()
     try:
         scan_id = await create_scan(db, body.start_date, body.end_date, body.topic_ids, body.sources)

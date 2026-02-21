@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from backend.database import init_db, get_db, cleanup_stuck_scans
-from backend.routers import topics, scans, results, master, lookahead
+from backend.routers import topics, scans, results, master, lookahead, alerts
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +24,7 @@ app.include_router(scans.router)
 app.include_router(results.router)
 app.include_router(master.router)
 app.include_router(lookahead.router)
+app.include_router(alerts.router)
 
 
 @app.on_event("startup")
@@ -44,6 +45,23 @@ async def startup():
     except Exception as e:
         logger.error(f"Failed to import scanner: {e}")
         # Server will start but scans won't work
+
+    # Start alert scheduler and wire up alert executor
+    try:
+        from backend.services.scheduler import start_scheduler, execute_alert, sync_scheduler
+        alerts.register_alert_executor(execute_alert, sync_scheduler)
+        await start_scheduler()
+    except Exception as e:
+        logger.error(f"Failed to start alert scheduler: {e}")
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    try:
+        from backend.services.scheduler import stop_scheduler
+        stop_scheduler()
+    except Exception as e:
+        logger.error(f"Error stopping scheduler: {e}")
 
 
 # Serve frontend static files (must be last so API routes take priority)

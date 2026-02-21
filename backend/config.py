@@ -31,3 +31,7 @@ LOOKAHEAD_CACHE_TTL = 7200  # seconds (2 hours)
 REQUEST_DELAY = 0.2  # seconds between Parliament API calls
 CLASSIFIER_DELAY = 0.1  # seconds between Anthropic API calls
 KEYWORD_PARALLELISM = int(os.getenv("KEYWORD_PARALLELISM", "12"))  # max concurrent keyword searches
+
+# Email (Resend)
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+RESEND_FROM_EMAIL = os.getenv("RESEND_FROM_EMAIL", "Parliamentary Monitor <alerts@updates.example.com>")
