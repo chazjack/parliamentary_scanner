@@ -15,7 +15,7 @@
 
     <!-- Tab Navigation -->
     <nav class="tab-nav">
-        <button class="tab-btn active" data-tab="lookahead" onclick="switchTab('lookahead')">Look Ahead</button>
+        <button class="tab-btn active" data-tab="lookahead" onclick="switchTab('lookahead')">Calendar</button>
         <button class="tab-btn" data-tab="scanner" onclick="switchTab('scanner')">Scanner</button>
         <button class="tab-btn" data-tab="record" onclick="switchTab('record')">Record</button>
         <button class="tab-btn" data-tab="alerts" onclick="switchTab('alerts')">Alerts</button>
@@ -197,7 +197,7 @@
                 <p id="masterEmpty" class="empty-state" style="display:none;">No stakeholders yet. Add members from scan results using the + button.</p>
             </section>
         </div>
-        <!-- ===== Look Ahead Tab ===== -->
+        <!-- ===== Calendar Tab ===== -->
         <div id="tab-lookahead">
             <!-- Top controls: date nav + view toggle + refresh -->
             <section class="control-group-card" style="margin-bottom:16px;">
@@ -285,25 +285,28 @@
                     <h2>Email Alerts</h2>
                     <div style="display:flex;gap:8px;">
                         <button class="btn btn-small" onclick="showAlertForm('scan')">+ Scan Alert</button>
-                        <button class="btn btn-small" onclick="showAlertForm('lookahead')">+ Lookahead Alert</button>
+                        <button class="btn btn-small" onclick="showAlertForm('lookahead')">+ Calendar Alert</button>
                     </div>
                 </div>
-                <div class="table-container">
-                    <table id="alertsTable" style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+                <!-- Desktop table view -->
+                <div class="table-container alerts-desktop">
+                    <table id="alertsTable">
                         <thead>
                             <tr>
-                                <th style="background:var(--primary);color:white;padding:10px 8px;text-align:left;font-weight:600;">Name</th>
-                                <th style="background:var(--primary);color:white;padding:10px 8px;text-align:left;font-weight:600;">Type</th>
-                                <th style="background:var(--primary);color:white;padding:10px 8px;text-align:left;font-weight:600;">Schedule</th>
-                                <th style="background:var(--primary);color:white;padding:10px 8px;text-align:left;font-weight:600;">Recipients</th>
-                                <th style="background:var(--primary);color:white;padding:10px 8px;text-align:left;font-weight:600;">Last Run</th>
-                                <th style="background:var(--primary);color:white;padding:10px 8px;text-align:left;font-weight:600;">Status</th>
-                                <th style="background:var(--primary);color:white;padding:10px 8px;text-align:left;font-weight:600;">Actions</th>
+                                <th>Name</th>
+                                <th>Type</th>
+                                <th>Schedule</th>
+                                <th>Recipients</th>
+                                <th>Last Run</th>
+                                <th>Status</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody id="alertsListBody"></tbody>
                     </table>
                 </div>
+                <!-- Mobile card view -->
+                <div class="alerts-mobile" id="alertsCardList"></div>
             </section>
 
             <!-- Alert Create/Edit Form (hidden by default) -->
@@ -313,7 +316,7 @@
                     <button class="btn-small" onclick="hideAlertForm()">Cancel</button>
                 </div>
 
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                <div class="alert-form-grid">
                     <!-- Left column: Basic config -->
                     <div>
                         <div style="margin-bottom:12px;">
@@ -325,11 +328,11 @@
                             <label class="source-label" style="margin-bottom:4px;">Alert Type</label>
                             <select id="alertType" onchange="_updateFormVisibility()" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius);font-size:0.9rem;">
                                 <option value="scan">Scan (past activity)</option>
-                                <option value="lookahead">Lookahead (upcoming events)</option>
+                                <option value="lookahead">Calendar (upcoming events)</option>
                             </select>
                         </div>
 
-                        <div style="display:flex;gap:12px;margin-bottom:12px;">
+                        <div class="alert-schedule-row">
                             <div style="flex:1">
                                 <label class="source-label" style="margin-bottom:4px;">Cadence</label>
                                 <select id="alertCadence" onchange="_updateFormVisibility()" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:var(--radius);font-size:0.9rem;">
@@ -392,7 +395,7 @@
                         <!-- Lookahead config -->
                         <div id="alertLookaheadConfig" style="display:none;">
                             <div style="margin-bottom:12px;">
-                                <label class="source-label" style="margin-bottom:4px;">Lookahead Days</label>
+                                <label class="source-label" style="margin-bottom:4px;">Days Ahead</label>
                                 <input type="number" id="alertLookaheadDays" value="7" min="1" max="90" style="width:100px;padding:8px;border:1px solid var(--border);border-radius:var(--radius);font-size:0.9rem;">
                             </div>
 
@@ -427,14 +430,14 @@
                     <button class="btn-small" onclick="hideAlertHistory()">Close</button>
                 </div>
                 <div class="table-container">
-                    <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+                    <table id="alertHistoryTable">
                         <thead>
                             <tr>
-                                <th style="background:var(--primary);color:white;padding:10px 8px;text-align:left;font-weight:600;">Time</th>
-                                <th style="background:var(--primary);color:white;padding:10px 8px;text-align:left;font-weight:600;">Status</th>
-                                <th style="background:var(--primary);color:white;padding:10px 8px;text-align:left;font-weight:600;">Recipients</th>
-                                <th style="background:var(--primary);color:white;padding:10px 8px;text-align:left;font-weight:600;">Results</th>
-                                <th style="background:var(--primary);color:white;padding:10px 8px;text-align:left;font-weight:600;">Error</th>
+                                <th>Time</th>
+                                <th>Status</th>
+                                <th>Recipients</th>
+                                <th>Results</th>
+                                <th>Error</th>
                             </tr>
                         </thead>
                         <tbody id="alertHistoryBody"></tbody>

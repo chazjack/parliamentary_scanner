@@ -13,44 +13,77 @@ async function loadAlerts() {
 }
 
 function renderAlertsList() {
-    const container = document.getElementById('alertsListBody');
-    if (!container) return;
+    const tableBody = document.getElementById('alertsListBody');
+    const cardList = document.getElementById('alertsCardList');
+    if (!tableBody) return;
 
     if (!alertsList.length) {
-        container.innerHTML = '<tr><td colspan="7" class="empty-state-preview">No alerts configured yet. Create one to get started.</td></tr>';
+        tableBody.innerHTML = '<tr><td colspan="7" class="empty-state-preview">No alerts configured yet. Create one to get started.</td></tr>';
+        if (cardList) cardList.innerHTML = '<p class="empty-state-preview">No alerts configured yet. Create one to get started.</p>';
         return;
     }
 
-    container.innerHTML = alertsList.map(a => {
-        const statusClass = a.enabled ? 'completed' : 'cancelled';
-        const statusLabel = a.enabled ? 'Enabled' : 'Disabled';
-        const lastRun = a.last_run_at
-            ? `<span class="history-status ${a.last_run_status || ''}">${a.last_run_status || 'never'}</span> ${_formatDate(a.last_run_at)}`
-            : '<span style="color:var(--text-light)">Never run</span>';
-        const recipientCount = (a.recipients || []).length;
-        const typeLabel = a.alert_type === 'scan' ? 'Scan' : 'Lookahead';
-        const cadenceLabel = a.cadence === 'daily'
-            ? `Daily at ${a.send_time}`
-            : `${_capitalize(a.day_of_week)}s at ${a.send_time}`;
-
+    // Desktop table rows
+    tableBody.innerHTML = alertsList.map(a => {
+        const d = _alertDisplayData(a);
         return `<tr>
             <td><strong>${_escHtml(a.name)}</strong></td>
-            <td><span class="pill" style="background:${a.alert_type === 'scan' ? '#e3f2fd' : '#e8f5e9'};color:${a.alert_type === 'scan' ? '#1565c0' : '#2e7d32'}">${typeLabel}</span></td>
-            <td>${cadenceLabel}</td>
-            <td>${recipientCount} recipient${recipientCount !== 1 ? 's' : ''}</td>
-            <td>${lastRun}</td>
-            <td><span class="history-status ${statusClass}">${statusLabel}</span></td>
-            <td class="alert-actions-cell">
-                <button class="btn-small" onclick="toggleAlertEnabled(${a.id}, ${!a.enabled})" title="${a.enabled ? 'Disable' : 'Enable'}">${a.enabled ? 'Disable' : 'Enable'}</button>
-                <button class="btn-small" onclick="testAlert(${a.id})" title="Send test email">Test</button>
-                <button class="btn-small" onclick="runAlertNow(${a.id})" title="Run now">Run</button>
-                <button class="btn-small" onclick="editAlert(${a.id})" title="Edit">Edit</button>
-                <button class="btn-small" onclick="previewAlert(${a.id})" title="Preview email">Preview</button>
-                <button class="btn-small" onclick="showAlertHistory(${a.id})" title="History">Log</button>
-                <button class="btn-small" style="background:var(--red)" onclick="deleteAlertConfirm(${a.id})" title="Delete">&times;</button>
-            </td>
+            <td><span class="pill" style="background:${d.typeBg};color:${d.typeColor}">${d.typeLabel}</span></td>
+            <td>${d.cadenceLabel}</td>
+            <td>${d.recipientLabel}</td>
+            <td>${d.lastRun}</td>
+            <td><span class="history-status ${d.statusClass}">${d.statusLabel}</span></td>
+            <td class="alert-actions-cell">${_alertActions(a)}</td>
         </tr>`;
     }).join('');
+
+    // Mobile cards
+    if (cardList) {
+        cardList.innerHTML = alertsList.map(a => {
+            const d = _alertDisplayData(a);
+            return `<div class="alert-card">
+                <div class="alert-card-header">
+                    <span class="alert-card-name">${_escHtml(a.name)}</span>
+                    <span class="history-status ${d.statusClass}">${d.statusLabel}</span>
+                </div>
+                <div class="alert-card-meta">
+                    <span class="pill" style="background:${d.typeBg};color:${d.typeColor}">${d.typeLabel}</span>
+                    <span>${d.cadenceLabel}</span>
+                    <span>${d.recipientLabel}</span>
+                </div>
+                <div class="alert-card-meta">${d.lastRun}</div>
+                <div class="alert-card-actions">${_alertActions(a)}</div>
+            </div>`;
+        }).join('');
+    }
+}
+
+function _alertDisplayData(a) {
+    const statusClass = a.enabled ? 'completed' : 'cancelled';
+    const statusLabel = a.enabled ? 'Enabled' : 'Disabled';
+    const lastRun = a.last_run_at
+        ? `<span class="history-status ${a.last_run_status || ''}">${a.last_run_status || 'never'}</span> ${_formatDate(a.last_run_at)}`
+        : '<span style="color:var(--text-light)">Never run</span>';
+    const recipientCount = (a.recipients || []).length;
+    const typeLabel = a.alert_type === 'scan' ? 'Scan' : 'Calendar';
+    const typeBg = a.alert_type === 'scan' ? '#e3f2fd' : '#e8f5e9';
+    const typeColor = a.alert_type === 'scan' ? '#1565c0' : '#2e7d32';
+    const cadenceLabel = a.cadence === 'daily'
+        ? `Daily at ${a.send_time}`
+        : `${_capitalize(a.day_of_week)}s at ${a.send_time}`;
+    const recipientLabel = `${recipientCount} recipient${recipientCount !== 1 ? 's' : ''}`;
+    return { statusClass, statusLabel, lastRun, typeLabel, typeBg, typeColor, cadenceLabel, recipientLabel };
+}
+
+function _alertActions(a) {
+    return `
+        <button class="btn-small" onclick="toggleAlertEnabled(${a.id}, ${!a.enabled})" title="${a.enabled ? 'Disable' : 'Enable'}">${a.enabled ? 'Disable' : 'Enable'}</button>
+        <button class="btn-small" onclick="testAlert(${a.id})" title="Send test email">Test</button>
+        <button class="btn-small" onclick="runAlertNow(${a.id})" title="Run now">Run</button>
+        <button class="btn-small" onclick="editAlert(${a.id})" title="Edit">Edit</button>
+        <button class="btn-small" onclick="previewAlert(${a.id})" title="Preview email">Preview</button>
+        <button class="btn-small" onclick="showAlertHistory(${a.id})" title="History">Log</button>
+        <button class="btn-small" style="background:var(--red)" onclick="deleteAlertConfirm(${a.id})" title="Delete">&times;</button>`;
 }
 
 function showAlertForm(alertType) {

@@ -1617,6 +1617,32 @@ header h1 {
         padding: 12px 16px;
     }
 
+    /* Tab nav — scroll on overflow */
+    .tab-nav {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+    .tab-nav::-webkit-scrollbar { display: none; }
+    .tab-btn {
+        padding: 10px 16px;
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+    /* Alerts — switch to card layout on mobile */
+    .alerts-desktop { display: none; }
+    .alerts-mobile { display: block; }
+
+    /* Alert form — single column */
+    .alert-form-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .alert-schedule-row {
+        flex-wrap: wrap;
+    }
+
     /* Ensure tables don't overflow */
     .table-container {
         overflow-x: auto;
@@ -2462,6 +2488,35 @@ header h1 {
 
 /* ========== ALERTS TAB ========== */
 
+#alertsTable,
+#alertHistoryTable {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+#alertsTable th,
+#alertHistoryTable th {
+    background: var(--primary);
+    color: white;
+    padding: 10px 8px;
+    text-align: left;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+#alertsTable td,
+#alertHistoryTable td {
+    padding: 8px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+}
+
+#alertsTable tbody tr:hover,
+#alertHistoryTable tbody tr:hover {
+    background: #f7fafc;
+}
+
 .alert-actions-cell {
     display: flex;
     gap: 4px;
@@ -2473,14 +2528,61 @@ header h1 {
     font-size: 0.75rem;
 }
 
-#alertsTable td {
-    padding: 8px;
-    border-bottom: 1px solid var(--border);
-    vertical-align: middle;
+/* Alert form grid */
+.alert-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
 }
 
-#alertsTable tbody tr:hover {
-    background: #f7fafc;
+.alert-schedule-row {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+/* Mobile card view for alerts (hidden on desktop) */
+.alerts-mobile {
+    display: none;
+}
+
+.alert-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+    margin-bottom: 10px;
+}
+
+.alert-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.alert-card-name {
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
+.alert-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-size: 0.8rem;
+    color: var(--text-light);
+    margin-bottom: 10px;
+}
+
+.alert-card-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.alert-card-actions .btn-small {
+    padding: 5px 12px;
+    font-size: 0.75rem;
 }
 
 @media (max-width: 480px) {
