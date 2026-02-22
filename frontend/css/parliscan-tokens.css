@@ -1,0 +1,161 @@
+/* ============================================================================
+   PARLISCAN DESIGN TOKENS
+   ============================================================================
+   
+   Drop-in replacement for your existing :root variables.
+   
+   USAGE WITH CLAUDE CODE:
+   Tell Claude Code: "Replace the :root block in frontend/css/styles.css 
+   with the contents of parliscan-tokens.css"
+   
+   ============================================================================ */
+
+:root {
+  /* --------------------------------------------------------------------------
+     COLOUR: BASE SCALE (Zinc)
+     
+     The foundation. A neutral grey scale with a slight cool undertone.
+     Replaces any existing --bg, --text, --border variables.
+     -------------------------------------------------------------------------- */
+  --ps-bg-base:        #09090b;   /* Page background, deepest layer */
+  --ps-bg-raised:      #0c0c0e;   /* Sticky headers, elevated surfaces */
+  --ps-bg-subtle:      rgba(255, 255, 255, 0.02);  /* Hover states, cards */
+  --ps-bg-muted:       rgba(255, 255, 255, 0.04);  /* Input backgrounds */
+  --ps-bg-emphasis:    rgba(255, 255, 255, 0.06);  /* Active nav items, pressed states */
+
+  --ps-border-faint:   rgba(255, 255, 255, 0.04);  /* Row separators, subtle dividers */
+  --ps-border-default: rgba(255, 255, 255, 0.06);  /* Panel borders, section dividers */
+  --ps-border-strong:  rgba(255, 255, 255, 0.08);  /* Input borders, interactive elements */
+  --ps-border-focus:   rgba(99, 102, 241, 0.3);    /* Focus rings */
+
+  --ps-text-primary:   #e4e4e7;   /* Headings, names, important text */
+  --ps-text-secondary: #a1a1aa;   /* Body text, descriptions */
+  --ps-text-tertiary:  #71717a;   /* Metadata, timestamps, counts */
+  --ps-text-muted:     #52525b;   /* Labels, disabled text */
+  --ps-text-faint:     #3f3f46;   /* Placeholder text, subtle hints */
+
+  /* --------------------------------------------------------------------------
+     COLOUR: ACCENT (Indigo)
+     
+     The ONLY accent colour. Used sparingly for interactive elements,
+     active states, and topic badges. This single accent is what gives
+     the UI its identity without visual noise.
+     -------------------------------------------------------------------------- */
+  --ps-accent:         #6366f1;
+  --ps-accent-hover:   #818cf8;   /* Lighter variant for hover states */
+  --ps-accent-soft:    rgba(99, 102, 241, 0.08);   /* Badge/chip backgrounds */
+  --ps-accent-border:  rgba(99, 102, 241, 0.2);    /* Badge/chip borders */
+  --ps-accent-glow:    rgba(99, 102, 241, 0.15);   /* Focus shadows */
+
+  /* --------------------------------------------------------------------------
+     COLOUR: SEMANTIC (used very sparingly)
+     -------------------------------------------------------------------------- */
+  --ps-success:        #4ade80;
+  --ps-success-soft:   rgba(34, 197, 94, 0.1);
+  --ps-success-border: rgba(34, 197, 94, 0.2);
+
+  --ps-warning:        #fbbf24;
+  --ps-warning-soft:   rgba(251, 191, 36, 0.1);
+  --ps-warning-border: rgba(251, 191, 36, 0.2);
+
+  --ps-danger:         #f87171;
+  --ps-danger-soft:    rgba(248, 113, 113, 0.1);
+  --ps-danger-border:  rgba(248, 113, 113, 0.2);
+
+  /* --------------------------------------------------------------------------
+     COLOUR: PARTY (for party dots only — never used for backgrounds)
+     -------------------------------------------------------------------------- */
+  --ps-party-labour:       #dc2626;
+  --ps-party-conservative: #1d4ed8;
+  --ps-party-libdem:       #f59e0b;
+  --ps-party-snp:          #fbbf24;
+  --ps-party-green:        #16a34a;
+  --ps-party-plaid:        #22c55e;
+  --ps-party-dup:          #7c3aed;
+  --ps-party-independent:  #6b7280;
+
+  /* --------------------------------------------------------------------------
+     TYPOGRAPHY
+     
+     DM Sans is clean, geometric, and slightly warmer than Inter/Roboto.
+     Import via: <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+     -------------------------------------------------------------------------- */
+  --ps-font-family:    'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --ps-font-mono:      'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+
+  /* Font sizes — tight, deliberate scale */
+  --ps-text-xs:        10px;   /* Micro labels */
+  --ps-text-sm:        11px;   /* Column headers, section labels */
+  --ps-text-base:      12px;   /* Metadata, secondary info */
+  --ps-text-md:        13px;   /* Body text, table cells */
+  --ps-text-lg:        14px;   /* Sidebar items, sub-headings */
+  --ps-text-xl:        16px;   /* Page titles */
+  --ps-text-2xl:       20px;   /* Hero/dashboard numbers (if needed) */
+
+  --ps-leading-tight:  1.3;
+  --ps-leading-normal: 1.5;
+
+  --ps-weight-normal:  400;
+  --ps-weight-medium:  500;
+  --ps-weight-semi:    600;
+  --ps-weight-bold:    700;
+
+  --ps-tracking-tight: -0.02em;  /* Headings */
+  --ps-tracking-normal: 0;
+  --ps-tracking-wide:  0.06em;   /* Column headers */
+  --ps-tracking-wider: 0.08em;   /* Section labels */
+
+  /* --------------------------------------------------------------------------
+     SPACING
+     
+     4px base unit. Everything aligns to this grid.
+     -------------------------------------------------------------------------- */
+  --ps-space-1:  4px;
+  --ps-space-2:  8px;
+  --ps-space-3:  12px;
+  --ps-space-4:  16px;
+  --ps-space-5:  20px;
+  --ps-space-6:  24px;
+  --ps-space-8:  32px;
+  --ps-space-10: 40px;
+
+  /* Consistent padding for panels and content areas */
+  --ps-padding-panel:  20px;       /* Main content padding */
+  --ps-padding-cell:   10px 20px;  /* Table cell padding */
+  --ps-padding-input:  6px 10px;   /* Input field padding */
+  --ps-padding-btn:    7px 16px;   /* Primary button padding */
+  --ps-padding-btn-sm: 4px 10px;   /* Small button / chip padding */
+  --ps-padding-badge:  2px 8px;    /* Badge / pill padding */
+
+  /* --------------------------------------------------------------------------
+     BORDERS & RADII
+     -------------------------------------------------------------------------- */
+  --ps-radius-sm:  4px;   /* Badges, small chips */
+  --ps-radius-md:  5px;   /* Buttons, inputs, filter chips */
+  --ps-radius-lg:  6px;   /* Cards, nav items, table rows */
+  --ps-radius-xl:  8px;   /* Panels, modals */
+  --ps-radius-full: 9999px; /* Party dots, status dots */
+
+  /* --------------------------------------------------------------------------
+     TRANSITIONS
+     
+     Keep everything fast and subtle. No bounces, no elastic easing.
+     -------------------------------------------------------------------------- */
+  --ps-transition-fast:   0.1s ease;
+  --ps-transition-normal: 0.15s ease;
+  --ps-transition-slow:   0.2s ease;
+
+  /* --------------------------------------------------------------------------
+     SHADOWS (minimal — used only for modals/dropdowns)
+     -------------------------------------------------------------------------- */
+  --ps-shadow-sm:  0 1px 2px rgba(0, 0, 0, 0.3);
+  --ps-shadow-md:  0 4px 12px rgba(0, 0, 0, 0.4);
+  --ps-shadow-lg:  0 8px 24px rgba(0, 0, 0, 0.5);
+
+  /* --------------------------------------------------------------------------
+     LAYOUT
+     -------------------------------------------------------------------------- */
+  --ps-sidebar-width: 220px;
+  --ps-header-height: 48px;
+  --ps-scrollbar-width: 6px;
+}

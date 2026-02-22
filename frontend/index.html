@@ -5,24 +5,60 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Parliamentary Scanner</title>
     <link rel="icon" type="image/svg+xml" href="/icon-no-bg (1).svg">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/parliscan-tokens.css">
+    <link rel="stylesheet" href="/css/parliscan-components.css">
     <link rel="stylesheet" href="/css/styles.css">
 </head>
-<body>
-    <header>
-        <img src="/icon-no-bg (1).svg" alt="Logo" class="header-logo">
-        <h1>Parliamentary Scanner</h1>
-    </header>
+<body class="ps-app">
 
-    <!-- Tab Navigation -->
-    <nav class="tab-nav">
-        <button class="tab-btn active" data-tab="lookahead" onclick="switchTab('lookahead')">Calendar</button>
-        <button class="tab-btn" data-tab="scanner" onclick="switchTab('scanner')">Scanner</button>
-        <button class="tab-btn" data-tab="record" onclick="switchTab('record')">Record</button>
-        <button class="tab-btn" data-tab="alerts" onclick="switchTab('alerts')">Alerts</button>
-    </nav>
+    <!-- ===== Sidebar Navigation ===== -->
+    <aside class="ps-sidebar">
 
+        <!-- Logo block -->
+        <div class="ps-sidebar__logo">
+            <img src="/icon-no-bg (1).svg" class="ps-sidebar__logo-img" alt="ParliScan logo">
+            <div class="ps-sidebar__logo-title">ParliScan</div>
+        </div>
 
-    <main>
+        <!-- Nav items — .tab-btn kept so existing switchTab() JS still works -->
+        <nav class="ps-sidebar__nav">
+            <button class="ps-sidebar__nav-item tab-btn active" data-tab="lookahead" onclick="switchTab('lookahead')" title="Calendar">
+                <span class="ps-sidebar__nav-icon">▦</span>
+                <span class="ps-sidebar__nav-label">Calendar</span>
+            </button>
+            <button class="ps-sidebar__nav-item tab-btn" data-tab="scanner" onclick="switchTab('scanner')" title="Scanner">
+                <span class="ps-sidebar__nav-icon">⊙</span>
+                <span class="ps-sidebar__nav-label">Scanner</span>
+            </button>
+            <button class="ps-sidebar__nav-item tab-btn" data-tab="record" onclick="switchTab('record')" title="Record">
+                <span class="ps-sidebar__nav-icon">≡</span>
+                <span class="ps-sidebar__nav-label">Record</span>
+            </button>
+            <button class="ps-sidebar__nav-item tab-btn" data-tab="alerts" onclick="switchTab('alerts')" title="Alerts">
+                <span class="ps-sidebar__nav-icon">◉</span>
+                <span class="ps-sidebar__nav-label">Alerts</span>
+            </button>
+        </nav>
+
+        <!-- Sidebar collapse toggle -->
+        <button class="ps-sidebar__toggle" id="sidebarToggle" onclick="toggleSidebar()" title="Toggle sidebar">
+            <span class="ps-sidebar__toggle-icon">‹</span>
+        </button>
+
+        <!-- Footer: API status (moved from scanner controls row) -->
+        <div class="ps-sidebar__footer">
+            <span id="apiStatus" class="api-status api-status--checking" title="Checking AI classifier connection...">
+                <span class="api-status-dot"></span>
+                <span class="api-status-label">Checking API...</span>
+            </span>
+        </div>
+
+    </aside>
+
+    <!-- ===== Main content area ===== -->
+    <main class="ps-main">
+
         <!-- ===== Scanner Tab ===== -->
         <div id="tab-scanner" style="display:none;">
             <!-- Grouped Control Card -->
@@ -36,50 +72,49 @@
                         <input type="hidden" id="startDate">
                         <input type="hidden" id="endDate">
                     </div>
-                    <button id="scanBtn" class="btn btn-scan">Scan</button>
-                    <button id="cancelBtn" class="btn btn-danger" style="display:none;">Cancel</button>
-                    <span id="apiStatus" class="api-status api-status--checking" title="Checking AI classifier connection...">
-                        <span class="api-status-dot"></span>
-                        <span class="api-status-label">Checking API...</span>
-                    </span>
+                    <button id="scanBtn" class="ps-btn ps-btn--primary">Scan</button>
+                    <button id="cancelBtn" class="ps-btn ps-btn--ghost" style="display:none;">Cancel</button>
                 </div>
             </div>
 
-            <hr class="control-divider">
-
-            <!-- Source Toggles -->
-            <div id="source-toggles">
-                <span class="source-label">SOURCES:</span>
-                <div class="source-toggle-row">
-                    <button class="source-btn active" data-source="hansard" data-description="Records of debates in Commons and Lords">Hansard</button>
-                    <button class="source-btn active" data-source="written_questions" data-description="Questions tabled by MPs to government ministers">Written Questions</button>
-                    <button class="source-btn active" data-source="written_statements" data-description="Formal statements by ministers">Written Statements</button>
-                    <button class="source-btn active" data-source="edms" data-description="Motions signed by MPs to show support for a cause">EDMs</button>
-                    <button class="source-btn active" data-source="bills" data-description="Proposed legislation being considered by Parliament">Bills</button>
-                    <button class="source-btn active" data-source="divisions" data-description="Recorded votes in the House of Commons">Divisions</button>
+            <!-- Filter Bar: Sources + Topics -->
+            <div class="ps-filter-bar">
+                <div class="ps-chip-group" id="source-toggles">
+                    <span class="ps-chip-group__label">SOURCES</span>
+                    <div class="ps-chip-group__items">
+                        <button class="ps-chip ps-chip--active" data-source="hansard" title="Records of debates in Commons and Lords">Hansard</button>
+                        <button class="ps-chip ps-chip--active" data-source="written_questions" title="Questions tabled by MPs to government ministers">Written Qs</button>
+                        <button class="ps-chip ps-chip--active" data-source="written_statements" title="Formal statements by ministers">Written Stmts</button>
+                        <button class="ps-chip ps-chip--active" data-source="edms" title="Motions signed by MPs to show support for a cause">EDMs</button>
+                        <button class="ps-chip ps-chip--active" data-source="bills" title="Proposed legislation being considered by Parliament">Bills</button>
+                        <button class="ps-chip ps-chip--active" data-source="divisions" title="Recorded votes in the House of Commons">Divisions</button>
+                    </div>
                 </div>
-            </div>
 
-            <hr class="control-divider">
-
-            <!-- Topic Manager -->
-            <div id="topic-manager">
-                <div class="section-header" id="topicToggle">
-                    <span class="source-label">TOPICS & KEYWORDS:</span>
-                    <div style="display:flex;align-items:center;gap:12px">
-                        <div class="btn-split" onclick="event.stopPropagation()">
-                            <button class="btn-split-left" id="selectAllTopics" onclick="toggleAllTopics(true)">All</button>
-                            <button id="selectNoneTopics" onclick="toggleAllTopics(false)">None</button>
+                <div class="ps-chip-group">
+                    <div class="ps-chip-group__header">
+                        <span class="ps-chip-group__label">TOPICS</span>
+                        <div style="display:flex;gap:4px;" onclick="event.stopPropagation()">
+                            <button class="ps-btn ps-btn--ghost ps-btn--sm" onclick="toggleAllTopics(true)">All</button>
+                            <button class="ps-btn ps-btn--ghost ps-btn--sm" onclick="toggleAllTopics(false)">None</button>
                         </div>
-                        <button class="btn-undo disabled" id="undoBtn" onclick="event.stopPropagation(); undoLastAction()" title="Undo">&#8617;</button>
+                    </div>
+                    <div class="ps-chip-group__items" id="topicChipGroup"></div>
+                </div>
+            </div>
+
+            <!-- Keywords / Topic Manager -->
+            <div id="topic-manager">
+                <div class="section-header" id="topicToggle" style="justify-content:flex-end;">
+                    <div style="display:flex;align-items:center;gap:12px">
+                        <button class="ps-btn ps-btn--ghost ps-btn--sm btn-undo disabled" id="undoBtn" onclick="event.stopPropagation(); undoLastAction()" title="Undo">&#8617;</button>
                         <span class="toggle-icon">&#9660;</span>
                     </div>
                 </div>
-                <div id="topicPills" class="topic-pills"></div>
                 <div id="topicList" class="topic-container"></div>
                 <div class="topic-add">
-                    <input type="text" id="newTopicName" placeholder="New topic name...">
-                    <button id="addTopicBtn" class="btn btn-small">Add Topic</button>
+                    <input class="ps-input" type="text" id="newTopicName" placeholder="New topic name...">
+                    <button id="addTopicBtn" class="ps-btn ps-btn--secondary ps-btn--sm">Add Topic</button>
                 </div>
             </div>
             </section>
@@ -125,14 +160,14 @@
             <section id="results-section">
                 <div class="results-header">
                     <h2>Results</h2>
-                    <button id="exportBtn" class="btn btn-small" title="Export to Excel" style="display:inline-flex;align-items:center;padding:6px 8px;">
+                    <button id="exportBtn" class="ps-btn ps-btn--ghost ps-btn--sm" title="Export to Excel" style="display:inline-flex;align-items:center;">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
                         </svg>
                     </button>
                 </div>
-                <div class="table-container">
-                    <table id="resultsTable">
+                <div class="table-container ps-table-wrapper">
+                    <table id="resultsTable" class="ps-table">
                         <thead>
                             <tr>
                                 <th data-col="member_name">Name</th>
@@ -166,17 +201,19 @@
                 <div class="results-header">
                     <h2>Master Stakeholder List</h2>
                     <div style="display:flex;align-items:center;gap:8px;">
-                        <input type="text" id="masterSearchInput" placeholder="Search..." style="padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:0.8rem;width:160px;" oninput="filterMasterList()">
-                        <button class="btn-undo disabled" id="masterUndoBtn" onclick="undoMasterDelete()" title="Undo delete" style="display:none;">&#8617;</button>
-                        <button class="btn btn-small" title="Export to Excel" style="display:inline-flex;align-items:center;padding:6px 8px;" onclick="window.location.href='/api/master/export'">
+                        <div class="ps-search ps-search--wide">
+                            <input class="ps-search__input" type="text" id="masterSearchInput" placeholder="Search stakeholders…" oninput="filterMasterList()">
+                        </div>
+                        <button class="ps-btn ps-btn--ghost ps-btn--sm btn-undo disabled" id="masterUndoBtn" onclick="undoMasterDelete()" title="Undo delete" style="display:none;">&#8617;</button>
+                        <button class="ps-btn ps-btn--ghost ps-btn--sm" title="Export to Excel" style="display:inline-flex;align-items:center;" onclick="window.location.href='/api/master/export'">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
                             </svg>
                         </button>
                     </div>
                 </div>
-                <div class="table-container">
-                    <table id="masterTable">
+                <div class="table-container ps-table-wrapper">
+                    <table id="masterTable" class="ps-table">
                         <thead>
                             <tr>
                                 <th>Name</th>
@@ -197,86 +234,49 @@
                 <p id="masterEmpty" class="empty-state" style="display:none;">No stakeholders yet. Add members from scan results using the + button.</p>
             </section>
         </div>
+
         <!-- ===== Calendar Tab ===== -->
         <div id="tab-lookahead">
-            <!-- Top controls: date nav + view toggle + refresh -->
-            <section class="control-group-card" style="margin-bottom:16px;">
-                <div class="lookahead-controls">
-                    <div class="lookahead-nav">
-                        <button class="btn-small" id="laPrevWeek" title="Previous week">&larr;</button>
-                        <span class="lookahead-date-label" id="laDateLabel">This Week</span>
-                        <button class="btn-small" id="laNextWeek" title="Next week">&rarr;</button>
-                        <button class="btn-small" id="laToday" title="Jump to this week">Today</button>
-                    </div>
-                    <div class="lookahead-view-toggle">
-                        <button class="la-view-btn active" data-view="week">Week</button>
-                        <button class="la-view-btn" data-view="list">List</button>
-                    </div>
-                    <button class="btn-small" id="laRefreshBtn" title="Refresh from Parliament">&#8635; Refresh</button>
+
+            <!-- Calendar header bar -->
+            <div class="la-cal-header">
+                <h2 class="la-cal-title">Calendar</h2>
+                <div class="la-cal-sep"></div>
+                <div class="la-cal-nav">
+                    <button class="la-cal-nav-btn" id="laPrevWeek" title="Previous week">&#8592;</button>
+                    <span class="la-cal-date-label" id="laDateLabel">This Week</span>
+                    <button class="la-cal-nav-btn" id="laNextWeek" title="Next week">&#8594;</button>
                 </div>
-            </section>
-
-            <!-- Main area: filter sidebar + content -->
-            <div class="la-main-area">
-                <!-- Filter Sidebar -->
-                <aside class="la-filter-sidebar">
-                    <!-- Sources / Event Types -->
-                    <div class="la-filter-section">
-                        <span class="source-label">SOURCES</span>
-                        <label class="la-filter-item"><input type="checkbox" class="la-type-checkbox" data-type="debate" checked> Debates</label>
-                        <label class="la-filter-item"><input type="checkbox" class="la-type-checkbox" data-type="oral_questions" checked> Oral Qs</label>
-                        <label class="la-filter-item"><input type="checkbox" class="la-type-checkbox" data-type="committee" checked> Committees</label>
-                        <label class="la-filter-item"><input type="checkbox" class="la-type-checkbox" data-type="bill_stage" checked> Bill Stages</label>
-                        <label class="la-filter-item"><input type="checkbox" class="la-type-checkbox" data-type="westminster_hall" checked> Westminster Hall</label>
-                        <label class="la-filter-item"><input type="checkbox" class="la-type-checkbox" data-type="statement" checked> Statements</label>
-                        <label class="la-filter-item"><input type="checkbox" class="la-type-checkbox" data-type="general_committee" checked> Gen. Committees</label>
-                    </div>
-
-                    <!-- House -->
-                    <div class="la-filter-section">
-                        <span class="source-label">HOUSE</span>
-                        <label class="la-filter-item"><input type="checkbox" class="la-house-checkbox" data-house="Commons" checked> Commons</label>
-                        <label class="la-filter-item"><input type="checkbox" class="la-house-checkbox" data-house="Lords" checked> Lords</label>
-                    </div>
-
-                    <!-- Topics -->
-                    <div class="la-filter-section">
-                        <span class="source-label">TOPICS</span>
-                        <label class="la-filter-item"><input type="checkbox" id="laShowAll" checked> Show all</label>
-                        <label class="la-filter-item"><input type="checkbox" id="laStarredOnly"> Starred only</label>
-                        <div id="laTopicCheckboxes" class="la-topic-checkboxes"></div>
-                    </div>
-                </aside>
-
-                <!-- Content area -->
-                <div class="la-content-area">
-                    <!-- Week View -->
-                    <section id="la-week-view" class="la-week-container"></section>
-
-                    <!-- List View (hidden by default) -->
-                    <section id="la-list-view" style="display:none;">
-                        <div class="la-list-card">
-                            <div class="table-container">
-                                <table id="laListTable">
-                                    <thead>
-                                        <tr>
-                                            <th>Date</th>
-                                            <th>Time</th>
-                                            <th>Event</th>
-                                            <th>Type</th>
-                                            <th>House</th>
-                                            <th>Location</th>
-                                            <th></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="laListBody"></tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </section>
+                <button class="la-cal-today-btn" id="laToday">Today</button>
+                <div class="la-cal-spacer"></div>
+                <!-- View toggle (segmented control) -->
+                <div class="la-view-toggle">
+                    <button class="la-view-btn active" data-view="week">Week</button>
+                    <button class="la-view-btn" data-view="list">List</button>
                 </div>
+                <!-- Filter toggle -->
+                <button class="la-filter-btn" id="laFilterBtn">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                    Filters
+                </button>
+                <!-- Refresh -->
+                <button class="la-refresh-btn" id="laRefreshBtn" title="Refresh from Parliament">&#8635; Refresh</button>
             </div>
+
+            <!-- Collapsible filter panel (rendered by JS) -->
+            <div id="laFilterPanel" class="la-filter-panel" style="display:none;"></div>
+
+            <!-- Info bar (rendered by JS) -->
+            <div id="laInfoBar" class="la-info-bar"></div>
+
+            <!-- Week view (time grid, rendered by JS) -->
+            <div id="la-week-view" class="la-time-grid-outer"></div>
+
+            <!-- List view (grouped rows, rendered by JS) -->
+            <div id="la-list-view" class="la-list-outer" style="display:none;"></div>
+
         </div>
+
         <!-- ===== Alerts Tab ===== -->
         <div id="tab-alerts" style="display:none;">
             <!-- Alert List -->
@@ -284,13 +284,13 @@
                 <div class="results-header" style="margin-bottom:12px;">
                     <h2>Email Alerts</h2>
                     <div style="display:flex;gap:8px;">
-                        <button class="btn btn-small" onclick="showAlertForm('scan')">+ Scan Alert</button>
-                        <button class="btn btn-small" onclick="showAlertForm('lookahead')">+ Calendar Alert</button>
+                        <button class="ps-btn ps-btn--secondary ps-btn--sm" onclick="showAlertForm('scan')">+ Scan Alert</button>
+                        <button class="ps-btn ps-btn--secondary ps-btn--sm" onclick="showAlertForm('lookahead')">+ Calendar Alert</button>
                     </div>
                 </div>
                 <!-- Desktop table view -->
-                <div class="table-container alerts-desktop">
-                    <table id="alertsTable">
+                <div class="table-container alerts-desktop ps-table-wrapper">
+                    <table id="alertsTable" class="ps-table">
                         <thead>
                             <tr>
                                 <th>Name</th>
@@ -313,7 +313,7 @@
             <section id="alertFormSection" class="control-group-card" style="display:none;">
                 <div class="results-header" style="margin-bottom:16px;">
                     <h2 id="alertFormTitle">Create New Alert</h2>
-                    <button class="btn-small" onclick="hideAlertForm()">Cancel</button>
+                    <button class="ps-btn ps-btn--ghost ps-btn--sm" onclick="hideAlertForm()">Cancel</button>
                 </div>
 
                 <div class="alert-form-grid">
@@ -321,12 +321,12 @@
                     <div>
                         <div style="margin-bottom:12px;">
                             <label class="source-label" style="margin-bottom:4px;">Alert Name</label>
-                            <input type="text" id="alertName" placeholder="e.g. Weekly AI Scan" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius);font-size:0.9rem;">
+                            <input class="ps-input" type="text" id="alertName" placeholder="e.g. Weekly AI Scan">
                         </div>
 
                         <div style="margin-bottom:12px;">
                             <label class="source-label" style="margin-bottom:4px;">Alert Type</label>
-                            <select id="alertType" onchange="_updateFormVisibility()" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius);font-size:0.9rem;">
+                            <select class="ps-select" id="alertType" onchange="_updateFormVisibility()">
                                 <option value="scan">Scan (past activity)</option>
                                 <option value="lookahead">Calendar (upcoming events)</option>
                             </select>
@@ -335,14 +335,14 @@
                         <div class="alert-schedule-row">
                             <div style="flex:1">
                                 <label class="source-label" style="margin-bottom:4px;">Cadence</label>
-                                <select id="alertCadence" onchange="_updateFormVisibility()" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:var(--radius);font-size:0.9rem;">
+                                <select class="ps-select" id="alertCadence" onchange="_updateFormVisibility()">
                                     <option value="weekly">Weekly</option>
                                     <option value="daily">Daily</option>
                                 </select>
                             </div>
                             <div style="flex:1" id="alertDayOfWeekRow">
                                 <label class="source-label" style="margin-bottom:4px;">Day</label>
-                                <select id="alertDayOfWeek" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:var(--radius);font-size:0.9rem;">
+                                <select class="ps-select" id="alertDayOfWeek">
                                     <option value="monday">Monday</option>
                                     <option value="tuesday">Tuesday</option>
                                     <option value="wednesday">Wednesday</option>
@@ -354,13 +354,13 @@
                             </div>
                             <div style="flex:1">
                                 <label class="source-label" style="margin-bottom:4px;">Time (UTC)</label>
-                                <input type="time" id="alertSendTime" value="09:00" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:var(--radius);font-size:0.9rem;">
+                                <input class="ps-input" type="time" id="alertSendTime" value="09:00">
                             </div>
                         </div>
 
                         <div style="margin-bottom:12px;">
                             <label class="source-label" style="margin-bottom:4px;">Timezone</label>
-                            <select id="alertTimezone" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:var(--radius);font-size:0.9rem;">
+                            <select class="ps-select" id="alertTimezone">
                                 <option value="Europe/London">Europe/London (GMT/BST)</option>
                                 <option value="UTC">UTC</option>
                             </select>
@@ -368,7 +368,7 @@
 
                         <div style="margin-bottom:12px;">
                             <label class="source-label" style="margin-bottom:4px;">Recipients (one per line or comma-separated)</label>
-                            <textarea id="alertRecipients" rows="3" placeholder="email@example.com" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius);font-size:0.85rem;resize:vertical;font-family:inherit;"></textarea>
+                            <textarea class="ps-textarea" id="alertRecipients" rows="3" placeholder="email@example.com"></textarea>
                         </div>
                     </div>
 
@@ -378,7 +378,7 @@
                         <div id="alertScanConfig">
                             <div style="margin-bottom:12px;">
                                 <label class="source-label" style="margin-bottom:4px;">Scan Period (days back)</label>
-                                <input type="number" id="alertScanPeriod" value="7" min="1" max="90" style="width:100px;padding:8px;border:1px solid var(--border);border-radius:var(--radius);font-size:0.9rem;">
+                                <input class="ps-input" type="number" id="alertScanPeriod" value="7" min="1" max="90" style="width:100px;">
                             </div>
 
                             <div style="margin-bottom:12px;">
@@ -396,7 +396,7 @@
                         <div id="alertLookaheadConfig" style="display:none;">
                             <div style="margin-bottom:12px;">
                                 <label class="source-label" style="margin-bottom:4px;">Days Ahead</label>
-                                <input type="number" id="alertLookaheadDays" value="7" min="1" max="90" style="width:100px;padding:8px;border:1px solid var(--border);border-radius:var(--radius);font-size:0.9rem;">
+                                <input class="ps-input" type="number" id="alertLookaheadDays" value="7" min="1" max="90" style="width:100px;">
                             </div>
 
                             <div style="margin-bottom:12px;">
@@ -418,8 +418,8 @@
                 </div>
 
                 <div style="display:flex;gap:12px;margin-top:16px;">
-                    <button class="btn btn-scan" onclick="saveAlert()">Save Alert</button>
-                    <button class="btn-small" onclick="hideAlertForm()">Cancel</button>
+                    <button class="ps-btn ps-btn--primary" onclick="saveAlert()">Save Alert</button>
+                    <button class="ps-btn ps-btn--ghost ps-btn--sm" onclick="hideAlertForm()">Cancel</button>
                 </div>
             </section>
 
@@ -427,10 +427,10 @@
             <section id="alertHistoryPanel" class="control-group-card" style="display:none;">
                 <div class="results-header" style="margin-bottom:12px;">
                     <h2 id="alertHistoryTitle">Run History</h2>
-                    <button class="btn-small" onclick="hideAlertHistory()">Close</button>
+                    <button class="ps-btn ps-btn--ghost ps-btn--sm" onclick="hideAlertHistory()">Close</button>
                 </div>
-                <div class="table-container">
-                    <table id="alertHistoryTable">
+                <div class="table-container ps-table-wrapper">
+                    <table id="alertHistoryTable" class="ps-table">
                         <thead>
                             <tr>
                                 <th>Time</th>
@@ -445,6 +445,7 @@
                 </div>
             </section>
         </div>
+
     </main>
 
     <script src="/js/app.js"></script>
