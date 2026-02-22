@@ -822,20 +822,18 @@ function _updateDateLabel() {
     end.setDate(end.getDate() + 6);
 
     const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const todayMon = new Date();
-    todayMon.setDate(todayMon.getDate() - ((todayMon.getDay() + 6) % 7));
-    todayMon.setHours(0, 0, 0, 0);
 
-    if (_fmtDate(start) === _fmtDate(todayMon)) {
-        label.textContent = 'This Week';
+    const startDay = start.getDate();
+    const startMon = monthNames[start.getMonth()];
+    const startYear = start.getFullYear();
+    const endDay = end.getDate();
+    const endMon = monthNames[end.getMonth()];
+    const endYear = end.getFullYear();
+
+    if (startYear === endYear) {
+        label.textContent = `${startDay} ${startMon} \u2013 ${endDay} ${endMon} ${endYear}`;
     } else {
-        const nextMon = new Date(todayMon);
-        nextMon.setDate(nextMon.getDate() + 7);
-        if (_fmtDate(start) === _fmtDate(nextMon)) {
-            label.textContent = 'Next Week';
-        } else {
-            label.textContent = `${start.getDate()} ${monthNames[start.getMonth()]} – ${end.getDate()} ${monthNames[end.getMonth()]}`;
-        }
+        label.textContent = `${startDay} ${startMon} ${startYear} \u2013 ${endDay} ${endMon} ${endYear}`;
     }
 }
 

@@ -31,7 +31,7 @@
             </button>
             <button class="ps-sidebar__nav-item tab-btn" data-tab="scanner" onclick="switchTab('scanner')" title="Scanner">
                 <span class="ps-sidebar__nav-icon">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 12 L12 4"/><path d="M12 12 L19.8 7"/><path d="M5 5 A9.9 9.9 0 0 1 22 12"/><path d="M2 12 A10 10 0 0 1 12 2"/><path d="M7.76 7.76 A7 7 0 0 1 19 12"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg>
                 </span>
                 <span class="ps-sidebar__nav-label">Scanner</span>
             </button>
@@ -46,6 +46,12 @@
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
                 </span>
                 <span class="ps-sidebar__nav-label">Alerts</span>
+            </button>
+            <button class="ps-sidebar__nav-item tab-btn" data-tab="topics" onclick="switchTab('topics')" title="Topics">
+                <span class="ps-sidebar__nav-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                </span>
+                <span class="ps-sidebar__nav-label">Topics</span>
             </button>
         </nav>
 
@@ -70,7 +76,7 @@
         <!-- ===== Scanner Tab ===== -->
         <div id="tab-scanner" style="display:none;">
             <div class="results-header">
-                <h2>Scanner</h2>
+                <h2 class="tab-page-title">Scanner</h2>
             </div>
             <!-- Grouped Control Card -->
             <section class="control-group-card">
@@ -105,27 +111,31 @@
                 <div class="ps-chip-group">
                     <div class="ps-chip-group__header">
                         <span class="ps-chip-group__label">TOPICS</span>
-                        <div style="display:flex;gap:4px;" onclick="event.stopPropagation()">
-                            <button class="ps-btn ps-btn--ghost ps-btn--sm" onclick="toggleAllTopics(true)">All</button>
-                            <button class="ps-btn ps-btn--ghost ps-btn--sm" onclick="toggleAllTopics(false)">None</button>
+                        <div style="display:flex;gap:4px;align-items:center;" onclick="event.stopPropagation()">
+                            <button class="ps-btn ps-btn--ghost ps-btn--sm btn-undo disabled" id="undoBtn" onclick="undoLastAction()" title="Undo">&#8617;</button>
+                            <span style="font-size:var(--ps-text-sm);color:var(--ps-text-muted);cursor:pointer;" onclick="toggleAllTopics(true)">All</span>
+                            <span style="font-size:var(--ps-text-sm);color:var(--ps-text-muted);">/</span>
+                            <span style="font-size:var(--ps-text-sm);color:var(--ps-text-muted);cursor:pointer;" onclick="toggleAllTopics(false)">None</span>
                         </div>
                     </div>
                     <div class="ps-chip-group__items" id="topicChipGroup"></div>
+                    <div class="topic-add-inline">
+                        <input class="ps-input ps-input--sm" type="text" id="newTopicName" placeholder="New topic...">
+                        <button id="addTopicBtn" class="ps-btn ps-btn--ghost ps-btn--sm">+ Add</button>
+                    </div>
                 </div>
             </div>
 
-            <!-- Keywords / Topic Manager -->
-            <div id="topic-manager">
-                <div class="section-header" id="topicToggle" style="justify-content:flex-end;">
-                    <div style="display:flex;align-items:center;gap:12px">
-                        <button class="ps-btn ps-btn--ghost ps-btn--sm btn-undo disabled" id="undoBtn" onclick="event.stopPropagation(); undoLastAction()" title="Undo">&#8617;</button>
-                        <span class="toggle-icon">&#9660;</span>
-                    </div>
+            <!-- Topic keyword popover (positioned by JS) -->
+            <div id="topicPopover" class="topic-popover" style="display:none;">
+                <div class="topic-popover__header">
+                    <span class="topic-popover__title"></span>
+                    <button class="topic-popover__delete" id="topicPopoverDelete" title="Delete topic">Delete topic</button>
                 </div>
-                <div id="topicList" class="topic-container"></div>
-                <div class="topic-add">
-                    <input class="ps-input" type="text" id="newTopicName" placeholder="New topic name...">
-                    <button id="addTopicBtn" class="ps-btn ps-btn--secondary ps-btn--sm">Add Topic</button>
+                <div class="topic-popover__keywords" id="topicPopoverKeywords"></div>
+                <div class="topic-popover__add">
+                    <input class="ps-input" type="text" id="topicPopoverInput" placeholder="Add keyword...">
+                    <button class="ps-btn ps-btn--ghost ps-btn--sm" onclick="addKeywordFromPopover()">Add</button>
                 </div>
             </div>
             </section>
@@ -133,22 +143,6 @@
             <!-- Progress -->
             <section id="progress-section" style="display:none;">
                 <div class="progress-header">
-                    <div class="stage-indicator" id="stageIndicator">
-                        <div class="stage" data-stage="1">
-                            <div class="stage-circle">1</div>
-                            <span class="stage-label">Keyword Search</span>
-                        </div>
-                        <div class="stage-line"></div>
-                        <div class="stage" data-stage="2">
-                            <div class="stage-circle">2</div>
-                            <span class="stage-label">Classification</span>
-                        </div>
-                        <div class="stage-line"></div>
-                        <div class="stage" data-stage="3">
-                            <div class="stage-circle">3</div>
-                            <span class="stage-label">Storing Results</span>
-                        </div>
-                    </div>
                     <button class="btn-minimize" id="minimizeBtn" style="display:none;" onclick="toggleProgressContent()" title="Minimize">&#9660;</button>
                 </div>
                 <div id="progressContent">
@@ -208,10 +202,10 @@
 
         <!-- ===== Record Tab ===== -->
         <div id="tab-record" style="display:none;">
+            <div class="results-header">
+                <h2 class="tab-page-title">Record</h2>
+            </div>
             <section id="record-section">
-                <div class="results-header">
-                    <h2>Record</h2>
-                </div>
                 <div class="results-header">
                     <div style="display:flex;align-items:center;gap:8px;">
                         <div class="ps-search ps-search--wide">
@@ -256,11 +250,13 @@
                 <h2 class="la-cal-title">Calendar</h2>
                 <div class="la-cal-controls">
                     <div class="la-cal-nav">
+                        <button class="la-cal-today-btn" id="laToday" title="Go to this week">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><circle cx="12" cy="16" r="1.5" fill="currentColor" stroke="none"/></svg>
+                        </button>
                         <button class="la-cal-nav-btn" id="laPrevWeek" title="Previous week">&#8592;</button>
-                        <span class="la-cal-date-label" id="laDateLabel">This Week</span>
                         <button class="la-cal-nav-btn" id="laNextWeek" title="Next week">&#8594;</button>
+                        <span class="la-cal-date-label" id="laDateLabel"></span>
                     </div>
-                    <button class="la-cal-today-btn" id="laToday">Today</button>
                     <div class="la-cal-spacer"></div>
                     <!-- View toggle (segmented control) -->
                     <div class="la-view-toggle">
@@ -296,7 +292,7 @@
             <!-- Alert List -->
             <section id="alertFormList" class="control-group-card">
                 <div class="results-header" style="margin-bottom:12px;">
-                    <h2>Email Alerts</h2>
+                    <h2 class="tab-page-title">Email Alerts</h2>
                     <div class="alert-new-dropdown" id="alertNewDropdown">
                         <button class="ps-btn ps-btn--secondary ps-btn--sm" id="alertNewBtn" onclick="toggleAlertDropdown(event)">
                             New Alert <span style="font-size:10px;opacity:0.7;">▾</span>
@@ -463,6 +459,20 @@
                     </table>
                 </div>
             </section>
+        </div>
+
+        <!-- ===== Topics Tab ===== -->
+        <div id="tab-topics" style="display:none;">
+            <div class="results-header">
+                <h2 class="tab-page-title">Topics</h2>
+                <button class="ps-btn ps-btn--ghost ps-btn--sm btn-undo disabled" id="topicsPageUndoBtn" onclick="undoLastAction()" title="Undo">&#8617;</button>
+            </div>
+            <p class="topics-page-desc">Topics and their keywords determine what the scanner searches for. Each keyword is matched against parliamentary records during a scan.</p>
+            <div class="topics-page-add">
+                <input class="ps-input" type="text" id="topicsPageNewName" placeholder="New topic name...">
+                <button class="ps-btn ps-btn--secondary ps-btn--sm" id="topicsPageAddBtn">+ Add Topic</button>
+            </div>
+            <div id="topicsPageGrid" class="topics-page-grid"></div>
         </div>
 
     </main>
