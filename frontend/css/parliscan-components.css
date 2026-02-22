@@ -166,6 +166,14 @@
   display: flex;
   align-items: center;
   gap: var(--ps-space-3);
+  cursor: pointer;
+  user-select: none;
+  border-radius: var(--ps-radius-md);
+  transition: opacity 0.15s ease;
+}
+
+.ps-sidebar__logo:hover {
+  opacity: 0.75;
 }
 
 .ps-sidebar__logo-icon {
@@ -240,10 +248,17 @@
 }
 
 .ps-sidebar__nav-icon {
-  font-size: var(--ps-text-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
   opacity: 0.7;
-  width: 18px;
-  text-align: center;
+  flex-shrink: 0;
+}
+
+.ps-sidebar__nav-label {
+  line-height: 1;
 }
 
 .ps-sidebar__footer {

@@ -12,28 +12,28 @@ const SVG_CROSS = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" s
 let historyPage = 1;
 const HISTORY_PER_PAGE = 5;
 
-// Party colour map
+// Party colour map — { color: bright text/border, bg: soft fill }
 const PARTY_COLOURS = {
-    'Conservative': { bg: '#68ADE9', text: '#FFFFFF' },
-    'Labour': { bg: '#C32C41', text: '#FFFFFF' },
-    'Labour/Co-operative': { bg: '#C32C41', text: '#FFFFFF' },
-    'Liberal Democrat': { bg: '#DF6D2D', text: '#FFFFFF' },
-    'Lib Dem': { bg: '#DF6D2D', text: '#FFFFFF' },
-    'Green': { bg: '#35623F', text: '#FFFFFF' },
-    'Green Party': { bg: '#35623F', text: '#FFFFFF' },
-    'Reform UK': { bg: '#71BCD3', text: '#000000' },
-    'SNP': { bg: '#F8F29C', text: '#000000' },
-    'Scottish National Party': { bg: '#F8F29C', text: '#000000' },
-    'Plaid Cymru': { bg: '#EACF4D', text: '#FFFFFF' },
-    'Crossbench': { bg: '#F2F2F2', text: '#000000' },
-    'Independent': { bg: '#F2F2F2', text: '#000000' },
-    'Non-affiliated': { bg: '#F2F2F2', text: '#000000' },
-    'DUP': { bg: '#F2F2F2', text: '#000000' },
+    'Conservative':          { color: '#68ADE9', bg: 'rgba(104,173,233,0.15)' },
+    'Labour':                { color: '#e05567', bg: 'rgba(195,44,65,0.15)'   },
+    'Labour/Co-operative':   { color: '#e05567', bg: 'rgba(195,44,65,0.15)'   },
+    'Liberal Democrat':      { color: '#DF6D2D', bg: 'rgba(223,109,45,0.15)'  },
+    'Lib Dem':               { color: '#DF6D2D', bg: 'rgba(223,109,45,0.15)'  },
+    'Green':                 { color: '#4fa861', bg: 'rgba(53,98,63,0.15)'    },
+    'Green Party':           { color: '#4fa861', bg: 'rgba(53,98,63,0.15)'    },
+    'Reform UK':             { color: '#71BCD3', bg: 'rgba(113,188,211,0.15)' },
+    'SNP':                   { color: '#d4c84e', bg: 'rgba(248,242,156,0.12)' },
+    'Scottish National Party': { color: '#d4c84e', bg: 'rgba(248,242,156,0.12)' },
+    'Plaid Cymru':           { color: '#d4aa2a', bg: 'rgba(234,207,77,0.12)'  },
+    'Crossbench':            { color: '#8a8a8a', bg: 'rgba(160,160,160,0.10)' },
+    'Independent':           { color: '#8a8a8a', bg: 'rgba(160,160,160,0.10)' },
+    'Non-affiliated':        { color: '#8a8a8a', bg: 'rgba(160,160,160,0.10)' },
+    'DUP':                   { color: '#8a8a8a', bg: 'rgba(160,160,160,0.10)' },
 };
 
 const TYPE_COLOURS = {
-    'MP': { bg: '#575178', text: '#FFFFFF' },
-    'Peer': { bg: '#861E32', text: '#FFFFFF' },
+    'MP':   { color: '#9b8fc9', bg: 'rgba(87,81,120,0.15)'  },
+    'Peer': { color: '#d4556b', bg: 'rgba(134,30,50,0.15)'  },
 };
 
 // Maps full party name to ps-party-dot modifier class
@@ -58,13 +58,20 @@ function partyDotClass(party) {
 
 function partyPill(party) {
     if (!party || party === '—') return '—';
+    const c = PARTY_COLOURS[party];
+    if (c) {
+        return `<span class="ps-badge" style="background:${c.bg};color:${c.color};border-color:${c.color}55">${escapeHtml(party)}</span>`;
+    }
     return `<span class="ps-badge ps-badge--muted">${escapeHtml(party)}</span>`;
 }
 
 function typePill(type) {
     if (!type || type === '—') return '—';
-    const cls = type === 'Peer' ? 'ps-badge ps-badge--warning' : 'ps-badge';
-    return `<span class="${cls}">${escapeHtml(type)}</span>`;
+    const c = TYPE_COLOURS[type];
+    if (c) {
+        return `<span class="ps-badge" style="background:${c.bg};color:${c.color};border-color:${c.color}55">${escapeHtml(type)}</span>`;
+    }
+    return `<span class="ps-badge">${escapeHtml(type)}</span>`;
 }
 
 async function refreshMasterResultIds() {
@@ -169,7 +176,7 @@ function renderResults(results) {
             : '—';
 
         tr.innerHTML = `
-            <td><div class="ps-member"><span class="ps-party-dot ps-party-dot--${partyDotClass(r.party)}"></span><span class="ps-member__name">${escapeHtml(r.member_name)}</span></div></td>
+            <td><div class="ps-member"><span class="ps-member__name">${escapeHtml(r.member_name)}</span></div></td>
             <td>${partyPill(r.party || '—')}${typeSmall}</td>
             <td>${topicBadges}</td>
             <td>${escapeHtml(r.summary || '—')}</td>

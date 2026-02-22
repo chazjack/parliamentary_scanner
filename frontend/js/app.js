@@ -50,8 +50,17 @@ function setDefaultDates() {
 
 // Tab switching
 function switchTab(tabName) {
-    // Update URL hash so refresh restores the correct tab
-    history.replaceState(null, '', '#' + tabName);
+    // 'calendar' is the public URL name; 'lookahead' is the internal DOM id
+    const domTab = tabName === 'calendar' ? 'lookahead' : tabName;
+
+    // Update URL — don't overwrite calendar sub-paths (view/week/filters) on restore
+    if (tabName === 'calendar') {
+        if (!window.location.pathname.startsWith('/calendar')) {
+            history.pushState(null, '', '/calendar');
+        }
+    } else {
+        history.pushState(null, '', '/' + tabName);
+    }
 
     // Toggle tab buttons
     document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -59,19 +68,19 @@ function switchTab(tabName) {
     });
 
     // Toggle tab content
-    document.getElementById('tab-scanner').style.display = tabName === 'scanner' ? '' : 'none';
-    document.getElementById('tab-record').style.display = tabName === 'record' ? '' : 'none';
-    document.getElementById('tab-lookahead').style.display = tabName === 'lookahead' ? '' : 'none';
-    document.getElementById('tab-alerts').style.display = tabName === 'alerts' ? '' : 'none';
+    document.getElementById('tab-scanner').style.display = domTab === 'scanner' ? '' : 'none';
+    document.getElementById('tab-record').style.display = domTab === 'record' ? '' : 'none';
+    document.getElementById('tab-lookahead').style.display = domTab === 'lookahead' ? '' : 'none';
+    document.getElementById('tab-alerts').style.display = domTab === 'alerts' ? '' : 'none';
 
     // Load data for the active tab
-    if (tabName === 'record') {
+    if (domTab === 'record') {
         loadMasterListTable();
     }
-    if (tabName === 'lookahead') {
+    if (domTab === 'lookahead') {
         initLookahead();
     }
-    if (tabName === 'alerts') {
+    if (domTab === 'alerts') {
         loadAlerts();
     }
 }
@@ -146,10 +155,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.querySelector('.ps-sidebar').classList.add('collapsed');
     }
 
-    // Switch to tab from URL hash, defaulting to Look Ahead
-    const validTabs = ['lookahead', 'scanner', 'record', 'alerts'];
-    const hash = window.location.hash.slice(1);
-    switchTab(validTabs.includes(hash) ? hash : 'lookahead');
+    // Switch to tab from URL path, defaulting to Calendar
+    const validTabs = ['calendar', 'scanner', 'record', 'alerts'];
+    const pathTab = window.location.pathname.slice(1).split('/')[0];
+    switchTab(validTabs.includes(pathTab) ? pathTab : 'calendar');
 });
 
 // Sidebar collapse toggle
@@ -170,9 +179,17 @@ function sidebarSearch(value) {
 }
 
 // Handle browser back/forward navigation
-window.addEventListener('hashchange', () => {
-    const validTabs = ['lookahead', 'scanner', 'record', 'alerts'];
-    const hash = window.location.hash.slice(1);
-    if (validTabs.includes(hash)) switchTab(hash);
+window.addEventListener('popstate', () => {
+    const validTabs = ['calendar', 'scanner', 'record', 'alerts'];
+    const pathTab = window.location.pathname.slice(1).split('/')[0];
+    if (!validTabs.includes(pathTab)) return;
+    const calendarVisible = document.getElementById('tab-lookahead').style.display !== 'none';
+    if (pathTab === 'calendar' && calendarVisible) {
+        // Already on calendar tab — restore sub-path state and reload
+        _restoreCalendarFromUrl();
+        _loadLaEvents();
+    } else {
+        switchTab(pathTab);
+    }
 });
 

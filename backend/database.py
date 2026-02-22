@@ -786,10 +786,21 @@ async def get_lookahead_events(
         params.extend(houses)
 
     if keywords:
+        # Word-boundary matching: pad field with spaces and replace common punctuation
+        # so keywords only match whole words, not substrings inside longer words.
+        def _norm(col):
+            return (
+                f"(' ' || REPLACE(REPLACE(REPLACE(REPLACE(REPLACE("
+                f"LOWER({col}), ':', ' '), ',', ' '), '-', ' '), '/', ' '), '(', ' ') || ' ')"
+            )
+
+        fields = ["e.title", "e.description", "e.inquiry_name", "e.committee_name", "e.bill_name"]
         kw_clauses = []
         for kw in keywords:
-            kw_clauses.append("(e.title LIKE ? OR e.description LIKE ?)")
-            params.extend([f"%{kw}%", f"%{kw}%"])
+            pattern = f"% {kw.lower()} %"
+            field_checks = " OR ".join(f"{_norm(f)} LIKE ?" for f in fields)
+            kw_clauses.append(f"({field_checks})")
+            params.extend([pattern] * len(fields))
         sql += f" AND ({' OR '.join(kw_clauses)})"
 
     if starred_only:

@@ -10,55 +10,85 @@ def _base_template(title: str, body: str, alert_name: str = "") -> str:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+l<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 0; background: #f5f5f5; color: #1a1a2e; }}
-  .container {{ max-width: 700px; margin: 0 auto; background: #fff; }}
-  .header {{ background: #1a1a2e; color: #fff; padding: 24px 32px; }}
-  .header h1 {{ margin: 0; font-size: 20px; font-weight: 600; }}
-  .header .subtitle {{ color: #a0a0b8; font-size: 13px; margin-top: 4px; }}
+  body {{ font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; padding: 0; background: #09090b; color: #a1a1aa; }}
+  .container {{ max-width: 680px; margin: 0 auto; background: #0c0c0e; }}
+  .header {{ padding: 24px 32px; border-bottom: 1px solid #1c1c1f; }}
+  .header-inner {{ display: flex; align-items: center; gap: 12px; }}
+  .logo-icon {{ width: 48px; height: 48px; display: inline-block; vertical-align: middle; }}
+  .logo-text {{ display: inline-block; vertical-align: middle; margin-left: 14px; }}
+  .logo-title {{ font-size: 22px; font-weight: 700; color: #e4e4e7; letter-spacing: -0.02em; display: block; }}
+  .header-meta {{ margin-top: 16px; }}
+  .header-meta h1 {{ margin: 0 0 4px; font-size: 24px; font-weight: 700; color: #e4e4e7; letter-spacing: -0.02em; }}
+  .header-meta .subtitle {{ color: #52525b; font-size: 12px; }}
   .content {{ padding: 24px 32px; }}
-  .summary-box {{ background: #f0f4ff; border-radius: 8px; padding: 16px 20px; margin-bottom: 24px; }}
-  .summary-box .stat {{ display: inline-block; margin-right: 24px; }}
-  .summary-box .stat-num {{ font-size: 22px; font-weight: 700; color: #1a1a2e; }}
-  .summary-box .stat-label {{ font-size: 12px; color: #666; display: block; }}
-  .result-card {{ border: 1px solid #e0e0e0; border-radius: 8px; padding: 16px; margin-bottom: 12px; }}
-  .result-card .member {{ font-weight: 600; font-size: 15px; }}
-  .result-card .meta {{ color: #666; font-size: 12px; margin: 4px 0 8px; }}
-  .result-card .summary {{ font-size: 14px; line-height: 1.5; }}
-  .result-card .quote {{ font-style: italic; color: #444; font-size: 13px; margin-top: 8px; padding-left: 12px; border-left: 3px solid #ddd; }}
-  .topic-pill {{ display: inline-block; background: #e8eaf6; color: #1a1a2e; font-size: 11px; padding: 2px 8px; border-radius: 12px; margin-right: 4px; }}
-  .confidence-high {{ color: #2e7d32; font-weight: 600; }}
-  .confidence-medium {{ color: #f57f17; font-weight: 600; }}
-  .confidence-low {{ color: #999; }}
-  .event-row {{ border-bottom: 1px solid #eee; padding: 12px 0; }}
+  .summary-box {{ background: #131315; border: 1px solid #1c1c1f; border-radius: 8px; padding: 16px 20px; margin-bottom: 20px; }}
+  .summary-box .stat {{ display: inline-block; margin-right: 28px; }}
+  .summary-box .stat-num {{ font-size: 20px; font-weight: 700; color: #e4e4e7; display: block; letter-spacing: -0.02em; }}
+  .summary-box .stat-label {{ font-size: 11px; color: #52525b; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; margin-top: 2px; display: block; }}
+  .topics-row {{ margin-bottom: 20px; }}
+  .topics-label {{ font-size: 10px; font-weight: 600; color: #52525b; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }}
+  .result-card {{ background: #0c0c0e; border: 1px solid #1c1c1f; border-radius: 8px; padding: 16px; margin-bottom: 10px; }}
+  .result-card .member {{ font-weight: 600; font-size: 14px; color: #e4e4e7; }}
+  .result-card .meta {{ color: #71717a; font-size: 12px; margin: 4px 0 10px; }}
+  .result-card .topics-row {{ margin-bottom: 8px; }}
+  .result-card .summary {{ font-size: 13px; line-height: 1.6; color: #a1a1aa; }}
+  .result-card .quote {{ font-style: italic; color: #71717a; font-size: 12px; margin-top: 10px; padding-left: 12px; border-left: 2px solid #27272a; line-height: 1.5; }}
+  .topic-pill {{ display: inline-block; background: #13121e; color: #818cf8; font-size: 11px; padding: 2px 8px; border-radius: 4px; margin-right: 4px; margin-bottom: 2px; border: 1px solid #22214a; font-weight: 500; }}
+  .confidence-high {{ color: #4ade80; font-weight: 600; }}
+  .confidence-medium {{ color: #fbbf24; font-weight: 600; }}
+  .confidence-low {{ color: #52525b; }}
+  .event-row {{ border-bottom: 1px solid #18181b; padding: 12px 0; }}
   .event-row:last-child {{ border-bottom: none; }}
-  .event-type {{ display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 12px; font-weight: 500; }}
-  .event-type-debate {{ background: #e3f2fd; color: #1565c0; }}
-  .event-type-oral_questions {{ background: #fff3e0; color: #e65100; }}
-  .event-type-committee {{ background: #e8f5e9; color: #2e7d32; }}
-  .event-type-bill_stage {{ background: #fce4ec; color: #c62828; }}
-  .event-type-westminster_hall {{ background: #f3e5f5; color: #6a1b9a; }}
-  .event-type-statement {{ background: #e0f7fa; color: #00695c; }}
-  .event-type-general_committee {{ background: #fff8e1; color: #f57f17; }}
-  .date-header {{ font-size: 15px; font-weight: 600; color: #1a1a2e; margin: 20px 0 8px; padding-bottom: 4px; border-bottom: 2px solid #1a1a2e; }}
+  .event-type {{ display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 500; margin-bottom: 4px; }}
+  .event-type-debate {{ background: #0d1520; color: #60a5fa; border: 1px solid #1a2a40; }}
+  .event-type-oral_questions {{ background: #1f1307; color: #fb923c; border: 1px solid #3d2410; }}
+  .event-type-committee {{ background: #0d1a0e; color: #4ade80; border: 1px solid #1a3320; }}
+  .event-type-bill_stage {{ background: #1a0d0d; color: #f87171; border: 1px solid #331818; }}
+  .event-type-westminster_hall {{ background: #160d1a; color: #c084fc; border: 1px solid #2c1a33; }}
+  .event-type-statement {{ background: #0d1818; color: #22d3ee; border: 1px solid #1a3030; }}
+  .event-type-general_committee {{ background: #1a1507; color: #fbbf24; border: 1px solid #332910; }}
+  .event-title {{ font-size: 13px; font-weight: 600; color: #e4e4e7; display: block; margin-top: 2px; }}
+  .event-meta {{ font-size: 12px; color: #71717a; margin-top: 3px; }}
+  .date-header {{ font-size: 11px; font-weight: 600; color: #71717a; margin: 20px 0 8px; padding-bottom: 6px; border-bottom: 1px solid #27272a; text-transform: uppercase; letter-spacing: 0.06em; }}
   .date-header:first-child {{ margin-top: 0; }}
-  a {{ color: #1565c0; }}
-  .footer {{ padding: 16px 32px; font-size: 12px; color: #999; border-top: 1px solid #eee; }}
-  .empty-msg {{ color: #666; font-style: italic; padding: 20px 0; }}
+  a {{ color: #818cf8; text-decoration: none; }}
+  a:hover {{ color: #a5b4fc; }}
+  .footer {{ padding: 16px 32px; font-size: 11px; color: #3f3f46; border-top: 1px solid #18181b; line-height: 1.6; }}
+  .empty-msg {{ color: #52525b; font-style: italic; padding: 20px 0; font-size: 13px; }}
+  .divider {{ border: none; border-top: 1px solid #18181b; margin: 20px 0; }}
 </style>
 </head>
 <body>
 <div class="container">
   <div class="header">
-    <h1>{title}</h1>
-    <div class="subtitle">{alert_name} &mdash; {datetime.utcnow().strftime('%d %B %Y')}</div>
+    <div>
+      <svg class="logo-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="48" height="48">
+        <rect x="30" y="45" width="60" height="18" rx="9" fill="#e4e4e7"/>
+        <rect x="105" y="45" width="65" height="18" rx="9" fill="#e4e4e7"/>
+        <rect x="30" y="78" width="80" height="18" rx="9" fill="#e4e4e7"/>
+        <rect x="125" y="78" width="45" height="18" rx="9" fill="#e4e4e7"/>
+        <rect x="30" y="111" width="50" height="18" rx="9" fill="#e4e4e7"/>
+        <rect x="95" y="111" width="75" height="18" rx="9" fill="#e4e4e7"/>
+        <rect x="30" y="144" width="70" height="18" rx="9" fill="#e4e4e7"/>
+        <rect x="115" y="144" width="55" height="18" rx="9" fill="#e4e4e7"/>
+      </svg>
+      <span class="logo-text">
+        <span class="logo-title">ParliScan</span>
+      </span>
+    </div>
+    <div class="header-meta">
+      <h1>{title}</h1>
+      <div class="subtitle">{alert_name} &mdash; {datetime.utcnow().strftime('%d %B %Y')}</div>
+    </div>
   </div>
   <div class="content">
     {body}
   </div>
   <div class="footer">
-    Sent by Parliamentary Monitor. To manage this alert, visit your alert settings.<br>
-    To unsubscribe, reply to this email with "unsubscribe" or remove your address from the alert settings.
+    Sent by ParliScan &mdash; Parliamentary Monitor.<br>
+    To manage this alert, visit your alert settings. To unsubscribe, reply with &ldquo;unsubscribe&rdquo; or remove your address from the alert settings.
   </div>
 </div>
 </body>
@@ -91,10 +121,19 @@ def scan_digest_html(
 
     summary_box = f"""
     <div class="summary-box">
-      <span class="stat"><span class="stat-num">{len(results)}</span><span class="stat-label">Relevant results</span></span>
-      <span class="stat"><span class="stat-num">{scan_start} &ndash; {scan_end}</span><span class="stat-label">Period scanned</span></span>
+      <span class="stat">
+        <span class="stat-num">{len(results)}</span>
+        <span class="stat-label">Relevant results</span>
+      </span>
+      <span class="stat">
+        <span class="stat-num">{scan_start} &ndash; {scan_end}</span>
+        <span class="stat-label">Period scanned</span>
+      </span>
     </div>
-    <div style="margin-bottom:16px;">Topics: {topic_pills}</div>
+    <div class="topics-row">
+      <div class="topics-label">Topics</div>
+      {topic_pills}
+    </div>
     """
 
     if not results:
@@ -109,7 +148,10 @@ def scan_digest_html(
 
         source_link = ""
         if r.get("source_url"):
-            source_link = f' &middot; <a href="{r["source_url"]}">Source</a>'
+            source_link = f' &middot; <a href="{r["source_url"]}">View source &rarr;</a>'
+
+        topics_html = _format_topics(r.get("topics", "[]"))
+        topics_section = f'<div class="topics-row" style="margin-bottom:8px;">{topics_html}</div>' if topics_html else ""
 
         cards.append(f"""
         <div class="result-card">
@@ -119,7 +161,7 @@ def scan_digest_html(
             &middot; <span class="{_confidence_class(r.get("confidence", ""))}">{r.get("confidence", "")}</span>
             {source_link}
           </div>
-          <div>{_format_topics(r.get("topics", "[]"))}</div>
+          {topics_section}
           <div class="summary">{r.get("summary", "")}</div>
           {quote_html}
         </div>""")
@@ -137,8 +179,14 @@ def lookahead_digest_html(
     """Build HTML for a lookahead alert digest email."""
     summary_box = f"""
     <div class="summary-box">
-      <span class="stat"><span class="stat-num">{len(events)}</span><span class="stat-label">Upcoming events</span></span>
-      <span class="stat"><span class="stat-num">{start_date} &ndash; {end_date}</span><span class="stat-label">Period</span></span>
+      <span class="stat">
+        <span class="stat-num">{len(events)}</span>
+        <span class="stat-label">Upcoming events</span>
+      </span>
+      <span class="stat">
+        <span class="stat-num">{start_date} &ndash; {end_date}</span>
+        <span class="stat-label">Period</span>
+      </span>
     </div>
     """
 
@@ -168,7 +216,7 @@ def lookahead_digest_html(
 
             link = ""
             if ev.get("source_url"):
-                link = f' &middot; <a href="{ev["source_url"]}">Details</a>'
+                link = f' &middot; <a href="{ev["source_url"]}">Details &rarr;</a>'
 
             house = ev.get("house", "")
             location = ev.get("location", "")
@@ -177,8 +225,8 @@ def lookahead_digest_html(
             sections.append(f"""
             <div class="event-row">
               <span class="event-type event-type-{etype}">{etype.replace("_", " ").title()}</span>
-              <strong>{ev.get("title", "")}</strong>
-              <div style="font-size:12px;color:#666;margin-top:2px;">
+              <span class="event-title">{ev.get("title", "")}</span>
+              <div class="event-meta">
                 {time_str}{house}{loc_str}{link}
               </div>
             </div>""")

@@ -84,14 +84,22 @@ function _alertDisplayData(a) {
 }
 
 function _alertActions(a) {
+    const toggleLabel = a.enabled ? 'Disable' : 'Enable';
     return `
-        <button class="ps-btn ps-btn--ghost ps-btn--sm" onclick="toggleAlertEnabled(${a.id}, ${!a.enabled})" title="${a.enabled ? 'Disable' : 'Enable'}">${a.enabled ? 'Disable' : 'Enable'}</button>
-        <button class="ps-btn ps-btn--ghost ps-btn--sm" onclick="testAlert(${a.id})" title="Send test email">Test</button>
-        <button class="ps-btn ps-btn--ghost ps-btn--sm" onclick="runAlertNow(${a.id})" title="Run now">Run</button>
-        <button class="ps-btn ps-btn--ghost ps-btn--sm" onclick="editAlert(${a.id})" title="Edit">Edit</button>
-        <button class="ps-btn ps-btn--ghost ps-btn--sm" onclick="previewAlert(${a.id})" title="Preview email">Preview</button>
-        <button class="ps-btn ps-btn--ghost ps-btn--sm" onclick="showAlertHistory(${a.id})" title="History">Log</button>
-        <button class="ps-btn ps-btn--sm" style="background:var(--ps-danger);color:#fff;border-color:var(--ps-danger);" onclick="deleteAlertConfirm(${a.id})" title="Delete">&times;</button>`;
+        <div class="alert-actions-dropdown" id="alert-actions-${a.id}">
+            <button class="ps-btn ps-btn--ghost ps-btn--sm alert-actions-trigger" onclick="toggleAlertMenu(event, ${a.id})" title="Actions">&#8942;</button>
+            <div class="alert-actions-menu" id="alert-menu-${a.id}" style="display:none;">
+                <button onclick="editAlert(${a.id}); closeAlertMenu(${a.id})">Edit</button>
+                <button onclick="toggleAlertEnabled(${a.id}, ${!a.enabled}); closeAlertMenu(${a.id})">${toggleLabel}</button>
+                <div class="alert-menu-divider"></div>
+                <button onclick="testAlert(${a.id}); closeAlertMenu(${a.id})">Send test email</button>
+                <button onclick="runAlertNow(${a.id}); closeAlertMenu(${a.id})">Run now</button>
+                <button onclick="previewAlert(${a.id}); closeAlertMenu(${a.id})">Preview email</button>
+                <button onclick="showAlertHistory(${a.id}); closeAlertMenu(${a.id})">View history</button>
+                <div class="alert-menu-divider"></div>
+                <button class="alert-menu-danger" onclick="deleteAlertConfirm(${a.id}); closeAlertMenu(${a.id})">Delete</button>
+            </div>
+        </div>`;
 }
 
 function showAlertForm(alertType) {
@@ -374,3 +382,35 @@ function _parseJsonField(val) {
 function previewAlert(alertId) {
     window.open(`/api/alerts/${alertId}/preview`, '_blank');
 }
+
+function toggleAlertDropdown(e) {
+    e.stopPropagation();
+    const menu = document.getElementById('alertNewMenu');
+    menu.style.display = menu.style.display === 'none' ? '' : 'none';
+}
+
+function selectAlertType(type) {
+    document.getElementById('alertNewMenu').style.display = 'none';
+    showAlertForm(type);
+}
+
+function toggleAlertMenu(e, alertId) {
+    e.stopPropagation();
+    document.querySelectorAll('.alert-actions-menu').forEach(m => {
+        if (m.id !== `alert-menu-${alertId}`) m.style.display = 'none';
+    });
+    const menu = document.getElementById(`alert-menu-${alertId}`);
+    if (menu) menu.style.display = menu.style.display === 'none' ? '' : 'none';
+}
+
+function closeAlertMenu(alertId) {
+    const menu = document.getElementById(`alert-menu-${alertId}`);
+    if (menu) menu.style.display = 'none';
+}
+
+// Close all dropdowns when clicking outside
+document.addEventListener('click', () => {
+    const newMenu = document.getElementById('alertNewMenu');
+    if (newMenu) newMenu.style.display = 'none';
+    document.querySelectorAll('.alert-actions-menu').forEach(m => m.style.display = 'none');
+});

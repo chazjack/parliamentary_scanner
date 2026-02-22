@@ -25,7 +25,7 @@ WHATSON_API_BASE = "https://whatson-api.parliament.uk"
 COMMITTEES_API_BASE = "https://committees-api.parliament.uk"
 
 # Look Ahead cache
-LOOKAHEAD_CACHE_TTL = 7200  # seconds (2 hours)
+LOOKAHEAD_CACHE_TTL = 86400  # seconds (24 hours)
 
 # Rate limiting
 REQUEST_DELAY = 0.2  # seconds between Parliament API calls

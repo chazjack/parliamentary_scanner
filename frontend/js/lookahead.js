@@ -23,6 +23,7 @@ const laState = {
     ]),
     enabledHouses: new Set(['Commons', 'Lords']),
     activeTopicIds: new Set(),
+    showAllEvents: false,   // when true, bypass keyword filtering entirely
     initialized: false,
     loading: false,
 };
@@ -36,9 +37,22 @@ function initLookahead() {
         monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
         monday.setHours(0, 0, 0, 0);
         laState.weekStart = monday;
+        // Default: filter by all topics so only relevant events are shown
+        _initTopicIds();
+        // Restore view/week/filters from URL if navigating directly to /calendar/...
+        _restoreCalendarFromUrl();
     }
-    _renderLaTopicPills(); // no-op, topics render inside filter panel
+    _renderLaTopicPills();
+    // Sync view toggle buttons to match restored state
+    document.querySelectorAll('.la-view-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.view === laState.view);
+    });
+    _updateWeekNavVisibility();
     _loadLaEvents();
+}
+
+function _initTopicIds() {
+    laState.activeTopicIds = new Set((state.topics || []).map(t => t.id));
 }
 
 // --- Setup ---
@@ -69,6 +83,7 @@ function _setupLaListeners() {
             document.querySelectorAll('.la-view-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             laState.view = btn.dataset.view;
+            _updateWeekNavVisibility();
             _loadLaEvents();
         });
     });
@@ -92,19 +107,23 @@ async function _loadLaEvents() {
     if (laState.loading) return;
     laState.loading = true;
 
-    const start = _fmtDate(laState.weekStart);
-    let endDate;
+    let startDate, endDate;
     if (laState.view === 'list') {
-        endDate = new Date(laState.weekStart);
-        endDate.setDate(endDate.getDate() + 90);
+        // List view: always start from today, show 6 months ahead
+        startDate = new Date();
+        startDate.setHours(0, 0, 0, 0);
+        endDate = new Date(startDate);
+        endDate.setDate(endDate.getDate() + 180);
     } else {
+        startDate = laState.weekStart;
         endDate = new Date(laState.weekStart);
         endDate.setDate(endDate.getDate() + 6);
     }
+    const start = _fmtDate(startDate);
     const end = _fmtDate(endDate);
 
-    // Empty activeTopicIds = show all (no server-side filter)
-    const topicParam = Array.from(laState.activeTopicIds).join(',');
+    // showAllEvents bypasses keyword filtering; otherwise send active topic IDs
+    const topicParam = laState.showAllEvents ? '' : Array.from(laState.activeTopicIds).join(',');
 
     _updateDateLabel();
 
@@ -147,6 +166,7 @@ async function _forceRefresh() {
 // --- Rendering ---
 
 function _renderLaView() {
+    _updateCalendarUrl();
     const filtered = laState.events.filter(ev =>
         laState.enabledTypes.has(ev.event_type) &&
         laState.enabledHouses.has(ev.house) &&
@@ -401,7 +421,8 @@ function _renderListView(events) {
         return (a.start_time || '').localeCompare(b.start_time || '');
     });
 
-    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const monthNamesShort = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
     // Group by date
@@ -413,9 +434,22 @@ function _renderListView(events) {
         groups[key].push(ev);
     }
 
+    let currentMonth = null;
+
     for (const dateKey of groupOrder) {
         const d = new Date(dateKey + 'T00:00:00');
-        const dayLabel = `${dayNames[d.getDay()]} ${d.getDate()} ${monthNames[d.getMonth()]}`;
+        const monthKey = `${d.getFullYear()}-${d.getMonth()}`;
+
+        // Insert a month header when the month changes
+        if (monthKey !== currentMonth) {
+            currentMonth = monthKey;
+            const monthHeader = document.createElement('div');
+            monthHeader.className = 'la-list-month-header';
+            monthHeader.textContent = `${monthNames[d.getMonth()]} ${d.getFullYear()}`;
+            container.appendChild(monthHeader);
+        }
+
+        const dayLabel = `${dayNames[d.getDay()]} ${d.getDate()} ${monthNamesShort[d.getMonth()]}`;
         const dayEvents = groups[dateKey];
 
         const group = document.createElement('div');
@@ -562,25 +596,52 @@ function _renderFilterPanel() {
         panel.appendChild(_makeFpDivider());
         const topicGroup = document.createElement('div');
         topicGroup.className = 'la-fp-group la-fp-group--flex1';
+
+        const topicHeaderRow = document.createElement('div');
+        topicHeaderRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;';
+
         const topicLabel = document.createElement('span');
         topicLabel.className = 'la-fp-label';
+        topicLabel.style.marginBottom = '0';
         topicLabel.textContent = 'Topics';
-        topicGroup.appendChild(topicLabel);
+        topicHeaderRow.appendChild(topicLabel);
+
+        const modeBtn = document.createElement('button');
+        modeBtn.className = 'la-topic-mode-btn' + (laState.showAllEvents ? ' la-topic-mode-btn--all' : '');
+        modeBtn.textContent = laState.showAllEvents ? 'Show filtered topics' : 'Show all events';
+        modeBtn.addEventListener('click', () => {
+            laState.showAllEvents = !laState.showAllEvents;
+            if (!laState.showAllEvents) _initTopicIds();
+            _renderFilterPanel();
+            _loadLaEvents();
+        });
+        topicHeaderRow.appendChild(modeBtn);
+        topicGroup.appendChild(topicHeaderRow);
+
         const topicChips = document.createElement('div');
         topicChips.className = 'la-fp-chips';
 
         for (const topic of state.topics) {
-            const isActive = laState.activeTopicIds.has(topic.id);
+            const isActive = !laState.showAllEvents && laState.activeTopicIds.has(topic.id);
             const chip = document.createElement('button');
             chip.className = 'la-filter-chip' + (isActive ? ' la-filter-chip--active' : '');
+            if (laState.showAllEvents) chip.style.opacity = '0.4';
             chip.textContent = topic.name;
             chip.addEventListener('click', () => {
-                if (laState.activeTopicIds.has(topic.id)) {
-                    laState.activeTopicIds.delete(topic.id);
+                // Clicking a specific topic switches to Topics mode
+                if (laState.showAllEvents) {
+                    laState.showAllEvents = false;
+                    laState.activeTopicIds = new Set([topic.id]);
+                    _updateTopicModeToggle();
                 } else {
-                    laState.activeTopicIds.add(topic.id);
+                    if (laState.activeTopicIds.has(topic.id)) {
+                        laState.activeTopicIds.delete(topic.id);
+                    } else {
+                        laState.activeTopicIds.add(topic.id);
+                    }
                 }
-                _loadLaEvents(); // server-side filter
+                _renderFilterPanel();
+                _loadLaEvents();
             });
             topicChips.appendChild(chip);
         }
@@ -602,10 +663,14 @@ function _renderInfoBar(filteredCount) {
     if (!bar) return;
 
     const allTypes = Object.keys(LA_COLORS);
+    const totalTopics = (state.topics || []).length;
+    // Count as a filter if: in All events mode, or narrowed to a subset of topics
+    const topicFilterCount = laState.showAllEvents ? 0
+        : (laState.activeTopicIds.size < totalTopics ? totalTopics - laState.activeTopicIds.size : 0);
     const filterCount =
         (allTypes.length - laState.enabledTypes.size) +
         (2 - laState.enabledHouses.size) +
-        laState.activeTopicIds.size +
+        topicFilterCount +
         (laState.starredOnly ? 1 : 0);
 
     bar.innerHTML = '';
@@ -632,8 +697,10 @@ function _renderInfoBar(filteredCount) {
         clearBtn.addEventListener('click', () => {
             laState.enabledTypes = new Set(Object.keys(LA_COLORS));
             laState.enabledHouses = new Set(['Commons', 'Lords']);
-            laState.activeTopicIds = new Set();
+            laState.showAllEvents = false;
+            _initTopicIds();
             laState.starredOnly = false;
+            _updateTopicModeToggle();
             if (laState.showFilters) _renderFilterPanel();
             _loadLaEvents();
         });
@@ -644,16 +711,18 @@ function _renderInfoBar(filteredCount) {
     spacer.style.flex = '1';
     bar.appendChild(spacer);
 
-    // Color legend
-    const legend = document.createElement('div');
-    legend.className = 'la-info-legend';
-    for (const [, c] of Object.entries(LA_COLORS)) {
-        const item = document.createElement('span');
-        item.className = 'la-legend-item';
-        item.innerHTML = `<span class="la-legend-dot" style="background:${c.color};"></span>${c.label}`;
-        legend.appendChild(item);
+    // Color legend — hide when filter panel is open (event types are shown there)
+    if (!laState.showFilters) {
+        const legend = document.createElement('div');
+        legend.className = 'la-info-legend';
+        for (const [, c] of Object.entries(LA_COLORS)) {
+            const item = document.createElement('span');
+            item.className = 'la-legend-item';
+            item.innerHTML = `<span class="la-legend-dot" style="background:${c.color};"></span>${c.label}`;
+            legend.appendChild(item);
+        }
+        bar.appendChild(legend);
     }
-    bar.appendChild(legend);
 
     // Update filter button badge
     _updateFilterBtnBadge(filterCount);
@@ -703,10 +772,24 @@ async function _toggleStar(eventId, isCurrentlyStarred, btnEl) {
     }
 }
 
+function setLaTopicMode(showAll) {
+    laState.showAllEvents = showAll;
+    // Restore all topic IDs when switching back to Topics mode
+    if (!showAll) _initTopicIds();
+    _updateTopicModeToggle();
+    if (laState.showFilters) _renderFilterPanel();
+    _loadLaEvents();
+}
+
+function _updateTopicModeToggle() {
+    // No header toggle any more — just re-render the filter panel if open
+    if (laState.showFilters) _renderFilterPanel();
+}
+
 // --- Topic pills (no-op: topics are rendered inside filter panel) ---
 
 function _renderLaTopicPills() {
-    // Topics are rendered dynamically in the filter panel via _renderFilterPanel()
+    // Topics are rendered in the topic bar and filter panel
 }
 
 function _getSelectedTopicIds() {
@@ -715,9 +798,24 @@ function _getSelectedTopicIds() {
 
 // --- UI helpers ---
 
+function _updateWeekNavVisibility() {
+    const isList = laState.view === 'list';
+    ['laPrevWeek', 'laNextWeek', 'laToday'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = isList ? 'none' : '';
+    });
+    const sep = document.querySelector('.la-cal-sep');
+    if (sep) sep.style.display = isList ? 'none' : '';
+}
+
 function _updateDateLabel() {
     const label = document.getElementById('laDateLabel');
     if (!label) return;
+
+    if (laState.view === 'list') {
+        label.textContent = 'Upcoming';
+        return;
+    }
 
     const start = laState.weekStart;
     const end = new Date(start);
@@ -738,6 +836,80 @@ function _updateDateLabel() {
         } else {
             label.textContent = `${start.getDate()} ${monthNames[start.getMonth()]} – ${end.getDate()} ${monthNames[end.getMonth()]}`;
         }
+    }
+}
+
+// --- URL sync ---
+
+function _updateCalendarUrl() {
+    const parts = ['calendar'];
+    if (laState.view === 'list') {
+        parts.push('list');
+    } else {
+        parts.push('week');
+        parts.push(_fmtDate(laState.weekStart));
+    }
+
+    const params = new URLSearchParams();
+
+    // Only include event types if some are disabled
+    const allTypes = Object.keys(LA_COLORS);
+    const activeTypes = allTypes.filter(t => laState.enabledTypes.has(t));
+    if (activeTypes.length < allTypes.length) {
+        params.set('types', activeTypes.join(','));
+    }
+
+    // Only include houses if not both enabled
+    if (laState.enabledHouses.size < 2) {
+        params.set('houses', Array.from(laState.enabledHouses).join(','));
+    }
+
+    if (laState.starredOnly) params.set('starred', '1');
+    if (laState.showAllEvents) params.set('all', '1');
+
+    // Only include topics if a subset is selected
+    if (!laState.showAllEvents) {
+        const allTopicIds = (state.topics || []).map(t => t.id);
+        if (laState.activeTopicIds.size > 0 && laState.activeTopicIds.size < allTopicIds.length) {
+            params.set('topics', Array.from(laState.activeTopicIds).join(','));
+        }
+    }
+
+    const qs = params.toString();
+    history.replaceState(null, '', '/' + parts.join('/') + (qs ? '?' + qs : ''));
+}
+
+function _restoreCalendarFromUrl() {
+    const parts = window.location.pathname.slice(1).split('/');
+    // parts[0] = 'calendar', parts[1] = 'week'|'list', parts[2] = YYYY-MM-DD
+    const view = parts[1];
+    const weekDate = parts[2];
+
+    if (view === 'list') {
+        laState.view = 'list';
+    } else if (view === 'week') {
+        laState.view = 'week';
+        if (weekDate && /^\d{4}-\d{2}-\d{2}$/.test(weekDate)) {
+            const d = new Date(weekDate + 'T00:00:00');
+            if (!isNaN(d.getTime())) laState.weekStart = d;
+        }
+    }
+
+    const params = new URLSearchParams(window.location.search);
+
+    if (params.has('types')) {
+        const requested = params.get('types').split(',');
+        laState.enabledTypes = new Set(requested.filter(t => t in LA_COLORS));
+    }
+    if (params.has('houses')) {
+        const requested = params.get('houses').split(',');
+        laState.enabledHouses = new Set(requested.filter(h => ['Commons', 'Lords'].includes(h)));
+    }
+    if (params.get('starred') === '1') laState.starredOnly = true;
+    if (params.get('all') === '1') laState.showAllEvents = true;
+    if (params.has('topics') && !laState.showAllEvents) {
+        const ids = params.get('topics').split(',').map(Number).filter(n => !isNaN(n));
+        if (ids.length > 0) laState.activeTopicIds = new Set(ids);
     }
 }
 

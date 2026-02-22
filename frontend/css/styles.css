@@ -1162,8 +1162,11 @@ header h1 {
 }
 
 .results-header h2 {
-    font-size: 1.1rem;
-    color: var(--primary);
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--ps-text-primary);
+    letter-spacing: -0.02em;
+    margin: 0;
 }
 
 .table-container {
@@ -1977,19 +1980,25 @@ header h1 {
 /* Calendar header bar */
 .la-cal-header {
     display: flex;
-    align-items: center;
-    gap: 10px;
+    flex-direction: column;
+    gap: 8px;
     padding: 10px 0 12px;
     border-bottom: 1px solid rgba(255,255,255,0.06);
     margin-bottom: 0;
 }
 
 .la-cal-title {
-    font-size: 15px;
+    font-size: 1.25rem;
     font-weight: 700;
     color: var(--ps-text-primary);
     margin: 0;
     letter-spacing: -0.02em;
+}
+
+.la-cal-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
 
 .la-cal-sep {
@@ -2211,6 +2220,34 @@ header h1 {
     cursor: pointer;
     font-family: inherit;
     transition: all 0.15s;
+}
+
+/* Topic mode toggle button inside filter panel */
+.la-topic-mode-btn {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 3px 8px;
+    border-radius: 4px;
+    border: 1px solid rgba(99,102,241,0.3);
+    background: rgba(99,102,241,0.08);
+    color: var(--ps-accent);
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.12s;
+}
+
+.la-topic-mode-btn:hover {
+    background: rgba(99,102,241,0.15);
+}
+
+.la-topic-mode-btn--all {
+    border-color: rgba(251,146,60,0.3);
+    background: rgba(251,146,60,0.08);
+    color: #fb923c;
+}
+
+.la-topic-mode-btn--all:hover {
+    background: rgba(251,146,60,0.15);
 }
 
 .la-filter-chip--active {
@@ -2506,6 +2543,16 @@ header h1 {
     padding-top: 4px;
 }
 
+.la-list-month-header {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--ps-text-primary);
+    padding: 16px 0 6px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    margin-bottom: 8px;
+    letter-spacing: 0.02em;
+}
+
 .la-list-group {
     margin-bottom: 4px;
 }
@@ -2647,15 +2694,75 @@ header h1 {
     background: var(--ps-bg-subtle);
 }
 
-.alert-actions-cell {
+/* Alerts tab fills full viewport height so action dropdowns always have space */
+#tab-alerts {
+    flex: 1;
+    overflow: auto;
     display: flex;
-    gap: 4px;
-    flex-wrap: wrap;
+    flex-direction: column;
 }
 
-.alert-actions-cell .ps-btn {
-    padding: 3px 8px;
-    font-size: 0.75rem;
+#alertFormList {
+    flex: 1;
+    min-height: 400px;
+}
+
+.alert-actions-cell {
+    text-align: center;
+}
+
+.alert-actions-dropdown {
+    position: relative;
+    display: inline-block;
+}
+
+.alert-actions-trigger {
+    width: 28px;
+    padding: 2px 0 !important;
+    font-size: 1.1rem !important;
+    line-height: 1;
+    letter-spacing: 0;
+}
+
+.alert-actions-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    background: var(--ps-bg-raised);
+    border: 1px solid var(--ps-border-strong);
+    border-radius: var(--ps-radius-md);
+    box-shadow: var(--ps-shadow-md);
+    min-width: 160px;
+    z-index: 200;
+    overflow: hidden;
+}
+
+.alert-actions-menu button {
+    display: block;
+    width: 100%;
+    padding: 8px 14px;
+    text-align: left;
+    background: none;
+    border: none;
+    font-size: 0.85rem;
+    color: var(--ps-text-primary);
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.12s;
+}
+
+.alert-actions-menu button:hover {
+    background: var(--ps-bg-emphasis);
+}
+
+.alert-menu-divider {
+    height: 1px;
+    background: var(--ps-border-default);
+    margin: 4px 0;
+}
+
+.alert-menu-danger {
+    color: var(--ps-danger) !important;
 }
 
 /* Alert form grid */
@@ -2713,5 +2820,41 @@ header h1 {
 .alert-card-actions .ps-btn {
     padding: 4px 10px;
     font-size: 0.75rem;
+}
+
+/* New Alert dropdown */
+.alert-new-dropdown {
+    position: relative;
+}
+
+.alert-new-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    background: var(--ps-bg-raised);
+    border: 1px solid var(--ps-border-strong);
+    border-radius: var(--ps-radius-md);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+    min-width: 160px;
+    z-index: 200;
+    overflow: hidden;
+}
+
+.alert-new-menu button {
+    display: block;
+    width: 100%;
+    padding: 9px 14px;
+    text-align: left;
+    background: none;
+    border: none;
+    color: var(--ps-text-primary);
+    font-size: 0.85rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.12s;
+}
+
+.alert-new-menu button:hover {
+    background: var(--ps-bg-emphasis);
 }
 
