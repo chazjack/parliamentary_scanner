@@ -47,17 +47,17 @@ async function loadMasterListTable() {
             tr.dataset.masterTopics = Array.from(topicSet).join(' ').toLowerCase();
 
             const topicPills = Array.from(topicSet)
-                .map(t => `<span class="keyword-chip">${escapeHtml(t)}</span>`)
+                .map(t => `<span class="ps-badge ps-badge--accent">${escapeHtml(t)}</span>`)
                 .join(' ');
 
             tr.innerHTML = `
-                <td><strong>${escapeHtml(entry.member_name)}</strong></td>
+                <td><div class="ps-member"><span class="ps-party-dot ps-party-dot--${partyDotClass(entry.party)}"></span><span class="ps-member__name">${escapeHtml(entry.member_name)}</span></div></td>
                 <td>${partyPill(entry.party || '—')}</td>
                 <td>${typePill(entry.member_type || '—')}</td>
                 <td>${escapeHtml(entry.constituency || '—')}</td>
                 <td>${topicPills || '—'}</td>
                 <td>
-                    <select data-master-id="${entry.id}" data-field="priority" onchange="updateMaster(${entry.id}, 'priority', this.value)">
+                    <select class="ps-select" data-master-id="${entry.id}" data-field="priority" onchange="updateMaster(${entry.id}, 'priority', this.value)">
                         <option value="" ${!entry.priority ? 'selected' : ''}>—</option>
                         <option value="High" ${entry.priority === 'High' ? 'selected' : ''}>High</option>
                         <option value="Medium" ${entry.priority === 'Medium' ? 'selected' : ''}>Medium</option>
@@ -65,7 +65,7 @@ async function loadMasterListTable() {
                     </select>
                 </td>
                 <td>
-                    <input type="text" value="${escapeHtml(entry.notes || '')}"
+                    <input class="ps-input" type="text" value="${escapeHtml(entry.notes || '')}"
                            onblur="updateMaster(${entry.id}, 'notes', this.value)"
                            placeholder="Add notes...">
                 </td>

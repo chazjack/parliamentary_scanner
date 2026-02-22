@@ -26,13 +26,15 @@ function renderAlertsList() {
     // Desktop table rows
     tableBody.innerHTML = alertsList.map(a => {
         const d = _alertDisplayData(a);
+        const typeCls = a.alert_type === 'scan' ? 'ps-badge ps-badge--accent' : 'ps-badge ps-badge--success';
+        const statusCls = a.enabled ? 'ps-badge ps-badge--success' : 'ps-badge ps-badge--muted';
         return `<tr>
             <td><strong>${_escHtml(a.name)}</strong></td>
-            <td><span class="pill" style="background:${d.typeBg};color:${d.typeColor}">${d.typeLabel}</span></td>
+            <td><span class="${typeCls}">${d.typeLabel}</span></td>
             <td>${d.cadenceLabel}</td>
             <td>${d.recipientLabel}</td>
             <td>${d.lastRun}</td>
-            <td><span class="history-status ${d.statusClass}">${d.statusLabel}</span></td>
+            <td><span class="${statusCls}">${d.statusLabel}</span></td>
             <td class="alert-actions-cell">${_alertActions(a)}</td>
         </tr>`;
     }).join('');
@@ -41,13 +43,15 @@ function renderAlertsList() {
     if (cardList) {
         cardList.innerHTML = alertsList.map(a => {
             const d = _alertDisplayData(a);
+            const typeCls = a.alert_type === 'scan' ? 'ps-badge ps-badge--accent' : 'ps-badge ps-badge--success';
+            const statusCls = a.enabled ? 'ps-badge ps-badge--success' : 'ps-badge ps-badge--muted';
             return `<div class="alert-card">
                 <div class="alert-card-header">
                     <span class="alert-card-name">${_escHtml(a.name)}</span>
-                    <span class="history-status ${d.statusClass}">${d.statusLabel}</span>
+                    <span class="${statusCls}">${d.statusLabel}</span>
                 </div>
                 <div class="alert-card-meta">
-                    <span class="pill" style="background:${d.typeBg};color:${d.typeColor}">${d.typeLabel}</span>
+                    <span class="${typeCls}">${d.typeLabel}</span>
                     <span>${d.cadenceLabel}</span>
                     <span>${d.recipientLabel}</span>
                 </div>
@@ -61,9 +65,13 @@ function renderAlertsList() {
 function _alertDisplayData(a) {
     const statusClass = a.enabled ? 'completed' : 'cancelled';
     const statusLabel = a.enabled ? 'Enabled' : 'Disabled';
+    const lastRunStatus = a.last_run_status;
+    const lastRunCls = lastRunStatus === 'completed' ? 'ps-badge ps-badge--success'
+        : lastRunStatus === 'failed' ? 'ps-badge ps-badge--danger'
+        : 'ps-badge';
     const lastRun = a.last_run_at
-        ? `<span class="history-status ${a.last_run_status || ''}">${a.last_run_status || 'never'}</span> ${_formatDate(a.last_run_at)}`
-        : '<span style="color:var(--text-light)">Never run</span>';
+        ? `<span class="${lastRunCls}">${lastRunStatus || 'never'}</span> ${_formatDate(a.last_run_at)}`
+        : '<span class="ps-badge ps-badge--muted">Never run</span>';
     const recipientCount = (a.recipients || []).length;
     const typeLabel = a.alert_type === 'scan' ? 'Scan' : 'Calendar';
     const typeBg = a.alert_type === 'scan' ? '#e3f2fd' : '#e8f5e9';
@@ -77,13 +85,13 @@ function _alertDisplayData(a) {
 
 function _alertActions(a) {
     return `
-        <button class="btn-small" onclick="toggleAlertEnabled(${a.id}, ${!a.enabled})" title="${a.enabled ? 'Disable' : 'Enable'}">${a.enabled ? 'Disable' : 'Enable'}</button>
-        <button class="btn-small" onclick="testAlert(${a.id})" title="Send test email">Test</button>
-        <button class="btn-small" onclick="runAlertNow(${a.id})" title="Run now">Run</button>
-        <button class="btn-small" onclick="editAlert(${a.id})" title="Edit">Edit</button>
-        <button class="btn-small" onclick="previewAlert(${a.id})" title="Preview email">Preview</button>
-        <button class="btn-small" onclick="showAlertHistory(${a.id})" title="History">Log</button>
-        <button class="btn-small" style="background:var(--red)" onclick="deleteAlertConfirm(${a.id})" title="Delete">&times;</button>`;
+        <button class="ps-btn ps-btn--ghost ps-btn--sm" onclick="toggleAlertEnabled(${a.id}, ${!a.enabled})" title="${a.enabled ? 'Disable' : 'Enable'}">${a.enabled ? 'Disable' : 'Enable'}</button>
+        <button class="ps-btn ps-btn--ghost ps-btn--sm" onclick="testAlert(${a.id})" title="Send test email">Test</button>
+        <button class="ps-btn ps-btn--ghost ps-btn--sm" onclick="runAlertNow(${a.id})" title="Run now">Run</button>
+        <button class="ps-btn ps-btn--ghost ps-btn--sm" onclick="editAlert(${a.id})" title="Edit">Edit</button>
+        <button class="ps-btn ps-btn--ghost ps-btn--sm" onclick="previewAlert(${a.id})" title="Preview email">Preview</button>
+        <button class="ps-btn ps-btn--ghost ps-btn--sm" onclick="showAlertHistory(${a.id})" title="History">Log</button>
+        <button class="ps-btn ps-btn--sm" style="background:var(--ps-danger);color:#fff;border-color:var(--ps-danger);" onclick="deleteAlertConfirm(${a.id})" title="Delete">&times;</button>`;
 }
 
 function showAlertForm(alertType) {
@@ -318,13 +326,18 @@ async function showAlertHistory(alertId) {
             return;
         }
 
-        tbody.innerHTML = history.map(h => `<tr>
+        tbody.innerHTML = history.map(h => {
+            const cls = h.status === 'completed' ? 'ps-badge ps-badge--success'
+                : h.status === 'failed' ? 'ps-badge ps-badge--danger'
+                : 'ps-badge';
+            return `<tr>
             <td>${_formatDate(h.run_at)}</td>
-            <td><span class="history-status ${h.status}">${h.status}</span></td>
+            <td><span class="${cls}">${h.status}</span></td>
             <td>${h.recipients_count}</td>
             <td>${h.results_count}</td>
             <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${_escHtml(h.error_message || '')}">${h.error_message || '-'}</td>
-        </tr>`).join('');
+        </tr>`;
+        }).join('');
     } catch (e) {
         alert('Failed to load history: ' + e.message);
     }

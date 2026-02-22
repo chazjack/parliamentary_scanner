@@ -30,14 +30,7 @@ async function loadTopics() {
 }
 
 function saveCheckedState() {
-    const checkboxes = document.querySelectorAll('.topic-checkbox');
-    // Only save if there are already checkboxes rendered
-    if (checkboxes.length > 0) {
-        checkedTopicIds = new Set();
-        checkboxes.forEach(cb => {
-            if (cb.checked) checkedTopicIds.add(Number(cb.value));
-        });
-    }
+    // No-op: checkedTopicIds is maintained directly via chip clicks
 }
 
 function renderTopics() {
@@ -46,23 +39,17 @@ function renderTopics() {
 
     if (state.topics.length === 0) {
         container.innerHTML = '<p class="empty-state">No topics yet. Add one below.</p>';
-        renderTopicPills();
+        renderTopicChips();
         return;
     }
 
     for (const topic of state.topics) {
-        // Determine if this topic should be checked
-        const isChecked = checkedTopicIds.has(topic.id);
-
         const el = document.createElement('div');
         el.className = 'topic-item';
         el.dataset.topicId = topic.id;
         el.innerHTML = `
             <div class="topic-header">
-                <label class="topic-name">
-                    <input type="checkbox" class="topic-checkbox" value="${topic.id}" ${isChecked ? 'checked' : ''}>
-                    ${escapeHtml(topic.name)}
-                </label>
+                <span class="topic-name">${escapeHtml(topic.name)}</span>
                 <div class="topic-actions">
                     <button onclick="deleteTopic(${topic.id})" title="Delete topic">&times;</button>
                 </div>
@@ -76,54 +63,38 @@ function renderTopics() {
                 ).join('')}
             </div>
             <div class="keyword-input">
-                <input type="text" placeholder="Add keyword..." id="kw-input-${topic.id}"
+                <input class="ps-input" type="text" placeholder="Add keyword..." id="kw-input-${topic.id}"
                        onkeydown="if(event.key==='Enter') addKeyword(${topic.id})">
-                <button class="btn-small" onclick="addKeyword(${topic.id})">Add</button>
+                <button class="ps-btn ps-btn--ghost ps-btn--sm" onclick="addKeyword(${topic.id})">Add</button>
             </div>
         `;
         container.appendChild(el);
     }
 
-    renderTopicPills();
+    renderTopicChips();
+}
+
+function renderTopicChips() {
+    const container = document.getElementById('topicChipGroup');
+    if (!container) return;
+    container.innerHTML = state.topics.map(topic => {
+        const isActive = checkedTopicIds.has(topic.id);
+        return `<button class="ps-chip${isActive ? ' ps-chip--active' : ''}" data-topic-id="${topic.id}" onclick="toggleTopicChip(${topic.id}, this)">${escapeHtml(topic.name)}</button>`;
+    }).join('');
+}
+
+function toggleTopicChip(topicId, btn) {
+    if (checkedTopicIds.has(topicId)) {
+        checkedTopicIds.delete(topicId);
+        btn.classList.remove('ps-chip--active');
+    } else {
+        checkedTopicIds.add(topicId);
+        btn.classList.add('ps-chip--active');
+    }
 }
 
 function renderTopicPills() {
-    const pillsContainer = document.getElementById('topicPills');
-    if (!pillsContainer) return;
-    pillsContainer.innerHTML = '';
-
-    const list = document.getElementById('topicList');
-    const isCollapsed = list.classList.contains('collapsed');
-
-    // Show pills only when topic list is collapsed and there are topics
-    if (!isCollapsed || state.topics.length === 0) {
-        pillsContainer.classList.remove('visible');
-        return;
-    }
-
-    pillsContainer.classList.add('visible');
-
-    for (const topic of state.topics) {
-        const isChecked = checkedTopicIds.has(topic.id);
-        const pill = document.createElement('button');
-        pill.className = 'topic-pill' + (isChecked ? ' active' : '');
-        pill.textContent = topic.name;
-        pill.dataset.topicId = topic.id;
-
-        // Single-click toggles checked state
-        pill.addEventListener('click', (e) => {
-            e.stopPropagation();
-            toggleTopicPill(topic.id, pill);
-        });
-
-        // Double-click expands the list and scrolls to that topic
-        pill.addEventListener('dblclick', (e) => {
-            e.stopPropagation();
-            expandToTopic(topic.id);
-        });
-
-        pillsContainer.appendChild(pill);
-    }
+    // No-op: topics are now shown as ps-chip elements in the filter bar
 }
 
 function toggleTopicPill(topicId, pillEl) {
@@ -252,15 +223,14 @@ document.getElementById('topicToggle').addEventListener('click', () => {
 
 // Select all/none
 function toggleAllTopics(checked) {
-    document.querySelectorAll('.topic-checkbox').forEach(cb => cb.checked = checked);
-    // Update tracked state too
     if (checked) {
         checkedTopicIds = new Set(state.topics.map(t => t.id));
     } else {
         checkedTopicIds = new Set();
     }
-    // Refresh pills to reflect new state
-    renderTopicPills();
+    document.querySelectorAll('#topicChipGroup .ps-chip').forEach(chip => {
+        chip.classList.toggle('ps-chip--active', checked);
+    });
 }
 
 // Utility

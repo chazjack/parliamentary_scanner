@@ -36,16 +36,35 @@ const TYPE_COLOURS = {
     'Peer': { bg: '#861E32', text: '#FFFFFF' },
 };
 
+// Maps full party name to ps-party-dot modifier class
+const PARTY_DOT_MAP = {
+    'Labour':                    'labour',
+    'Labour/Co-operative':       'labour',
+    'Conservative':              'conservative',
+    'Liberal Democrat':          'libdem',
+    'Lib Dem':                   'libdem',
+    'SNP':                       'snp',
+    'Scottish National Party':   'snp',
+    'Green':                     'green',
+    'Green Party':               'green',
+    'Plaid Cymru':               'plaid',
+    'DUP':                       'dup',
+    'Democratic Unionist Party': 'dup',
+};
+
+function partyDotClass(party) {
+    return PARTY_DOT_MAP[party] || 'independent';
+}
+
 function partyPill(party) {
     if (!party || party === '—') return '—';
-    const colours = PARTY_COLOURS[party] || { bg: '#F2F2F2', text: '#000000' };
-    return `<span class="pill" style="background:${colours.bg};color:${colours.text}">${escapeHtml(party)}</span>`;
+    return `<span class="ps-badge ps-badge--muted">${escapeHtml(party)}</span>`;
 }
 
 function typePill(type) {
     if (!type || type === '—') return '—';
-    const colours = TYPE_COLOURS[type] || { bg: '#F2F2F2', text: '#000000' };
-    return `<span class="pill" style="background:${colours.bg};color:${colours.text}">${escapeHtml(type)}</span>`;
+    const cls = type === 'Peer' ? 'ps-badge ps-badge--warning' : 'ps-badge';
+    return `<span class="${cls}">${escapeHtml(type)}</span>`;
 }
 
 async function refreshMasterResultIds() {
@@ -144,10 +163,15 @@ function renderResults(results) {
         // Merged Party + Type column
         const typeSmall = r.member_type ? `<br>${typePill(r.member_type)}` : '';
 
+        // One badge per topic
+        const topicBadges = topicNames.length
+            ? topicNames.map(t => `<span class="ps-badge ps-badge--accent">${escapeHtml(t)}</span>`).join(' ')
+            : '—';
+
         tr.innerHTML = `
-            <td>${escapeHtml(r.member_name)}</td>
+            <td><div class="ps-member"><span class="ps-party-dot ps-party-dot--${partyDotClass(r.party)}"></span><span class="ps-member__name">${escapeHtml(r.member_name)}</span></div></td>
             <td>${partyPill(r.party || '—')}${typeSmall}</td>
-            <td>${escapeHtml(topicsStr || '—')}</td>
+            <td>${topicBadges}</td>
             <td>${escapeHtml(r.summary || '—')}</td>
             <td>${escapeHtml(r.forum || '—')}<br><small><strong>${dateStr}</strong></small></td>
             <td>${quoteHtml}</td>
@@ -535,10 +559,10 @@ async function loadHistory() {
         const nav = document.createElement('div');
         nav.className = 'history-pagination';
         nav.innerHTML = `
-            <button class="btn-small" style="min-width:32px;padding:6px 10px;" ${historyPage <= 1 ? 'disabled' : ''}
+            <button class="ps-btn ps-btn--ghost ps-btn--sm" ${historyPage <= 1 ? 'disabled' : ''}
                     onclick="historyPage--; loadHistory()">&larr;</button>
             <span class="page-info">Page ${historyPage} of ${totalPages}</span>
-            <button class="btn-small" style="min-width:32px;padding:6px 10px;" ${historyPage >= totalPages ? 'disabled' : ''}
+            <button class="ps-btn ps-btn--ghost ps-btn--sm" ${historyPage >= totalPages ? 'disabled' : ''}
                     onclick="historyPage++; loadHistory()">&rarr;</button>
         `;
         container.appendChild(nav);

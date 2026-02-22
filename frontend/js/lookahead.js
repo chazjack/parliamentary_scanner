@@ -1,13 +1,13 @@
 /* Parliamentary Scanner — Look Ahead (upcoming events) */
 
 const LA_COLORS = {
-    debate:            { bg: '#dbeafe', border: '#2563eb', text: '#1e40af', label: 'Debate' },
-    oral_questions:    { bg: '#ede9fe', border: '#7c3aed', text: '#5b21b6', label: 'Oral Qs' },
-    committee:         { bg: '#cffafe', border: '#0891b2', text: '#155e75', label: 'Committee' },
-    bill_stage:        { bg: '#fee2e2', border: '#dc2626', text: '#991b1b', label: 'Bill Stage' },
-    westminster_hall:  { bg: '#fef9c3', border: '#ca8a04', text: '#854d0e', label: 'Westminster Hall' },
-    statement:         { bg: '#dcfce7', border: '#16a34a', text: '#166534', label: 'Statement' },
-    general_committee: { bg: '#f3e8ff', border: '#9333ea', text: '#6b21a8', label: 'Gen. Committee' },
+    oral_questions:    { color: '#6366f1', bg: 'rgba(99,102,241,0.12)',  label: 'Oral Qs' },
+    debate:            { color: '#f472b6', bg: 'rgba(244,114,182,0.12)', label: 'Debate' },
+    committee:         { color: '#34d399', bg: 'rgba(52,211,153,0.12)',  label: 'Committee' },
+    bill_stage:        { color: '#fbbf24', bg: 'rgba(251,191,36,0.12)',  label: 'Bill Stage' },
+    westminster_hall:  { color: '#a78bfa', bg: 'rgba(167,139,250,0.12)', label: 'WH Debate' },
+    statement:         { color: '#fb923c', bg: 'rgba(251,146,60,0.12)',  label: 'Statement' },
+    general_committee: { color: '#22d3ee', bg: 'rgba(34,211,238,0.12)', label: 'Gen. Committee' },
 };
 
 const laState = {
@@ -15,13 +15,14 @@ const laState = {
     view: 'week',
     events: [],
     eventsByDate: {},
-    showAll: true,
     starredOnly: false,
+    showFilters: false,
     enabledTypes: new Set([
         'debate', 'oral_questions', 'committee', 'bill_stage',
         'westminster_hall', 'statement', 'general_committee',
     ]),
     enabledHouses: new Set(['Commons', 'Lords']),
+    activeTopicIds: new Set(),
     initialized: false,
     loading: false,
 };
@@ -35,9 +36,8 @@ function initLookahead() {
         monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
         monday.setHours(0, 0, 0, 0);
         laState.weekStart = monday;
-
     }
-    _renderLaTopicPills();
+    _renderLaTopicPills(); // no-op, topics render inside filter panel
     _loadLaEvents();
 }
 
@@ -73,41 +73,13 @@ function _setupLaListeners() {
         });
     });
 
-    // Event type checkboxes
-    document.querySelectorAll('.la-type-checkbox').forEach(cb => {
-        cb.addEventListener('change', () => {
-            if (cb.checked) {
-                laState.enabledTypes.add(cb.dataset.type);
-            } else {
-                laState.enabledTypes.delete(cb.dataset.type);
-            }
-            _renderLaView();
-        });
-    });
-
-    // House checkboxes
-    document.querySelectorAll('.la-house-checkbox').forEach(cb => {
-        cb.addEventListener('change', () => {
-            if (cb.checked) {
-                laState.enabledHouses.add(cb.dataset.house);
-            } else {
-                laState.enabledHouses.delete(cb.dataset.house);
-            }
-            _renderLaView();
-        });
-    });
-
-    // Show all checkbox
-    document.getElementById('laShowAll').addEventListener('change', (e) => {
-        laState.showAll = e.target.checked;
-        _updateTopicCheckboxState();
-        _loadLaEvents();
-    });
-
-    // Starred only checkbox
-    document.getElementById('laStarredOnly').addEventListener('change', (e) => {
-        laState.starredOnly = e.target.checked;
-        _renderLaView();
+    // Filter panel toggle
+    document.getElementById('laFilterBtn').addEventListener('click', () => {
+        laState.showFilters = !laState.showFilters;
+        const panel = document.getElementById('laFilterPanel');
+        panel.style.display = laState.showFilters ? '' : 'none';
+        document.getElementById('laFilterBtn').classList.toggle('la-filter-btn--active', laState.showFilters);
+        if (laState.showFilters) _renderFilterPanel();
     });
 
     // Refresh
@@ -131,11 +103,8 @@ async function _loadLaEvents() {
     }
     const end = _fmtDate(endDate);
 
-    // Build topic_ids param
-    let topicParam = '';
-    if (!laState.showAll) {
-        topicParam = _getSelectedTopicIds().join(',');
-    }
+    // Empty activeTopicIds = show all (no server-side filter)
+    const topicParam = Array.from(laState.activeTopicIds).join(',');
 
     _updateDateLabel();
 
@@ -171,19 +140,21 @@ async function _forceRefresh() {
         console.error('Refresh failed:', err);
     } finally {
         btn.disabled = false;
-        btn.textContent = '\u21BB Refresh';
+        btn.textContent = '↻ Refresh';
     }
 }
 
 // --- Rendering ---
 
 function _renderLaView() {
-    // Client-side filter by type, house, starred
     const filtered = laState.events.filter(ev =>
         laState.enabledTypes.has(ev.event_type) &&
         laState.enabledHouses.has(ev.house) &&
         (!laState.starredOnly || ev.is_starred)
     );
+
+    _renderInfoBar(filtered.length);
+    if (laState.showFilters) _renderFilterPanel();
 
     if (laState.view === 'week') {
         _renderWeekView(filtered);
@@ -196,122 +167,231 @@ function _renderLaView() {
     }
 }
 
+// --- Time grid week view ---
+
+function _parseTimeToHours(timeStr) {
+    if (!timeStr) return null;
+    const [h, m] = timeStr.split(':').map(Number);
+    return h + m / 60;
+}
+
 function _renderWeekView(events) {
     const container = document.getElementById('la-week-view');
     container.innerHTML = '';
 
+    const HOUR_H = 56;
+    const START_H = 9;
+    const HOURS = [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
     const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
     const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const todayStr = _fmtDate(new Date());
 
-    // Group filtered events by date
+    // Group events by date
     const byDate = {};
     for (const ev of events) {
         if (!byDate[ev.start_date]) byDate[ev.start_date] = [];
         byDate[ev.start_date].push(ev);
     }
 
+    const grid = document.createElement('div');
+    grid.className = 'la-time-grid';
+
+    // Time gutter
+    const gutter = document.createElement('div');
+    gutter.className = 'la-time-gutter';
+    const gutterSpacer = document.createElement('div');
+    gutterSpacer.className = 'la-time-gutter__header';
+    gutter.appendChild(gutterSpacer);
+    for (const h of HOURS) {
+        const label = document.createElement('div');
+        label.className = 'la-time-label';
+        label.textContent = `${String(h).padStart(2, '0')}:00`;
+        gutter.appendChild(label);
+    }
+    grid.appendChild(gutter);
+
+    // Day columns
     for (let i = 0; i < 5; i++) {
         const dayDate = new Date(laState.weekStart);
         dayDate.setDate(dayDate.getDate() + i);
         const dateStr = _fmtDate(dayDate);
+        const isToday = dateStr === todayStr;
         const dayEvents = byDate[dateStr] || [];
 
         const col = document.createElement('div');
-        col.className = 'la-day-column';
-        if (dateStr === todayStr) col.classList.add('la-today');
+        col.className = 'la-grid-col' + (isToday ? ' la-grid-col--today' : '');
 
+        // Sticky day header
         const header = document.createElement('div');
-        header.className = 'la-day-header';
-        header.innerHTML = `
-            <span class="la-day-name">${dayNames[i]}</span>
-            <span class="la-day-date">${dayDate.getDate()} ${monthNames[dayDate.getMonth()]}</span>
-            <span class="la-day-count">${dayEvents.length}</span>
-        `;
+        header.className = 'la-grid-day-header' + (isToday ? ' la-grid-day-header--today' : '');
+        const dayNameEl = document.createElement('span');
+        dayNameEl.className = 'la-grid-day-name';
+        dayNameEl.textContent = dayNames[i];
+        const dayDateEl = document.createElement('span');
+        dayDateEl.className = 'la-grid-day-date' + (isToday ? ' la-grid-day-date--today' : '');
+        dayDateEl.textContent = dayDate.getDate();
+        header.appendChild(dayNameEl);
+        header.appendChild(dayDateEl);
         col.appendChild(header);
 
-        if (dayEvents.length === 0) {
-            const empty = document.createElement('div');
-            empty.className = 'la-no-events';
-            empty.textContent = 'No events';
-            col.appendChild(empty);
-        } else {
-            dayEvents.sort((a, b) => (a.start_time || '').localeCompare(b.start_time || ''));
-            const eventsWrap = document.createElement('div');
-            eventsWrap.className = 'la-day-events';
-            for (const ev of dayEvents) {
-                eventsWrap.appendChild(_createEventCard(ev));
+        // Untimed events strip
+        const untimed = dayEvents.filter(ev => !ev.start_time);
+        if (untimed.length > 0) {
+            const strip = document.createElement('div');
+            strip.className = 'la-grid-untimed';
+            for (const ev of untimed) {
+                const colors = LA_COLORS[ev.event_type] || LA_COLORS.debate;
+                const pill = document.createElement('div');
+                pill.className = 'la-grid-untimed-pill';
+                pill.style.cssText = `background:${colors.bg};border-left:3px solid ${colors.color};color:${colors.color};`;
+                pill.textContent = ev.title.length > 42 ? ev.title.substring(0, 39) + '…' : ev.title;
+                strip.appendChild(pill);
             }
-            col.appendChild(eventsWrap);
+            col.appendChild(strip);
         }
 
-        container.appendChild(col);
+        // Grid body (relative, fixed height for the hour rows)
+        const body = document.createElement('div');
+        body.className = 'la-grid-body';
+        body.style.height = `${HOURS.length * HOUR_H}px`;
+
+        // Hour grid lines
+        for (let hi = 0; hi < HOURS.length; hi++) {
+            const line = document.createElement('div');
+            line.className = 'la-grid-hour-line';
+            line.style.top = `${hi * HOUR_H}px`;
+            body.appendChild(line);
+        }
+
+        // Lay out timed events with overlap algorithm
+        const timed = dayEvents.filter(ev => ev.start_time);
+        const sorted = [...timed].sort((a, b) => {
+            const ah = _parseTimeToHours(a.start_time);
+            const bh = _parseTimeToHours(b.start_time);
+            const ad = a.end_time ? _parseTimeToHours(a.end_time) - ah : 1;
+            const bd = b.end_time ? _parseTimeToHours(b.end_time) - bh : 1;
+            return ah - bh || bd - ad;
+        });
+
+        const columns = [];
+        const eventLayout = sorted.map(ev => {
+            const startH = _parseTimeToHours(ev.start_time);
+            const endH = ev.end_time ? _parseTimeToHours(ev.end_time) : startH + 1;
+            let col = 0;
+            while (columns[col] !== undefined && columns[col] > startH) col++;
+            columns[col] = endH;
+            return { ev, col, startH, endH };
+        });
+        const totalCols = columns.length || 1;
+
+        for (const { ev, col: evCol, startH, endH } of eventLayout) {
+            const colors = LA_COLORS[ev.event_type] || LA_COLORS.debate;
+            const clampedStart = Math.max(startH, START_H);
+            const clampedEnd = Math.min(endH, START_H + HOURS.length);
+            const top = (clampedStart - START_H) * HOUR_H;
+            const height = Math.max((clampedEnd - clampedStart) * HOUR_H - 2, 22);
+            const colWidth = 100 / totalCols;
+            const leftPct = evCol * colWidth;
+
+            const evEl = document.createElement('div');
+            evEl.className = 'la-grid-event';
+            evEl.style.cssText = `top:${top}px;height:${height}px;left:calc(${leftPct}% + 2px);width:calc(${colWidth}% - 4px);background:${colors.bg};border-left:3px solid ${colors.color};`;
+
+            const titleEl = document.createElement('div');
+            titleEl.className = 'la-grid-event__title';
+            titleEl.style.color = colors.color;
+            if (ev.source_url) {
+                titleEl.innerHTML = `<a href="${_escHtml(ev.source_url)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;">${_escHtml(ev.title)}</a>`;
+            } else {
+                titleEl.textContent = ev.title;
+            }
+            evEl.appendChild(titleEl);
+
+            if (height > 36) {
+                const sub = document.createElement('div');
+                sub.className = 'la-grid-event__sub';
+                sub.style.color = colors.color + '99';
+                sub.textContent = `${ev.start_time}${ev.end_time ? ' – ' + ev.end_time : ''}${ev.location ? ' · ' + ev.location : ''}`;
+                evEl.appendChild(sub);
+            }
+
+            if (height > 56) {
+                const house = document.createElement('span');
+                house.className = 'la-grid-event__house';
+                house.style.cssText = `background:${colors.color}15;color:${colors.color}cc;`;
+                house.textContent = ev.house || '';
+                evEl.appendChild(house);
+            }
+
+            // Tooltip
+            const tooltip = _buildEventTooltip(ev, colors);
+            evEl.appendChild(tooltip);
+            evEl.addEventListener('mouseenter', () => { tooltip.style.display = 'block'; evEl.style.zIndex = '20'; });
+            evEl.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; evEl.style.zIndex = '1'; });
+
+            body.appendChild(evEl);
+        }
+
+        col.appendChild(body);
+        grid.appendChild(col);
     }
+
+    container.appendChild(grid);
 }
 
-
-function _createEventCard(ev) {
-    const colors = LA_COLORS[ev.event_type] || LA_COLORS.debate;
-    const card = document.createElement('div');
-    card.className = 'la-event-card';
-    card.style.borderLeftColor = colors.border;
-    card.style.background = colors.bg;
+function _buildEventTooltip(ev, colors) {
+    const tooltip = document.createElement('div');
+    tooltip.className = 'la-event-tooltip';
+    tooltip.style.display = 'none';
 
     const timeStr = ev.start_time
-        ? `<span class="la-event-time">${ev.start_time}${ev.end_time ? ' – ' + ev.end_time : ''}</span>`
-        : '';
+        ? `${ev.start_time}${ev.end_time ? ' – ' + ev.end_time : ''}`
+        : 'Time TBC';
 
-    let titleText = _escHtml(ev.title);
-    // Truncate long titles
-    if (titleText.length > 120) {
-        titleText = titleText.substring(0, 117) + '...';
+    let detail = '';
+    if (ev.committee_name) {
+        detail = _escHtml(ev.committee_name);
+        if (ev.inquiry_name) detail += ': ' + _escHtml(ev.inquiry_name);
     }
 
-    const url = ev.source_url || '';
-    const titleHtml = url
-        ? `<a href="${_escHtml(url)}" target="_blank" rel="noopener" class="la-event-link">${titleText}</a>`
-        : titleText;
+    const houseBadgeStyle = ev.house === 'Lords'
+        ? `background:rgba(251,191,36,0.12);color:#fbbf24;`
+        : `background:rgba(255,255,255,0.06);color:#a1a1aa;`;
 
-    const starClass = ev.is_starred ? 'la-star-btn starred' : 'la-star-btn';
-    const starChar = ev.is_starred ? '\u2605' : '\u2606';
-
-    card.innerHTML = `
-        ${timeStr}
-        <div class="la-event-title">${titleHtml}</div>
-        <div class="la-event-meta">
-            <span class="la-event-type-badge" style="background:${colors.border}">${colors.label}</span>
-            <span class="la-event-house">${_escHtml(ev.house || '')}</span>
-            <button class="${starClass}" data-event-id="${_escHtml(ev.id)}" title="Star this event">${starChar}</button>
+    tooltip.innerHTML = `
+        <div class="la-tooltip__title">${_escHtml(ev.title)}</div>
+        ${detail ? `<div class="la-tooltip__detail">${detail}</div>` : ''}
+        <div class="la-tooltip__badges">
+            <span class="la-tooltip__badge" style="background:${colors.bg};color:${colors.color};">${colors.label}</span>
+            <span class="la-tooltip__badge" style="${houseBadgeStyle}">${_escHtml(ev.house || '')}</span>
         </div>
+        <div class="la-tooltip__meta">${timeStr}${ev.location ? ' · ' + _escHtml(ev.location) : ''}</div>
     `;
 
-    // Committee / inquiry info
-    if (ev.committee_name) {
-        const detail = document.createElement('div');
-        detail.className = 'la-event-detail';
-        detail.textContent = ev.committee_name;
-        if (ev.inquiry_name) {
-            detail.textContent += ': ' + ev.inquiry_name;
-        }
-        card.querySelector('.la-event-title').after(detail);
-    }
-
-    // Star button handler
-    const starBtn = card.querySelector('.la-star-btn');
+    const starClass = ev.is_starred ? 'la-star-btn starred' : 'la-star-btn';
+    const starChar = ev.is_starred ? '★' : '☆';
+    const starBtn = document.createElement('button');
+    starBtn.className = starClass;
+    starBtn.dataset.eventId = ev.id;
+    starBtn.title = 'Star this event';
+    starBtn.textContent = starChar;
     starBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         _toggleStar(ev.id, ev.is_starred, starBtn);
     });
+    tooltip.appendChild(starBtn);
 
-    return card;
+    return tooltip;
 }
 
+// --- List view (grouped by day) ---
+
 function _renderListView(events) {
-    const tbody = document.getElementById('laListBody');
-    tbody.innerHTML = '';
+    const container = document.getElementById('la-list-view');
+    container.innerHTML = '';
 
     if (events.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="empty-state-preview">No upcoming events match your filters.</td></tr>';
+        container.innerHTML = '<p class="empty-state-preview">No upcoming events match your filters.</p>';
         return;
     }
 
@@ -324,52 +404,272 @@ function _renderListView(events) {
     const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
+    // Group by date
+    const groups = {};
+    const groupOrder = [];
     for (const ev of events) {
-        const colors = LA_COLORS[ev.event_type] || LA_COLORS.debate;
-        const tr = document.createElement('tr');
+        const key = ev.start_date;
+        if (!groups[key]) { groups[key] = []; groupOrder.push(key); }
+        groups[key].push(ev);
+    }
 
-        // Format date nicely
-        const d = new Date(ev.start_date + 'T00:00:00');
-        const dateStr = `${dayNames[d.getDay()]} ${d.getDate()} ${monthNames[d.getMonth()]}`;
+    for (const dateKey of groupOrder) {
+        const d = new Date(dateKey + 'T00:00:00');
+        const dayLabel = `${dayNames[d.getDay()]} ${d.getDate()} ${monthNames[d.getMonth()]}`;
+        const dayEvents = groups[dateKey];
 
-        let titleText = _escHtml(ev.title);
-        if (titleText.length > 150) titleText = titleText.substring(0, 147) + '...';
+        const group = document.createElement('div');
+        group.className = 'la-list-group';
 
-        const url = ev.source_url || '';
-        const titleHtml = url
-            ? `<a href="${_escHtml(url)}" target="_blank" rel="noopener" class="quote-link">${titleText}</a>`
-            : titleText;
+        const groupHeader = document.createElement('div');
+        groupHeader.className = 'la-list-group__header';
+        groupHeader.textContent = dayLabel;
+        group.appendChild(groupHeader);
 
-        // Committee detail
-        let detail = '';
-        if (ev.committee_name) {
-            detail = `<div class="la-list-detail">${_escHtml(ev.committee_name)}${ev.inquiry_name ? ': ' + _escHtml(ev.inquiry_name) : ''}</div>`;
+        for (const ev of dayEvents) {
+            const colors = LA_COLORS[ev.event_type] || LA_COLORS.debate;
+            const row = document.createElement('div');
+            row.className = 'la-list-row';
+
+            const timeStr = ev.start_time
+                ? `${ev.start_time}${ev.end_time ? ' – ' + ev.end_time : ''}`
+                : '';
+
+            let titleHtml = `<span>${_escHtml(ev.title)}</span>`;
+            if (ev.source_url) {
+                titleHtml = `<a href="${_escHtml(ev.source_url)}" target="_blank" rel="noopener" class="la-list-link">${_escHtml(ev.title)}</a>`;
+            }
+
+            let subtitle = '';
+            if (ev.committee_name) {
+                subtitle = _escHtml(ev.committee_name);
+                if (ev.inquiry_name) subtitle += ': ' + _escHtml(ev.inquiry_name);
+            }
+            if (ev.location) {
+                subtitle = subtitle ? subtitle + ' · ' + _escHtml(ev.location) : _escHtml(ev.location);
+            }
+
+            const houseBadgeStyle = ev.house === 'Lords'
+                ? `color:#fbbf24;background:rgba(251,191,36,0.1);`
+                : ``;
+
+            const starClass = ev.is_starred ? 'la-star-btn starred' : 'la-star-btn';
+            const starChar = ev.is_starred ? '★' : '☆';
+
+            row.innerHTML = `
+                <span class="la-list-time">${timeStr}</span>
+                <div class="la-list-colour-bar" style="background:${colors.color};"></div>
+                <div class="la-list-content">
+                    <div class="la-list-title">${titleHtml}</div>
+                    ${subtitle ? `<div class="la-list-subtitle">${subtitle}</div>` : ''}
+                </div>
+                <div class="la-list-badges">
+                    <span class="la-list-badge" style="color:${colors.color};background:${colors.bg};">${colors.label}</span>
+                    <span class="la-list-badge" style="${houseBadgeStyle}">${_escHtml(ev.house || '')}</span>
+                </div>
+                <button class="${starClass}" data-event-id="${_escHtml(String(ev.id))}" title="Star">${starChar}</button>
+            `;
+
+            const starBtn = row.querySelector('.la-star-btn');
+            starBtn.addEventListener('click', () => _toggleStar(ev.id, ev.is_starred, starBtn));
+
+            group.appendChild(row);
         }
 
-        const timeStr = ev.start_time
-            ? `${ev.start_time}${ev.end_time ? ' – ' + ev.end_time : ''}`
-            : '';
+        container.appendChild(group);
+    }
+}
 
-        const starClass = ev.is_starred ? 'la-star-btn starred' : 'la-star-btn';
-        const starChar = ev.is_starred ? '\u2605' : '\u2606';
+// --- Filter panel ---
 
-        tr.innerHTML = `
-            <td class="la-list-date">${dateStr}</td>
-            <td>${timeStr}</td>
-            <td>${titleHtml}${detail}</td>
-            <td><span class="la-event-type-badge" style="background:${colors.border}">${colors.label}</span></td>
-            <td>${_escHtml(ev.house || '')}</td>
-            <td>${_escHtml(ev.location || '')}</td>
-            <td><button class="${starClass}" data-event-id="${_escHtml(ev.id)}" title="Star this event">${starChar}</button></td>
-        `;
+function _renderFilterPanel() {
+    const panel = document.getElementById('laFilterPanel');
+    panel.innerHTML = '';
 
-        // Star handler
-        const starBtn = tr.querySelector('.la-star-btn');
-        starBtn.addEventListener('click', () => {
-            _toggleStar(ev.id, ev.is_starred, starBtn);
+    // Event Types
+    const typesGroup = document.createElement('div');
+    typesGroup.className = 'la-fp-group';
+    const typesLabel = document.createElement('span');
+    typesLabel.className = 'la-fp-label';
+    typesLabel.textContent = 'Event Type';
+    typesGroup.appendChild(typesLabel);
+    const typesChips = document.createElement('div');
+    typesChips.className = 'la-fp-chips';
+
+    for (const [key, c] of Object.entries(LA_COLORS)) {
+        const isActive = laState.enabledTypes.has(key);
+        const chip = document.createElement('button');
+        chip.className = 'la-type-chip' + (isActive ? ' la-type-chip--active' : '');
+        if (isActive) {
+            chip.style.borderColor = c.color + '55';
+            chip.style.background = c.bg;
+            chip.style.color = c.color;
+        }
+        chip.innerHTML = `<span class="la-type-chip__dot" style="background:${isActive ? c.color : '#52525b'};"></span>${c.label}`;
+        chip.addEventListener('click', () => {
+            if (laState.enabledTypes.has(key)) {
+                laState.enabledTypes.delete(key);
+            } else {
+                laState.enabledTypes.add(key);
+            }
+            _renderLaView();
         });
+        typesChips.appendChild(chip);
+    }
+    typesGroup.appendChild(typesChips);
+    panel.appendChild(typesGroup);
+    panel.appendChild(_makeFpDivider());
 
-        tbody.appendChild(tr);
+    // House + Starred
+    const houseGroup = document.createElement('div');
+    houseGroup.className = 'la-fp-group';
+    const houseLabel = document.createElement('span');
+    houseLabel.className = 'la-fp-label';
+    houseLabel.textContent = 'House';
+    houseGroup.appendChild(houseLabel);
+    const houseChips = document.createElement('div');
+    houseChips.className = 'la-fp-chips';
+
+    for (const house of ['Commons', 'Lords']) {
+        const isActive = laState.enabledHouses.has(house);
+        const chip = document.createElement('button');
+        chip.className = 'la-filter-chip' + (isActive ? ' la-filter-chip--active' : '');
+        chip.textContent = house;
+        chip.addEventListener('click', () => {
+            if (laState.enabledHouses.has(house)) {
+                laState.enabledHouses.delete(house);
+            } else {
+                laState.enabledHouses.add(house);
+            }
+            _renderLaView();
+        });
+        houseChips.appendChild(chip);
+    }
+
+    const starredChip = document.createElement('button');
+    starredChip.className = 'la-filter-chip' + (laState.starredOnly ? ' la-filter-chip--active' : '');
+    starredChip.textContent = '★ Starred';
+    starredChip.addEventListener('click', () => {
+        laState.starredOnly = !laState.starredOnly;
+        _renderLaView();
+    });
+    houseChips.appendChild(starredChip);
+    houseGroup.appendChild(houseChips);
+    panel.appendChild(houseGroup);
+
+    // Topics (if any)
+    if (state.topics && state.topics.length > 0) {
+        panel.appendChild(_makeFpDivider());
+        const topicGroup = document.createElement('div');
+        topicGroup.className = 'la-fp-group la-fp-group--flex1';
+        const topicLabel = document.createElement('span');
+        topicLabel.className = 'la-fp-label';
+        topicLabel.textContent = 'Topics';
+        topicGroup.appendChild(topicLabel);
+        const topicChips = document.createElement('div');
+        topicChips.className = 'la-fp-chips';
+
+        for (const topic of state.topics) {
+            const isActive = laState.activeTopicIds.has(topic.id);
+            const chip = document.createElement('button');
+            chip.className = 'la-filter-chip' + (isActive ? ' la-filter-chip--active' : '');
+            chip.textContent = topic.name;
+            chip.addEventListener('click', () => {
+                if (laState.activeTopicIds.has(topic.id)) {
+                    laState.activeTopicIds.delete(topic.id);
+                } else {
+                    laState.activeTopicIds.add(topic.id);
+                }
+                _loadLaEvents(); // server-side filter
+            });
+            topicChips.appendChild(chip);
+        }
+        topicGroup.appendChild(topicChips);
+        panel.appendChild(topicGroup);
+    }
+}
+
+function _makeFpDivider() {
+    const div = document.createElement('div');
+    div.className = 'la-fp-divider';
+    return div;
+}
+
+// --- Info bar ---
+
+function _renderInfoBar(filteredCount) {
+    const bar = document.getElementById('laInfoBar');
+    if (!bar) return;
+
+    const allTypes = Object.keys(LA_COLORS);
+    const filterCount =
+        (allTypes.length - laState.enabledTypes.size) +
+        (2 - laState.enabledHouses.size) +
+        laState.activeTopicIds.size +
+        (laState.starredOnly ? 1 : 0);
+
+    bar.innerHTML = '';
+
+    const countEl = document.createElement('span');
+    countEl.className = 'la-info-count';
+    countEl.textContent = `${filteredCount} event${filteredCount !== 1 ? 's' : ''}`;
+    bar.appendChild(countEl);
+
+    if (filterCount > 0) {
+        const dot = document.createElement('span');
+        dot.className = 'la-info-sep';
+        dot.textContent = '·';
+        bar.appendChild(dot);
+
+        const filtersEl = document.createElement('span');
+        filtersEl.className = 'la-info-filters';
+        filtersEl.textContent = `${filterCount} filter${filterCount > 1 ? 's' : ''} active`;
+        bar.appendChild(filtersEl);
+
+        const clearBtn = document.createElement('button');
+        clearBtn.className = 'la-info-clear';
+        clearBtn.textContent = 'Clear all';
+        clearBtn.addEventListener('click', () => {
+            laState.enabledTypes = new Set(Object.keys(LA_COLORS));
+            laState.enabledHouses = new Set(['Commons', 'Lords']);
+            laState.activeTopicIds = new Set();
+            laState.starredOnly = false;
+            if (laState.showFilters) _renderFilterPanel();
+            _loadLaEvents();
+        });
+        bar.appendChild(clearBtn);
+    }
+
+    const spacer = document.createElement('div');
+    spacer.style.flex = '1';
+    bar.appendChild(spacer);
+
+    // Color legend
+    const legend = document.createElement('div');
+    legend.className = 'la-info-legend';
+    for (const [, c] of Object.entries(LA_COLORS)) {
+        const item = document.createElement('span');
+        item.className = 'la-legend-item';
+        item.innerHTML = `<span class="la-legend-dot" style="background:${c.color};"></span>${c.label}`;
+        legend.appendChild(item);
+    }
+    bar.appendChild(legend);
+
+    // Update filter button badge
+    _updateFilterBtnBadge(filterCount);
+}
+
+function _updateFilterBtnBadge(filterCount) {
+    const btn = document.getElementById('laFilterBtn');
+    if (!btn) return;
+    const existingBadge = btn.querySelector('.la-filter-badge');
+    if (existingBadge) existingBadge.remove();
+    btn.classList.toggle('la-filter-btn--active', laState.showFilters || filterCount > 0);
+    if (filterCount > 0) {
+        const badge = document.createElement('span');
+        badge.className = 'la-filter-badge';
+        badge.textContent = filterCount;
+        btn.appendChild(badge);
     }
 }
 
@@ -389,65 +689,28 @@ async function _toggleStar(eventId, isCurrentlyStarred, btnEl) {
         } else {
             await API.post(`/api/lookahead/star/${encodeURIComponent(eventId)}`);
         }
-
-        // Update local state
         const ev = laState.events.find(e => e.id === eventId);
         if (ev) ev.is_starred = isCurrentlyStarred ? 0 : 1;
-
-        // Update button
         if (isCurrentlyStarred) {
             btnEl.classList.remove('starred');
-            btnEl.textContent = '\u2606';
+            btnEl.textContent = '☆';
         } else {
             btnEl.classList.add('starred');
-            btnEl.textContent = '\u2605';
+            btnEl.textContent = '★';
         }
     } catch (err) {
         console.error('Failed to toggle star:', err);
     }
 }
 
-// --- Topic checkboxes ---
+// --- Topic pills (no-op: topics are rendered inside filter panel) ---
 
 function _renderLaTopicPills() {
-    const container = document.getElementById('laTopicCheckboxes');
-    if (!container) return;
-    container.innerHTML = '';
-
-    if (!state.topics || state.topics.length === 0) return;
-
-    for (const topic of state.topics) {
-        const label = document.createElement('label');
-        label.className = 'la-filter-item la-topic-filter-item';
-
-        const cb = document.createElement('input');
-        cb.type = 'checkbox';
-        cb.checked = true;
-        cb.dataset.topicId = topic.id;
-        cb.addEventListener('change', () => {
-            if (!laState.showAll) {
-                _loadLaEvents();
-            }
-        });
-
-        label.appendChild(cb);
-        label.appendChild(document.createTextNode('\u00a0' + topic.name));
-        container.appendChild(label);
-    }
-
-    _updateTopicCheckboxState();
-}
-
-function _updateTopicCheckboxState() {
-    const container = document.getElementById('laTopicCheckboxes');
-    if (!container) return;
-    container.style.opacity = laState.showAll ? '0.4' : '1';
-    container.style.pointerEvents = laState.showAll ? 'none' : '';
+    // Topics are rendered dynamically in the filter panel via _renderFilterPanel()
 }
 
 function _getSelectedTopicIds() {
-    const checkboxes = document.querySelectorAll('#laTopicCheckboxes input[type="checkbox"]:checked');
-    return Array.from(checkboxes).map(cb => parseInt(cb.dataset.topicId));
+    return Array.from(laState.activeTopicIds);
 }
 
 // --- UI helpers ---

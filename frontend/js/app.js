@@ -141,11 +141,33 @@ document.addEventListener('DOMContentLoaded', async () => {
         auditList.innerHTML = '<p class="empty-state-preview">No discarded items yet. Run a scan to see results.</p>';
     }
 
+    // Restore sidebar collapsed state
+    if (localStorage.getItem('sidebarCollapsed') === 'true') {
+        document.querySelector('.ps-sidebar').classList.add('collapsed');
+    }
+
     // Switch to tab from URL hash, defaulting to Look Ahead
     const validTabs = ['lookahead', 'scanner', 'record', 'alerts'];
     const hash = window.location.hash.slice(1);
     switchTab(validTabs.includes(hash) ? hash : 'lookahead');
 });
+
+// Sidebar collapse toggle
+function toggleSidebar() {
+    const sidebar = document.querySelector('.ps-sidebar');
+    const collapsed = sidebar.classList.toggle('collapsed');
+    localStorage.setItem('sidebarCollapsed', collapsed);
+}
+
+// Sidebar Quick Search — switches to Record tab and mirrors into #masterSearchInput
+function sidebarSearch(value) {
+    switchTab('record');
+    const main = document.getElementById('masterSearchInput');
+    if (main) {
+        main.value = value;
+        filterMasterList();
+    }
+}
 
 // Handle browser back/forward navigation
 window.addEventListener('hashchange', () => {

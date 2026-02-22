@@ -24,15 +24,14 @@ async function startScan() {
     }
 
     // Use checked topics only
-    const topicIds = Array.from(document.querySelectorAll('.topic-checkbox:checked'))
-        .map(cb => parseInt(cb.value));
+    const topicIds = Array.from(checkedTopicIds);
     if (topicIds.length === 0) {
         alert('Please select at least one topic to scan.');
         return;
     }
 
     // Collect enabled API sources
-    const sources = Array.from(document.querySelectorAll('.source-btn.active'))
+    const sources = Array.from(document.querySelectorAll('#source-toggles .ps-chip--active'))
         .map(btn => btn.dataset.source);
     if (sources.length === 0) {
         alert('Please select at least one API source.');
@@ -387,7 +386,7 @@ function renderSourceCircles(stats) {
         'bills': 'bill', 'divisions': 'division',
     };
 
-    const enabledSources = Array.from(document.querySelectorAll('.source-btn.active'))
+    const enabledSources = Array.from(document.querySelectorAll('#source-toggles .ps-chip--active'))
         .map(btn => btn.dataset.source);
 
     if (enabledSources.length === 0) {
@@ -437,9 +436,9 @@ function resetScanUI() {
     _stopLiveResults();
 }
 
-// Source toggle buttons
-document.querySelectorAll('.source-btn').forEach(btn => {
+// Source chip toggles
+document.querySelectorAll('#source-toggles .ps-chip').forEach(btn => {
     btn.addEventListener('click', () => {
-        btn.classList.toggle('active');
+        btn.classList.toggle('ps-chip--active');
     });
 });
