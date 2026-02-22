@@ -1,7 +1,7 @@
 """Look Ahead endpoints: upcoming parliamentary events."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Query
 
@@ -11,10 +11,12 @@ from backend.database import (
     get_db,
     get_lookahead_cache_meta,
     get_lookahead_events,
+    get_recess_periods,
     set_lookahead_cache_meta,
     star_lookahead_event,
     unstar_lookahead_event,
     upsert_lookahead_events,
+    upsert_recess_periods,
 )
 
 logger = logging.getLogger(__name__)
@@ -124,6 +126,44 @@ async def unstar_event(event_id: str):
     try:
         await unstar_lookahead_event(db, event_id)
         return {"starred": False}
+    finally:
+        await db.close()
+
+
+RECESS_CACHE_TTL = 7 * 86400  # 7 days — recess dates rarely change
+RECESS_CACHE_KEY = "recess_periods"
+
+
+@router.get("/recess")
+async def get_recess():
+    """Return cached parliamentary recess periods covering ±1 year from today."""
+    db = await get_db()
+    try:
+        meta = await get_lookahead_cache_meta(db, RECESS_CACHE_KEY)
+        needs_refresh = meta is None
+        if not needs_refresh and meta:
+            fetched_at = datetime.fromisoformat(meta["fetched_at"])
+            age = (datetime.utcnow() - fetched_at).total_seconds()
+            needs_refresh = age > RECESS_CACHE_TTL
+
+        if needs_refresh:
+            today = datetime.utcnow().date()
+            fetch_start = (today - timedelta(days=365)).strftime("%Y-%m-%d")
+            fetch_end = (today + timedelta(days=730)).strftime("%Y-%m-%d")
+
+            from backend.services.lookahead import LookaheadClient
+            client = LookaheadClient()
+            try:
+                periods = await client.fetch_recess_periods(fetch_start, fetch_end)
+                await upsert_recess_periods(db, periods)
+                await set_lookahead_cache_meta(db, RECESS_CACHE_KEY, len(periods))
+                logger.info("Cached %d recess periods", len(periods))
+            finally:
+                await client.close()
+
+        # Return all stored recess periods (covers the full cached window)
+        all_periods = await get_recess_periods(db, "0000-01-01", "9999-12-31")
+        return {"recess_periods": all_periods}
     finally:
         await db.close()
 

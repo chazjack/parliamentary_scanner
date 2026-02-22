@@ -145,41 +145,33 @@ function _updateFormVisibility() {
 
 async function _loadTopicCheckboxes() {
     const topics = state.topics || [];
-    const html = topics.map(t =>
-        `<label class="la-filter-item">
-            <input type="checkbox" class="alert-topic-cb" data-id="${t.id}" checked> ${_escHtml(t.name)}
-        </label>`
+    const chips = topics.map(t =>
+        `<button class="ps-chip alert-topic-chip" data-id="${t.id}" onclick="this.classList.toggle('ps-chip--active')">${_escHtml(t.name)}</button>`
     ).join('');
-    document.getElementById('alertTopicCheckboxes').innerHTML = html;
-    document.getElementById('alertLookaheadTopicCheckboxes').innerHTML = html.replace(/alert-topic-cb/g, 'alert-la-topic-cb');
+    const laChips = topics.map(t =>
+        `<button class="ps-chip alert-la-topic-chip" data-id="${t.id}" onclick="this.classList.toggle('ps-chip--active')">${_escHtml(t.name)}</button>`
+    ).join('');
+    document.getElementById('alertTopicCheckboxes').innerHTML = chips;
+    document.getElementById('alertLookaheadTopicCheckboxes').innerHTML = laChips;
 }
 
 function _loadSourceCheckboxes() {
     const sources = ['hansard', 'written_questions', 'written_statements', 'edms', 'bills', 'divisions'];
-    const container = document.getElementById('alertSourceCheckboxes');
-    container.innerHTML = sources.map(s =>
-        `<label class="la-filter-item">
-            <input type="checkbox" class="alert-source-cb" data-source="${s}" checked> ${_sourceLabel(s)}
-        </label>`
+    document.getElementById('alertSourceCheckboxes').innerHTML = sources.map(s =>
+        `<button class="ps-chip alert-source-chip" data-source="${s}" onclick="this.classList.toggle('ps-chip--active')">${_sourceLabel(s)}</button>`
     ).join('');
 }
 
 function _loadEventTypeCheckboxes() {
     const types = ['debate', 'oral_questions', 'committee', 'bill_stage', 'westminster_hall', 'statement', 'general_committee'];
-    const container = document.getElementById('alertEventTypeCheckboxes');
-    container.innerHTML = types.map(t =>
-        `<label class="la-filter-item">
-            <input type="checkbox" class="alert-event-type-cb" data-type="${t}" checked> ${t.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
-        </label>`
+    document.getElementById('alertEventTypeCheckboxes').innerHTML = types.map(t =>
+        `<button class="ps-chip alert-event-type-chip" data-type="${t}" onclick="this.classList.toggle('ps-chip--active')">${t.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</button>`
     ).join('');
 }
 
 function _loadHouseCheckboxes() {
-    const container = document.getElementById('alertHouseCheckboxes');
-    container.innerHTML = ['Commons', 'Lords'].map(h =>
-        `<label class="la-filter-item">
-            <input type="checkbox" class="alert-house-cb" data-house="${h}" checked> ${h}
-        </label>`
+    document.getElementById('alertHouseCheckboxes').innerHTML = ['Commons', 'Lords'].map(h =>
+        `<button class="ps-chip alert-house-chip" data-house="${h}" onclick="this.classList.toggle('ps-chip--active')">${h}</button>`
     ).join('');
 }
 
@@ -194,11 +186,11 @@ function _sourceLabel(s) {
 
 function _collectFormData() {
     const alertType = document.getElementById('alertType').value;
-    const topicCbClass = alertType === 'lookahead' ? '.alert-la-topic-cb:checked' : '.alert-topic-cb:checked';
-    const topicIds = [...document.querySelectorAll(topicCbClass)].map(cb => parseInt(cb.dataset.id));
-    const sources = [...document.querySelectorAll('.alert-source-cb:checked')].map(cb => cb.dataset.source);
-    const eventTypes = [...document.querySelectorAll('.alert-event-type-cb:checked')].map(cb => cb.dataset.type);
-    const houses = [...document.querySelectorAll('.alert-house-cb:checked')].map(cb => cb.dataset.house);
+    const topicChipClass = alertType === 'lookahead' ? '.alert-la-topic-chip.ps-chip--active' : '.alert-topic-chip.ps-chip--active';
+    const topicIds = [...document.querySelectorAll(topicChipClass)].map(c => parseInt(c.dataset.id));
+    const sources = [...document.querySelectorAll('.alert-source-chip.ps-chip--active')].map(c => c.dataset.source);
+    const eventTypes = [...document.querySelectorAll('.alert-event-type-chip.ps-chip--active')].map(c => c.dataset.type);
+    const houses = [...document.querySelectorAll('.alert-house-chip.ps-chip--active')].map(c => c.dataset.house);
     const recipientsStr = document.getElementById('alertRecipients').value.trim();
     const recipients = recipientsStr ? recipientsStr.split(/[,;\n]+/).map(e => e.trim()).filter(Boolean) : [];
 
@@ -257,28 +249,28 @@ async function editAlert(alertId) {
 
     _updateFormVisibility();
 
-    // Set topic checkboxes
+    // Set topic chips
     const topicIds = _parseJsonField(a.topic_ids);
-    document.querySelectorAll('.alert-topic-cb').forEach(cb => {
-        cb.checked = topicIds.includes(parseInt(cb.dataset.id));
+    document.querySelectorAll('.alert-topic-chip, .alert-la-topic-chip').forEach(c => {
+        c.classList.toggle('ps-chip--active', topicIds.includes(parseInt(c.dataset.id)));
     });
 
-    // Set source checkboxes
+    // Set source chips
     const sources = _parseJsonField(a.sources);
-    document.querySelectorAll('.alert-source-cb').forEach(cb => {
-        cb.checked = !sources.length || sources.includes(cb.dataset.source);
+    document.querySelectorAll('.alert-source-chip').forEach(c => {
+        c.classList.toggle('ps-chip--active', !sources.length || sources.includes(c.dataset.source));
     });
 
-    // Set event type checkboxes
+    // Set event type chips
     const eventTypes = _parseJsonField(a.event_types);
-    document.querySelectorAll('.alert-event-type-cb').forEach(cb => {
-        cb.checked = !eventTypes.length || eventTypes.includes(cb.dataset.type);
+    document.querySelectorAll('.alert-event-type-chip').forEach(c => {
+        c.classList.toggle('ps-chip--active', !eventTypes.length || eventTypes.includes(c.dataset.type));
     });
 
-    // Set house checkboxes
+    // Set house chips
     const houses = _parseJsonField(a.houses);
-    document.querySelectorAll('.alert-house-cb').forEach(cb => {
-        cb.checked = !houses.length || houses.includes(cb.dataset.house);
+    document.querySelectorAll('.alert-house-chip').forEach(c => {
+        c.classList.toggle('ps-chip--active', !houses.length || houses.includes(c.dataset.house));
     });
 }
 
@@ -400,7 +392,18 @@ function toggleAlertMenu(e, alertId) {
         if (m.id !== `alert-menu-${alertId}`) m.style.display = 'none';
     });
     const menu = document.getElementById(`alert-menu-${alertId}`);
-    if (menu) menu.style.display = menu.style.display === 'none' ? '' : 'none';
+    if (!menu) return;
+    const isHidden = menu.style.display === 'none' || menu.style.display === '';
+    if (isHidden) {
+        const rect = e.currentTarget.getBoundingClientRect();
+        menu.style.display = 'block';
+        const menuW = menu.offsetWidth;
+        const left = Math.max(8, rect.right - menuW);
+        menu.style.top = (rect.bottom + 4) + 'px';
+        menu.style.left = left + 'px';
+    } else {
+        menu.style.display = 'none';
+    }
 }
 
 function closeAlertMenu(alertId) {

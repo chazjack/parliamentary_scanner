@@ -65,16 +65,6 @@ async function startScan() {
     minBtn.classList.remove('collapsed');
     minBtn.style.display = 'none';
 
-    // Collapse topics to keep progress visible
-    const topicList = document.getElementById('topicList');
-    const toggleIcon = document.querySelector('.toggle-icon');
-    if (!topicList.classList.contains('collapsed')) {
-        topicList.classList.add('collapsed');
-        toggleIcon.classList.add('collapsed');
-    }
-    // Render pills since we just collapsed
-    if (typeof renderTopicPills === 'function') renderTopicPills();
-
     try {
         const res = await API.post('/api/scans', {
             start_date: startDate,
@@ -146,6 +136,10 @@ function connectSSE(scanId) {
             state.eventSource = null;
             _stopLiveResults();
             progressLabel.textContent = 'Scan cancelled.';
+            document.querySelectorAll('.kw-chip:not(.kw-done)').forEach(el => {
+                el.classList.remove('kw-active');
+                el.classList.add('kw-cancelled');
+            });
             resetScanUI();
             loadResults(scanId);  // show whatever results were saved
             loadHistory();
@@ -296,7 +290,7 @@ function renderKeywordChips(stats) {
     const totalKw = stats.total_keywords || 0;
     const completedKw = stats.completed_keywords || 0;
 
-    let html = `<div class="kw-summary">Keywords: ${completedKw} / ${totalKw}</div>`;
+    let html = ``;
 
     for (const group of state.scanTopicGroups) {
         html += '<div class="kw-topic-group">';
@@ -330,9 +324,11 @@ function renderKeywordChips(stats) {
 function renderPipelineBoxes(stats) {
     if (!pipelineStatsRow) return;
 
+    const totalClassified = (stats.classified_relevant || 0) + (stats.classified_discarded || 0);
+    const sentToClassifier = stats.sent_to_classifier || 0;
     const boxes = [
         { label: 'Keyword Results', value: stats.total_api_results || 0, cls: '' },
-        { label: 'Sent to Classifier', value: stats.sent_to_classifier || 0, cls: '' },
+        { label: 'Classified', value: `${totalClassified}/${sentToClassifier}`, cls: '' },
         { label: 'Relevant', value: stats.classified_relevant || 0, cls: 'pipe-box-relevant' },
         { label: 'Discarded', value: stats.classified_discarded || 0, cls: 'pipe-box-discarded' },
     ];

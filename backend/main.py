@@ -5,7 +5,6 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 
 from backend.database import init_db, get_db, cleanup_stuck_scans
 from backend.routers import topics, scans, results, master, lookahead, alerts
@@ -67,4 +66,11 @@ async def shutdown():
 
 # Serve frontend static files (must be last so API routes take priority)
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
-app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+async def serve_spa(full_path: str):
+    file_path = FRONTEND_DIR / full_path
+    if file_path.is_file():
+        return FileResponse(file_path)
+    return FileResponse(FRONTEND_DIR / "index.html")

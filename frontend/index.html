@@ -31,7 +31,7 @@
             </button>
             <button class="ps-sidebar__nav-item tab-btn" data-tab="scanner" onclick="switchTab('scanner')" title="Scanner">
                 <span class="ps-sidebar__nav-icon">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 12 L12 4"/><path d="M12 12 L19.8 7"/><path d="M5 5 A9.9 9.9 0 0 1 22 12"/><path d="M2 12 A10 10 0 0 1 12 2"/><path d="M7.76 7.76 A7 7 0 0 1 19 12"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="15" r="1.5" fill="currentColor" stroke="none"/><path d="M7 10 A6 6 0 0 1 17 10"/><path d="M4 7 A10 10 0 0 1 20 7"/></svg>
                 </span>
                 <span class="ps-sidebar__nav-label">Scanner</span>
             </button>
@@ -75,8 +75,8 @@
 
         <!-- ===== Scanner Tab ===== -->
         <div id="tab-scanner" style="display:none;">
-            <div class="results-header">
-                <h2 class="tab-page-title">Scanner</h2>
+            <div class="la-cal-header">
+                <h2 class="la-cal-title">Scanner</h2>
             </div>
             <!-- Grouped Control Card -->
             <section class="control-group-card">
@@ -113,9 +113,7 @@
                         <span class="ps-chip-group__label">TOPICS</span>
                         <div style="display:flex;gap:4px;align-items:center;" onclick="event.stopPropagation()">
                             <button class="ps-btn ps-btn--ghost ps-btn--sm btn-undo disabled" id="undoBtn" onclick="undoLastAction()" title="Undo">&#8617;</button>
-                            <span style="font-size:var(--ps-text-sm);color:var(--ps-text-muted);cursor:pointer;" onclick="toggleAllTopics(true)">All</span>
-                            <span style="font-size:var(--ps-text-sm);color:var(--ps-text-muted);">/</span>
-                            <span style="font-size:var(--ps-text-sm);color:var(--ps-text-muted);cursor:pointer;" onclick="toggleAllTopics(false)">None</span>
+                            <span style="font-size:var(--ps-text-sm);color:var(--ps-text-muted);cursor:pointer;" id="topicToggleAllBtn" onclick="toggleAllTopicsBtn()">All</span>
                         </div>
                     </div>
                     <div class="ps-chip-group__items" id="topicChipGroup"></div>
@@ -179,7 +177,7 @@
                                 <th data-col="party">Party</th>
                                 <th data-col="topics">Topic(s)</th>
                                 <th data-col="summary">Summary</th>
-                                <th data-col="forum">Forum</th>
+                                <th data-col="forum">Source</th>
                                 <th data-col="verbatim_quote">Quote / Action</th>
                                 <th></th>
                             </tr>
@@ -202,8 +200,8 @@
 
         <!-- ===== Record Tab ===== -->
         <div id="tab-record" style="display:none;">
-            <div class="results-header">
-                <h2 class="tab-page-title">Record</h2>
+            <div class="la-cal-header">
+                <h2 class="la-cal-title">Record</h2>
             </div>
             <section id="record-section">
                 <div class="results-header">
@@ -251,10 +249,10 @@
                 <div class="la-cal-controls">
                     <div class="la-cal-nav">
                         <button class="la-cal-today-btn" id="laToday" title="Go to this week">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><circle cx="12" cy="16" r="1.5" fill="currentColor" stroke="none"/></svg>
+                            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><circle cx="12" cy="16" r="1.5" fill="currentColor" stroke="none"/></svg>
                         </button>
-                        <button class="la-cal-nav-btn" id="laPrevWeek" title="Previous week">&#8592;</button>
-                        <button class="la-cal-nav-btn" id="laNextWeek" title="Next week">&#8594;</button>
+                        <button class="la-cal-nav-btn" id="laPrevWeek" title="Previous week">&#8249;</button>
+                        <button class="la-cal-nav-btn" id="laNextWeek" title="Next week">&#8250;</button>
                         <span class="la-cal-date-label" id="laDateLabel"></span>
                     </div>
                     <div class="la-cal-spacer"></div>
@@ -274,7 +272,7 @@
             </div>
 
             <!-- Collapsible filter panel (rendered by JS) -->
-            <div id="laFilterPanel" class="la-filter-panel" style="display:none;"></div>
+            <div id="laFilterPanel" class="la-filter-panel"></div>
 
             <!-- Info bar (rendered by JS) -->
             <div id="laInfoBar" class="la-info-bar"></div>
@@ -289,13 +287,15 @@
 
         <!-- ===== Alerts Tab ===== -->
         <div id="tab-alerts" style="display:none;">
+            <div class="la-cal-header">
+                <h2 class="la-cal-title">Alerts</h2>
+            </div>
             <!-- Alert List -->
             <section id="alertFormList" class="control-group-card">
                 <div class="results-header" style="margin-bottom:12px;">
-                    <h2 class="tab-page-title">Email Alerts</h2>
                     <div class="alert-new-dropdown" id="alertNewDropdown">
-                        <button class="ps-btn ps-btn--secondary ps-btn--sm" id="alertNewBtn" onclick="toggleAlertDropdown(event)">
-                            New Alert <span style="font-size:10px;opacity:0.7;">▾</span>
+                        <button class="ps-btn ps-btn--secondary" id="alertNewBtn" onclick="toggleAlertDropdown(event)">
+                            New Alert
                         </button>
                         <div class="alert-new-menu" id="alertNewMenu" style="display:none;">
                             <button onclick="selectAlertType('scan')">Scan Alert</button>
@@ -398,12 +398,12 @@
 
                             <div style="margin-bottom:12px;">
                                 <label class="source-label" style="margin-bottom:6px;">Topics</label>
-                                <div id="alertTopicCheckboxes"></div>
+                                <div id="alertTopicCheckboxes" class="ps-chip-group__items"></div>
                             </div>
 
                             <div style="margin-bottom:12px;">
                                 <label class="source-label" style="margin-bottom:6px;">Sources</label>
-                                <div id="alertSourceCheckboxes"></div>
+                                <div id="alertSourceCheckboxes" class="ps-chip-group__items"></div>
                             </div>
                         </div>
 
@@ -416,17 +416,17 @@
 
                             <div style="margin-bottom:12px;">
                                 <label class="source-label" style="margin-bottom:6px;">Event Types</label>
-                                <div id="alertEventTypeCheckboxes"></div>
+                                <div id="alertEventTypeCheckboxes" class="ps-chip-group__items"></div>
                             </div>
 
                             <div style="margin-bottom:12px;">
                                 <label class="source-label" style="margin-bottom:6px;">Houses</label>
-                                <div id="alertHouseCheckboxes"></div>
+                                <div id="alertHouseCheckboxes" class="ps-chip-group__items"></div>
                             </div>
 
                             <div style="margin-bottom:12px;">
                                 <label class="source-label" style="margin-bottom:6px;">Topics (for keyword filtering)</label>
-                                <div id="alertLookaheadTopicCheckboxes"></div>
+                                <div id="alertLookaheadTopicCheckboxes" class="ps-chip-group__items"></div>
                             </div>
                         </div>
                     </div>
@@ -463,14 +463,13 @@
 
         <!-- ===== Topics Tab ===== -->
         <div id="tab-topics" style="display:none;">
-            <div class="results-header">
-                <h2 class="tab-page-title">Topics</h2>
-                <button class="ps-btn ps-btn--ghost ps-btn--sm btn-undo disabled" id="topicsPageUndoBtn" onclick="undoLastAction()" title="Undo">&#8617;</button>
+            <div class="la-cal-header" style="border-bottom:none;">
+                <h2 class="la-cal-title">Topics</h2>
             </div>
-            <p class="topics-page-desc">Topics and their keywords determine what the scanner searches for. Each keyword is matched against parliamentary records during a scan.</p>
             <div class="topics-page-add">
                 <input class="ps-input" type="text" id="topicsPageNewName" placeholder="New topic name...">
                 <button class="ps-btn ps-btn--secondary ps-btn--sm" id="topicsPageAddBtn">+ Add Topic</button>
+                <button class="ps-btn ps-btn--ghost ps-btn--sm btn-undo disabled" id="topicsPageUndoBtn" onclick="undoLastAction()" title="Undo" style="margin-left:auto;">&#8617;</button>
             </div>
             <div id="topicsPageGrid" class="topics-page-grid"></div>
         </div>

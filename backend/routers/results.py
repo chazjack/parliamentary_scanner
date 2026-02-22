@@ -41,6 +41,10 @@ async def classifier_health():
     except _anthropic.APITimeoutError:
         return {"status": "error", "message": "Anthropic API timed out — check network/firewall"}
     except _anthropic.APIError as e:
+        # Detect out-of-credits / billing errors
+        msg = str(e).lower()
+        if any(kw in msg for kw in ("credit", "billing", "balance", "payment")):
+            return {"status": "no_credits", "message": "API credit balance too low"}
         # Covers model-not-found, rate limits, server errors, etc.
         return {"status": "error", "message": str(e)}
     except Exception as e:

@@ -26,6 +26,8 @@ const laState = {
     showAllEvents: false,   // when true, bypass keyword filtering entirely
     initialized: false,
     loading: false,
+    lastFilteredCount: 0,
+    recessPeriods: [],      // [{start_date, end_date, house, description}]
 };
 
 function initLookahead() {
@@ -48,11 +50,48 @@ function initLookahead() {
         b.classList.toggle('active', b.dataset.view === laState.view);
     });
     _updateWeekNavVisibility();
+    _fetchRecessPeriods();
     _loadLaEvents();
 }
 
 function _initTopicIds() {
     laState.activeTopicIds = new Set((state.topics || []).map(t => t.id));
+}
+
+async function _fetchRecessPeriods() {
+    try {
+        const data = await API.get('/api/lookahead/recess');
+        laState.recessPeriods = data.recess_periods || [];
+    } catch (err) {
+        console.warn('Could not fetch recess periods:', err);
+    }
+}
+
+/**
+ * Returns a label string if the given YYYY-MM-DD date falls within a recess
+ * period, or null if Parliament is sitting. When both houses are in recess for
+ * the same named period, returns just the description. When only one house is
+ * in recess, returns "<description> (Commons)" or similar.
+ */
+function _getRecessLabel(dateStr) {
+    const matching = laState.recessPeriods.filter(
+        p => dateStr >= p.start_date && dateStr <= p.end_date
+    );
+    if (matching.length === 0) return null;
+
+    // Deduplicate by description — if both houses share the same name, show once
+    const byDesc = {};
+    for (const p of matching) {
+        if (!byDesc[p.description]) byDesc[p.description] = new Set();
+        byDesc[p.description].add(p.house);
+    }
+
+    const labels = Object.entries(byDesc).map(([desc, houses]) => {
+        if (houses.size >= 2 || houses.has('Both')) return desc;
+        return `${desc} (${[...houses].join('/')})`;
+    });
+
+    return labels[0] || 'Recess';
 }
 
 // --- Setup ---
@@ -92,9 +131,10 @@ function _setupLaListeners() {
     document.getElementById('laFilterBtn').addEventListener('click', () => {
         laState.showFilters = !laState.showFilters;
         const panel = document.getElementById('laFilterPanel');
-        panel.style.display = laState.showFilters ? '' : 'none';
-        document.getElementById('laFilterBtn').classList.toggle('la-filter-btn--active', laState.showFilters);
         if (laState.showFilters) _renderFilterPanel();
+        panel.classList.toggle('la-filter-panel--open', laState.showFilters);
+        document.getElementById('laFilterBtn').classList.toggle('la-filter-btn--active', laState.showFilters);
+        _renderInfoBar(laState.lastFilteredCount);
     });
 
     // Refresh
@@ -238,8 +278,12 @@ function _renderWeekView(events) {
         const isToday = dateStr === todayStr;
         const dayEvents = byDate[dateStr] || [];
 
+        const recessLabel = _getRecessLabel(dateStr);
+
         const col = document.createElement('div');
-        col.className = 'la-grid-col' + (isToday ? ' la-grid-col--today' : '');
+        col.className = 'la-grid-col'
+            + (isToday ? ' la-grid-col--today' : '')
+            + (recessLabel ? ' la-grid-col--recess' : '');
 
         // Sticky day header
         const header = document.createElement('div');
@@ -253,6 +297,13 @@ function _renderWeekView(events) {
         header.appendChild(dayNameEl);
         header.appendChild(dayDateEl);
         col.appendChild(header);
+
+        if (recessLabel) {
+            const banner = document.createElement('div');
+            banner.className = 'la-grid-recess-banner';
+            banner.textContent = recessLabel;
+            col.appendChild(banner);
+        }
 
         // Untimed events strip
         const untimed = dayEvents.filter(ev => !ev.start_time);
@@ -327,26 +378,21 @@ function _renderWeekView(events) {
             }
             evEl.appendChild(titleEl);
 
-            if (height > 36) {
-                const sub = document.createElement('div');
-                sub.className = 'la-grid-event__sub';
-                sub.style.color = colors.color + '99';
-                sub.textContent = `${ev.start_time}${ev.end_time ? ' – ' + ev.end_time : ''}${ev.location ? ' · ' + ev.location : ''}`;
-                evEl.appendChild(sub);
-            }
-
-            if (height > 56) {
-                const house = document.createElement('span');
-                house.className = 'la-grid-event__house';
-                house.style.cssText = `background:${colors.color}15;color:${colors.color}cc;`;
-                house.textContent = ev.house || '';
-                evEl.appendChild(house);
-            }
-
-            // Tooltip
+            // Popout card (shown on hover, positioned to the side)
             const tooltip = _buildEventTooltip(ev, colors);
             evEl.appendChild(tooltip);
-            evEl.addEventListener('mouseenter', () => { tooltip.style.display = 'block'; evEl.style.zIndex = '20'; });
+            evEl.addEventListener('mouseenter', () => {
+                tooltip.style.display = 'block';
+                evEl.style.zIndex = '20';
+                // Default: right of event; flip left if it overflows viewport
+                tooltip.style.left = 'calc(100% + 6px)';
+                tooltip.style.right = 'auto';
+                const r = tooltip.getBoundingClientRect();
+                if (r.right > window.innerWidth - 8) {
+                    tooltip.style.left = 'auto';
+                    tooltip.style.right = 'calc(100% + 6px)';
+                }
+            });
             evEl.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; evEl.style.zIndex = '1'; });
 
             body.appendChild(evEl);
@@ -362,44 +408,65 @@ function _renderWeekView(events) {
 function _buildEventTooltip(ev, colors) {
     const tooltip = document.createElement('div');
     tooltip.className = 'la-event-tooltip';
-    tooltip.style.display = 'none';
+    const _tooltipBg = colors.bg.replace('0.12)', '0.45)');
+    tooltip.style.cssText = `display:none;background:${_tooltipBg};border-left:3px solid ${colors.color};`;
 
-    const timeStr = ev.start_time
-        ? `${ev.start_time}${ev.end_time ? ' – ' + ev.end_time : ''}`
-        : 'Time TBC';
+    // Title (full, wrapping)
+    const titleEl = document.createElement('div');
+    titleEl.className = 'la-tooltip__title';
+    titleEl.style.color = colors.color;
+    if (ev.source_url) {
+        titleEl.innerHTML = `<a href="${_escHtml(ev.source_url)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;">${_escHtml(ev.title)}</a>`;
+    } else {
+        titleEl.textContent = ev.title;
+    }
+    tooltip.appendChild(titleEl);
 
-    let detail = '';
+    // Committee / inquiry detail
     if (ev.committee_name) {
-        detail = _escHtml(ev.committee_name);
-        if (ev.inquiry_name) detail += ': ' + _escHtml(ev.inquiry_name);
+        const detail = document.createElement('div');
+        detail.className = 'la-tooltip__detail';
+        detail.style.color = colors.color + '99';
+        detail.textContent = ev.inquiry_name
+            ? `${ev.committee_name}: ${ev.inquiry_name}`
+            : ev.committee_name;
+        tooltip.appendChild(detail);
     }
 
-    const houseBadgeStyle = ev.house === 'Lords'
-        ? `background:rgba(251,191,36,0.12);color:#fbbf24;`
-        : `background:rgba(255,255,255,0.06);color:#a1a1aa;`;
+    // Time + location
+    const timeStr = `${ev.start_time || ''}${ev.end_time ? ' – ' + ev.end_time : ''}${ev.location ? ' · ' + ev.location : ''}`.trim();
+    if (timeStr) {
+        const subEl = document.createElement('div');
+        subEl.className = 'la-tooltip__sub';
+        subEl.style.color = colors.color + '99';
+        subEl.textContent = timeStr;
+        tooltip.appendChild(subEl);
+    }
 
-    tooltip.innerHTML = `
-        <div class="la-tooltip__title">${_escHtml(ev.title)}</div>
-        ${detail ? `<div class="la-tooltip__detail">${detail}</div>` : ''}
-        <div class="la-tooltip__badges">
-            <span class="la-tooltip__badge" style="background:${colors.bg};color:${colors.color};">${colors.label}</span>
-            <span class="la-tooltip__badge" style="${houseBadgeStyle}">${_escHtml(ev.house || '')}</span>
-        </div>
-        <div class="la-tooltip__meta">${timeStr}${ev.location ? ' · ' + _escHtml(ev.location) : ''}</div>
-    `;
+    // Footer: house badge + star
+    const footer = document.createElement('div');
+    footer.className = 'la-tooltip__footer';
 
-    const starClass = ev.is_starred ? 'la-star-btn starred' : 'la-star-btn';
-    const starChar = ev.is_starred ? '★' : '☆';
+    if (ev.house) {
+        const houseBadge = document.createElement('span');
+        houseBadge.className = 'la-grid-event__house';
+        houseBadge.style.cssText = `background:${colors.color}15;color:${colors.color}cc;margin-top:0;`;
+        houseBadge.textContent = ev.house;
+        footer.appendChild(houseBadge);
+    }
+
     const starBtn = document.createElement('button');
-    starBtn.className = starClass;
+    starBtn.className = ev.is_starred ? 'la-star-btn starred' : 'la-star-btn';
     starBtn.dataset.eventId = ev.id;
     starBtn.title = 'Star this event';
-    starBtn.textContent = starChar;
+    starBtn.textContent = ev.is_starred ? '★' : '☆';
+    starBtn.style.cssText = 'margin-left:auto;margin-top:0;';
     starBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         _toggleStar(ev.id, ev.is_starred, starBtn);
     });
-    tooltip.appendChild(starBtn);
+    footer.appendChild(starBtn);
+    tooltip.appendChild(footer);
 
     return tooltip;
 }
@@ -452,12 +519,18 @@ function _renderListView(events) {
         const dayLabel = `${dayNames[d.getDay()]} ${d.getDate()} ${monthNamesShort[d.getMonth()]}`;
         const dayEvents = groups[dateKey];
 
+        const recessLabel = _getRecessLabel(dateKey);
+
         const group = document.createElement('div');
         group.className = 'la-list-group';
 
         const groupHeader = document.createElement('div');
         groupHeader.className = 'la-list-group__header';
-        groupHeader.textContent = dayLabel;
+        if (recessLabel) {
+            groupHeader.innerHTML = `${_escHtml(dayLabel)} <span class="la-recess-badge">${_escHtml(recessLabel)}</span>`;
+        } else {
+            groupHeader.textContent = dayLabel;
+        }
         group.appendChild(groupHeader);
 
         for (const ev of dayEvents) {
@@ -552,7 +625,6 @@ function _renderFilterPanel() {
     }
     typesGroup.appendChild(typesChips);
     panel.appendChild(typesGroup);
-    panel.appendChild(_makeFpDivider());
 
     // House + Starred
     const houseGroup = document.createElement('div');
@@ -593,9 +665,8 @@ function _renderFilterPanel() {
 
     // Topics (if any)
     if (state.topics && state.topics.length > 0) {
-        panel.appendChild(_makeFpDivider());
         const topicGroup = document.createElement('div');
-        topicGroup.className = 'la-fp-group la-fp-group--flex1';
+        topicGroup.className = 'la-fp-group la-fp-group--row2';
 
         const topicHeaderRow = document.createElement('div');
         topicHeaderRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;';
@@ -661,6 +732,7 @@ function _makeFpDivider() {
 function _renderInfoBar(filteredCount) {
     const bar = document.getElementById('laInfoBar');
     if (!bar) return;
+    laState.lastFilteredCount = filteredCount;
 
     const allTypes = Object.keys(LA_COLORS);
     const totalTopics = (state.topics || []).length;

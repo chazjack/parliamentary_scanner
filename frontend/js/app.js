@@ -72,6 +72,7 @@ function switchTab(tabName) {
     document.getElementById('tab-record').style.display = domTab === 'record' ? '' : 'none';
     document.getElementById('tab-lookahead').style.display = domTab === 'lookahead' ? '' : 'none';
     document.getElementById('tab-alerts').style.display = domTab === 'alerts' ? '' : 'none';
+    document.getElementById('tab-topics').style.display = domTab === 'topics' ? '' : 'none';
 
     // Load data for the active tab
     if (domTab === 'record') {
@@ -82,6 +83,9 @@ function switchTab(tabName) {
     }
     if (domTab === 'alerts') {
         loadAlerts();
+    }
+    if (domTab === 'topics') {
+        renderTopicsPage();
     }
 }
 
@@ -107,6 +111,10 @@ async function checkApiHealth() {
             el.className = 'api-status api-status--ok';
             el.querySelector('.api-status-label').textContent = 'API connected';
             el.title = `Connected to ${data.model}`;
+        } else if (data.status === 'no_credits') {
+            el.className = 'api-status api-status--warning';
+            el.querySelector('.api-status-label').textContent = 'No API credits';
+            el.title = data.message || 'API credit balance too low';
         } else {
             el.className = 'api-status api-status--error';
             el.querySelector('.api-status-label').textContent = 'API not connected';
@@ -156,7 +164,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Switch to tab from URL path, defaulting to Calendar
-    const validTabs = ['calendar', 'scanner', 'record', 'alerts'];
+    const validTabs = ['calendar', 'scanner', 'record', 'alerts', 'topics'];
     const pathTab = window.location.pathname.slice(1).split('/')[0];
     switchTab(validTabs.includes(pathTab) ? pathTab : 'calendar');
 });
@@ -180,7 +188,7 @@ function sidebarSearch(value) {
 
 // Handle browser back/forward navigation
 window.addEventListener('popstate', () => {
-    const validTabs = ['calendar', 'scanner', 'record', 'alerts'];
+    const validTabs = ['calendar', 'scanner', 'record', 'alerts', 'topics'];
     const pathTab = window.location.pathname.slice(1).split('/')[0];
     if (!validTabs.includes(pathTab)) return;
     const calendarVisible = document.getElementById('tab-lookahead').style.display !== 'none';

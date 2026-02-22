@@ -157,9 +157,9 @@ function renderResults(results) {
 
         // Master button — three states
         const inMaster = masterResultIds.has(r.id);
-        const btnClass = inMaster ? 'btn-add-master state-added' : 'btn-add-master state-add';
-        const btnIcon = inMaster ? SVG_CHECK : SVG_PLUS;
-        const btnTitle = inMaster ? 'In Master List (hover to remove)' : 'Add to Master List';
+        const btnClass = inMaster ? 'btn-add-master state-added ps-btn ps-btn--sm' : 'btn-add-master state-add ps-btn ps-btn--secondary ps-btn--sm';
+        const btnIcon = inMaster ? SVG_CHECK + ' Added' : 'Add';
+        const btnTitle = inMaster ? 'In record (hover to remove)' : 'Add to record';
 
         // Escape values for data attributes
         const escapedName = escapeHtml(r.member_name);
@@ -180,7 +180,7 @@ function renderResults(results) {
             <td>${partyPill(r.party || '—')}${typeSmall}</td>
             <td>${topicBadges}</td>
             <td>${escapeHtml(r.summary || '—')}</td>
-            <td>${escapeHtml(r.forum || '—')}<br><small><strong>${dateStr}</strong></small></td>
+            <td>${forumCell(r.source_type || '', r.forum || '', dateStr)}</td>
             <td>${quoteHtml}</td>
             <td><button class="${btnClass}" title="${btnTitle}"
                 data-result-id="${r.id}"
@@ -207,12 +207,12 @@ function setupMasterButton(btn) {
         // Hover: show ✗ in grey; leave: revert to ✓ green
         btn.addEventListener('mouseenter', () => {
             if (btn.classList.contains('state-added')) {
-                btn.innerHTML = SVG_CROSS;
+                btn.textContent = 'Remove';
             }
         });
         btn.addEventListener('mouseleave', () => {
             if (btn.classList.contains('state-added')) {
-                btn.innerHTML = SVG_CHECK;
+                btn.innerHTML = SVG_CHECK + ' Added';
             }
         });
         btn.addEventListener('click', async () => {
@@ -241,9 +241,9 @@ async function addToMasterFromBtn(btn) {
         masterResultIds.add(resultId);
 
         // Transition button to "added" state
-        btn.className = 'btn-add-master state-added';
-        btn.innerHTML = SVG_CHECK;
-        btn.title = 'In Master List (hover to remove)';
+        btn.className = 'btn-add-master state-added ps-btn ps-btn--sm';
+        btn.innerHTML = SVG_CHECK + ' Added';
+        btn.title = 'In record (hover to remove)';
 
         // Re-wire events for the new state
         btn.replaceWith(btn.cloneNode(true));
@@ -258,8 +258,8 @@ async function addToMasterFromBtn(btn) {
 }
 
 async function removeFromMasterByResult(resultId, btn) {
-    btn.className = 'btn-add-master state-removing';
-    btn.innerHTML = '&hellip;';
+    btn.className = 'btn-add-master state-removing ps-btn ps-btn--sm';
+    btn.textContent = '…';
     try {
         await API.del(`/api/master/activity/${resultId}`);
 
@@ -267,9 +267,9 @@ async function removeFromMasterByResult(resultId, btn) {
         masterResultIds.delete(resultId);
 
         // Transition back to "add" state
-        btn.className = 'btn-add-master state-add';
-        btn.innerHTML = SVG_PLUS;
-        btn.title = 'Add to Master List';
+        btn.className = 'btn-add-master state-add ps-btn ps-btn--secondary ps-btn--sm';
+        btn.textContent = 'Add';
+        btn.title = 'Add to record';
 
         // Re-wire events
         btn.replaceWith(btn.cloneNode(true));
@@ -281,9 +281,34 @@ async function removeFromMasterByResult(resultId, btn) {
     } catch (err) {
         console.error('Failed to remove from master:', err);
         // Revert
-        btn.className = 'btn-add-master state-added';
-        btn.innerHTML = SVG_CHECK;
+        btn.className = 'btn-add-master state-added ps-btn ps-btn--sm';
+        btn.innerHTML = SVG_CHECK + ' Added';
     }
+}
+
+const SOURCE_COLOURS = {
+    'hansard':          { color: '#f87171', bg: 'rgba(248,113,113,0.15)', label: 'Hansard'      },
+    'written_question': { color: '#fbbf24', bg: 'rgba(251,191,36,0.15)', label: 'Written Q'    },
+    'written_statement':{ color: '#4ade80', bg: 'rgba(74,222,128,0.15)', label: 'Written Stmt' },
+    'edm':              { color: '#e879f9', bg: 'rgba(232,121,249,0.15)',label: 'EDM'          },
+    'bill':             { color: '#fb923c', bg: 'rgba(251,146,60,0.15)', label: 'Bill'         },
+    'division':         { color: '#7dd3fc', bg: 'rgba(125,211,252,0.15)', label: 'Division'     },
+};
+
+function forumCell(sourceType, forum, dateStr) {
+    const src = SOURCE_COLOURS[sourceType];
+    const label = src ? src.label : (sourceType || '—');
+    const badgeHtml = src
+        ? `<span class="ps-badge" style="background:${src.bg};color:${src.color};border-color:${src.color}55">${escapeHtml(label)}</span>`
+        : `<span class="ps-badge">${escapeHtml(label)}</span>`;
+
+    // forum is like "Hansard: Housing Policy" — extract the part after ": " as detail
+    const colonIdx = forum ? forum.indexOf(': ') : -1;
+    const detail = colonIdx >= 0 ? forum.slice(colonIdx + 2) : '';
+    const detailHtml = detail ? `<br><span class="ps-forum-detail">${escapeHtml(detail)}</span>` : '';
+
+    const dateHtml = dateStr ? `<br><small><strong>${dateStr}</strong></small>` : '';
+    return badgeHtml + detailHtml + dateHtml;
 }
 
 function formatDate(dateStr) {
@@ -406,7 +431,7 @@ async function loadAudit(scanId) {
             listHtml += `<div class="audit-item">
                 <span class="audit-member">${escapeHtml(e.member_name)}</span>
                 <span class="audit-preview">${escapeHtml(e.text_preview || '')}</span>
-                <button class="audit-toggle-btn not-relevant${isProcedural ? ' procedural' : ''}"
+                <button class="audit-toggle-btn ps-btn ps-btn--sm not-relevant${isProcedural ? ' procedural' : ''}"
                         data-audit-id="${e.id}" data-scan-id="${scanId}"
                         data-state="not-relevant">Not relevant</button>
             </div>`;
@@ -551,7 +576,7 @@ async function loadHistory() {
             <span class="history-date">${formatDate(s.start_date)} to ${formatDate(s.end_date)}</span>
             <span class="history-conducted">${conductedStr}</span>
             <span>${s.total_relevant || 0} results</span>
-            <span class="history-status ${s.status}">${s.status}</span>
+            <span class="history-status-col"><span class="history-status ${s.status}">${s.status}</span></span>
         `;
         div.addEventListener('click', () => {
             state.currentScanId = s.id;

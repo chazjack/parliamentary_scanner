@@ -107,10 +107,12 @@
 .ps-sidebar.collapsed .ps-sidebar__nav-item {
   justify-content: center;
   padding: 7px 0;
+  height: 34px;
 }
 
 .ps-sidebar.collapsed .ps-sidebar__nav-icon {
-  width: auto;
+  width: 20px;
+  height: 20px;
 }
 
 .ps-sidebar.collapsed .ps-sidebar__footer {
@@ -214,7 +216,7 @@
 .ps-sidebar__nav {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 4px;
   padding: 0 var(--ps-space-2);
 }
 
@@ -223,6 +225,7 @@
   align-items: center;
   gap: var(--ps-space-3);
   padding: 7px 10px;
+  height: 34px;
   border-radius: var(--ps-radius-lg);
   background: transparent;
   border: none;
@@ -420,6 +423,20 @@
 .ps-chip--active:hover {
   background: rgba(99, 102, 241, 0.12);
 }
+
+/* Per-source colour coding */
+.ps-chip--active[data-source="hansard"]           { color: #f87171; background: rgba(248,113,113,0.15); border-color: rgba(248,113,113,0.4); }
+.ps-chip--active[data-source="hansard"]:hover     { background: rgba(248,113,113,0.22); }
+.ps-chip--active[data-source="written_questions"] { color: #fbbf24; background: rgba(251,191,36,0.15); border-color: rgba(251,191,36,0.4); }
+.ps-chip--active[data-source="written_questions"]:hover { background: rgba(251,191,36,0.22); }
+.ps-chip--active[data-source="written_statements"]{ color: #4ade80; background: rgba(74,222,128,0.15); border-color: rgba(74,222,128,0.4); }
+.ps-chip--active[data-source="written_statements"]:hover { background: rgba(74,222,128,0.22); }
+.ps-chip--active[data-source="edms"]              { color: #e879f9; background: rgba(232,121,249,0.15);border-color: rgba(232,121,249,0.4);}
+.ps-chip--active[data-source="edms"]:hover        { background: rgba(232,121,249,0.22); }
+.ps-chip--active[data-source="bills"]             { color: #fb923c; background: rgba(251,146,60,0.15); border-color: rgba(251,146,60,0.4); }
+.ps-chip--active[data-source="bills"]:hover       { background: rgba(251,146,60,0.22); }
+.ps-chip--active[data-source="divisions"]         { color: #7dd3fc; background: rgba(125,211,252,0.15); border-color: rgba(125,211,252,0.4); }
+.ps-chip--active[data-source="divisions"]:hover   { background: rgba(125,211,252,0.22); }
 
 .ps-chip-group {
   display: flex;
@@ -619,6 +636,11 @@
   white-space: nowrap;
 }
 
+#resultsTable .ps-member {
+  white-space: normal;
+  max-width: 150px;
+}
+
 .ps-member__name {
   color: var(--ps-text-primary);
   font-weight: var(--ps-weight-medium);
@@ -627,6 +649,12 @@
 .ps-member__party {
   color: var(--ps-text-muted);
   font-size: var(--ps-text-base);
+}
+
+.ps-forum-detail {
+  color: var(--ps-text-primary);
+  display: block;
+  margin-top: 2px;
 }
 
 /* Party dots */

@@ -141,6 +141,17 @@ CREATE TABLE IF NOT EXISTS lookahead_cache_meta (
     event_count INTEGER DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS lookahead_recess (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    start_date TEXT NOT NULL,
+    end_date TEXT NOT NULL,
+    house TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_recess_dates ON lookahead_recess(start_date, end_date);
+
 CREATE TABLE IF NOT EXISTS email_alerts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -859,6 +870,32 @@ async def clear_old_lookahead_events(db: aiosqlite.Connection, before_date: str)
         "DELETE FROM lookahead_events WHERE start_date < ?", (before_date,)
     )
     await db.commit()
+
+
+async def upsert_recess_periods(db: aiosqlite.Connection, periods: list[dict]):
+    """Replace all cached recess periods with fresh data."""
+    await db.execute("DELETE FROM lookahead_recess")
+    for p in periods:
+        await db.execute(
+            "INSERT INTO lookahead_recess (start_date, end_date, house, description) "
+            "VALUES (?, ?, ?, ?)",
+            (p["start_date"], p["end_date"], p["house"], p.get("description", "")),
+        )
+    await db.commit()
+
+
+async def get_recess_periods(
+    db: aiosqlite.Connection,
+    start_date: str,
+    end_date: str,
+) -> list[dict]:
+    """Return recess periods that overlap with the given date range."""
+    cursor = await db.execute(
+        "SELECT start_date, end_date, house, description FROM lookahead_recess "
+        "WHERE start_date <= ? AND end_date >= ? ORDER BY start_date",
+        (end_date, start_date),
+    )
+    return [dict(row) for row in await cursor.fetchall()]
 
 
 # --- Email Alert query helpers ---

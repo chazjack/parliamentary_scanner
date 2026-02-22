@@ -340,6 +340,43 @@ class LookaheadClient:
         )
         return events
 
+    # --- Recess / non-sitting dates ---
+
+    async def fetch_recess_periods(
+        self, start_date: str, end_date: str
+    ) -> list[dict]:
+        """Fetch parliamentary recess periods (categoryCode=REC) for both houses."""
+        url = f"{WHATSON_API_BASE}/calendar/events/nonsitting.json"
+        results = []
+        for house in ("Commons", "Lords"):
+            data = await self._get(url, {
+                "startDate": start_date,
+                "endDate": end_date,
+                "categoryCode": "REC",
+                "house": house,
+            })
+            if not data or not isinstance(data, list):
+                logger.warning("No recess data for %s %s–%s", house, start_date, end_date)
+                continue
+            for raw in data:
+                start = (raw.get("StartDate") or "")[:10]
+                end = (raw.get("EndDate") or "")[:10]
+                if not start or not end:
+                    continue
+                description = (
+                    raw.get("Description")
+                    or raw.get("Category")
+                    or "Recess"
+                )
+                results.append({
+                    "start_date": start,
+                    "end_date": end,
+                    "house": raw.get("House") or house,
+                    "description": description,
+                })
+        logger.info("Fetched %d recess periods (%s–%s)", len(results), start_date, end_date)
+        return results
+
     # --- Combined fetch ---
 
     async def fetch_all_events(
