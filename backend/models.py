@@ -24,6 +24,8 @@ class ScanCreate(BaseModel):
         "hansard", "written_questions", "written_statements",
         "edms", "bills", "divisions",
     ]
+    target_member_ids: list[str] = []
+    target_member_names: list[str] = []
 
 
 class AuditReclassifyRequest(BaseModel):

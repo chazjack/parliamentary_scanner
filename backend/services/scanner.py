@@ -98,6 +98,20 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
     end_date = scan["end_date"]
     topic_ids = json.loads(scan["topic_ids"])
     enabled_sources = json.loads(scan["sources"]) if scan.get("sources") else None
+    # Parse member IDs/names — stored as JSON arrays (or legacy plain string)
+    def _parse_member_field(raw):
+        if not raw:
+            return []
+        try:
+            val = json.loads(raw)
+            if isinstance(val, list):
+                return [str(v) for v in val if v]
+            return [str(val)] if val else []
+        except Exception:
+            return [str(raw)] if raw else []
+
+    target_member_ids = _parse_member_field(scan.get("target_member_id"))
+    target_member_names = _parse_member_field(scan.get("target_member_name"))
 
     # Load topics and their keywords
     all_topics = await get_all_topics(db)
@@ -106,11 +120,24 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
         for t in all_topics
         if t["id"] in topic_ids
     }
-    if not selected_topics:
+
+    # Three-way branch based on topics + member selection
+    if not selected_topics and not target_member_ids:
         await update_scan_progress(
-            db, scan_id, status="error", error_message="No topics selected"
+            db, scan_id, status="error", error_message="No topics or member selected"
         )
         return
+
+    if not selected_topics and target_member_ids:
+        # Case 2: Member only — fetch all activity, store raw (no LLM)
+        await _run_member_only_scan(
+            scan_id, cancel_event, db,
+            start_date, end_date, target_member_ids, target_member_names,
+            enabled_sources, stats, _update_with_stats,
+        )
+        return
+
+    # Case 1 or 3: Topics scan (with optional member post-filter)
 
     # Build keyword list from selected topics only (for API search)
     all_keywords = set()
@@ -180,6 +207,10 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
                 kw, start_date, end_date, cancel_event, on_source_start,
                 enabled_sources=enabled_sources,
             )
+
+            # Post-filter to target members if specified
+            if target_member_ids:
+                results = [c for c in results if c.member_id in target_member_ids]
 
             # Incremental dedup + pre-filter under lock, then enqueue
             new_procedural: list[Contribution] = []
@@ -372,3 +403,99 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
         total_relevant=total_relevant,
     )
     logger.info("Scan %d completed: %d relevant results stored", scan_id, total_relevant)
+
+
+async def _run_member_only_scan(
+    scan_id: int,
+    cancel_event: asyncio.Event,
+    db,
+    start_date: str,
+    end_date: str,
+    target_member_ids: list[str],
+    target_member_names: list[str],
+    enabled_sources: list[str] | None,
+    stats: dict,
+    _update_with_stats,
+):
+    """Fetch all activity for one or more members without LLM classification."""
+    display_names = ", ".join(target_member_names) if target_member_names else ", ".join(target_member_ids)
+    stats["phase"] = f"Fetching activity for {display_names}..."
+    await _update_with_stats(10)
+
+    # Fetch all members in parallel
+    client = ParliamentAPIClient()
+    try:
+        member_tasks = [
+            client.fetch_member_all(
+                mid,
+                target_member_names[i] if i < len(target_member_names) else "",
+                start_date, end_date,
+                enabled_sources=enabled_sources,
+                cancel_event=cancel_event,
+            )
+            for i, mid in enumerate(target_member_ids)
+        ]
+        all_results = await asyncio.gather(*member_tasks)
+    finally:
+        await client.close()
+
+    if cancel_event.is_set():
+        await update_scan_progress(db, scan_id, status="cancelled")
+        return
+
+    contributions = [c for group in all_results for c in group]
+    total_api = len(contributions)
+    stats["total_api_results"] = total_api
+    await update_scan_progress(db, scan_id, total_api_results=total_api)
+
+    # Enrich member info for each member (in parallel)
+    client2 = ParliamentAPIClient()
+    try:
+        member_infos = await asyncio.gather(*[
+            client2.lookup_member(mid) for mid in target_member_ids
+        ])
+    finally:
+        await client2.close()
+    member_info_map = {mid: info for mid, info in zip(target_member_ids, member_infos)}
+
+    stats["phase"] = f"Storing {total_api} items..."
+    await _update_with_stats(60)
+
+    stored = 0
+    for c in contributions:
+        if cancel_event.is_set():
+            break
+        dedup_key = f"{c.source_type}:{c.id}"
+        summary = c.context or c.text[:120]
+        info = member_info_map.get(c.member_id) or member_info_map.get(target_member_ids[0], {})
+        await insert_result(
+            db,
+            scan_id,
+            dedup_key=dedup_key,
+            member_name=c.member_name or info.get("name", ""),
+            member_id=c.member_id,
+            party=info.get("party", ""),
+            member_type=info.get("member_type", ""),
+            constituency=info.get("constituency", ""),
+            topics=json.dumps([]),
+            summary=summary,
+            activity_date=c.date.strftime("%Y-%m-%d"),
+            forum=_forum_label(c),
+            verbatim_quote=c.text[:500],
+            source_url=c.url,
+            confidence="raw",
+            position_signal="",
+            source_type=c.source_type,
+            raw_text=c.text[:2000],
+        )
+        stored += 1
+
+    stats["phase"] = "Scan complete"
+    await update_scan_progress(
+        db, scan_id,
+        status="completed",
+        progress=100,
+        current_phase=json.dumps(stats),
+        total_relevant=stored,
+    )
+    logger.info("Scan %d (member-only) completed: %d items stored", scan_id, stored)

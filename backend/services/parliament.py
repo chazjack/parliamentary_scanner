@@ -171,6 +171,51 @@ class ParliamentAPIClient:
         self._member_cache[member_id] = result
         return result
 
+    async def get_parties(self) -> list[dict]:
+        """Get all active parties from Commons and Lords, merged and sorted."""
+        parties: dict[str, dict] = {}
+        for house_num in (1, 2):
+            data = await self._get(f"{MEMBERS_API_BASE}/api/Parties/GetActive/{house_num}", {})
+            if not data:
+                continue
+            for item in data.get("items", []):
+                value = item.get("value", item)
+                name = value.get("name", "").strip()
+                if name and name not in parties:
+                    parties[name] = {"id": str(value.get("id", "")), "name": name}
+        return sorted(parties.values(), key=lambda p: p["name"])
+
+    async def search_members(self, query: str, house: int | None = None) -> list[dict]:
+        """Search for MPs and Peers by name. Returns list of {id, name, party, member_type, constituency}."""
+        url = f"{MEMBERS_API_BASE}/api/Members/Search"
+        params = {"Name": query, "IsCurrentMember": "true", "skip": 0, "take": 50}
+        if house:
+            params["House"] = house
+        data = await self._get(url, params)
+        if not data:
+            return []
+
+        items = data.get("items") or data.get("value", [])
+        results = []
+        for item in items:
+            value = item.get("value", item)
+            member_id = value.get("id", "")
+            name = value.get("nameDisplayAs", "")
+            party = value.get("latestParty", {}).get("name", "")
+            membership = value.get("latestHouseMembership", {})
+            house_num = membership.get("house", 0)
+            member_type = "MP" if house_num == 1 else "Peer" if house_num == 2 else ""
+            constituency = membership.get("membershipFrom", "")
+            if name:
+                results.append({
+                    "id": str(member_id),
+                    "name": name,
+                    "party": party,
+                    "member_type": member_type,
+                    "constituency": constituency,
+                })
+        return results
+
     # ---- Hansard API ----
 
     async def search_hansard(
@@ -730,4 +775,345 @@ class ParliamentAPIClient:
         for found in source_results:
             results.extend(found)
 
+        return results
+
+    # ---- Member-specific fetch methods ----
+
+    async def fetch_member_hansard(
+        self, member_id: str, member_name: str, start_date: str, end_date: str
+    ) -> list[Contribution]:
+        """Fetch all Hansard contributions by a specific member using memberId param."""
+        contributions = []
+        skip = 0
+        page = 0
+
+        while page < MAX_PAGES:
+            params = {
+                "queryParameters.memberId": member_id,
+                "queryParameters.startDate": start_date,
+                "queryParameters.endDate": end_date,
+                "queryParameters.take": 20,
+                "queryParameters.skip": skip,
+                "queryParameters.orderBy": "SittingDateDesc",
+            }
+
+            data = await self._get(f"{HANSARD_API_BASE}/search.json", params)
+            if not data:
+                break
+
+            items = data.get("Contributions", [])
+            if not items:
+                break
+
+            total = data.get("TotalContributions", 0)
+
+            for item in items:
+                name = item.get("MemberName") or item.get("AttributedTo", "")
+                if not name:
+                    name = member_name
+                text = item.get("ContributionTextFull") or item.get("ContributionText", "")
+                if not text:
+                    continue
+
+                contrib_ext_id = item.get("ContributionExtId", "")
+                debate_section_ext_id = item.get("DebateSectionExtId", "")
+                sitting_date = item.get("SittingDate", "")
+                try:
+                    dt = datetime.fromisoformat(sitting_date.replace("Z", "+00:00"))
+                except (ValueError, AttributeError):
+                    dt = datetime.now()
+
+                house = item.get("House", "")
+                debate_title = item.get("DebateSection", "") or item.get("HansardSection", "")
+                url = _build_hansard_url(house, dt, debate_section_ext_id, debate_title, contrib_ext_id)
+
+                contributions.append(Contribution(
+                    id=contrib_ext_id or item.get("ItemId", ""),
+                    member_name=name.strip(),
+                    member_id=str(item.get("MemberId", member_id)),
+                    text=_strip_html(text),
+                    date=dt,
+                    house=house,
+                    source_type="hansard",
+                    context=debate_title,
+                    url=url,
+                    matched_keywords=[],
+                ))
+
+            page += 1
+            skip += len(items)
+            if skip >= total:
+                break
+
+        return contributions
+
+    async def fetch_member_written_questions(
+        self, member_id: str, member_name: str, start_date: str, end_date: str
+    ) -> list[Contribution]:
+        """Fetch written questions asked by a specific member."""
+        contributions = []
+        skip = 0
+        page = 0
+
+        while page < MAX_PAGES:
+            params = {
+                "askingMemberId": member_id,
+                "tabledWhenFrom": start_date,
+                "tabledWhenTo": end_date,
+                "take": 20,
+                "skip": skip,
+            }
+
+            data = await self._get(
+                f"{WRITTEN_QS_API_BASE}/api/writtenquestions/questions", params
+            )
+            if not data:
+                break
+
+            results = data.get("results", [])
+            if not results:
+                break
+            total = data.get("totalResults", 0)
+
+            for item in results:
+                val = item.get("value", {})
+                question_id = str(val.get("id", ""))
+                question_text = val.get("questionText", "")
+                heading = val.get("heading", "")
+                house = val.get("house", "")
+                date_tabled = val.get("dateTabled", "")
+                uin = val.get("uin", "")
+
+                try:
+                    dt = datetime.fromisoformat(date_tabled.replace("Z", "+00:00"))
+                except (ValueError, AttributeError):
+                    dt = datetime.now()
+
+                url = ""
+                if uin:
+                    url = f"https://questions-statements.parliament.uk/written-questions/detail/{dt.strftime('%Y-%m-%d')}/{uin}"
+
+                asking_member = val.get("askingMember")
+                name = asking_member.get("name", "") if asking_member else member_name
+
+                if question_text and name:
+                    contributions.append(Contribution(
+                        id=f"wq-q-{question_id}",
+                        member_name=name.strip(),
+                        member_id=member_id,
+                        text=_strip_html(question_text),
+                        date=dt,
+                        house=house,
+                        source_type="written_question",
+                        context=heading,
+                        url=url,
+                        matched_keywords=[],
+                    ))
+
+            skip += 20
+            page += 1
+            if skip >= total:
+                break
+
+        return contributions
+
+    async def fetch_member_written_statements(
+        self, member_id: str, member_name: str, start_date: str, end_date: str
+    ) -> list[Contribution]:
+        """Fetch written statements made by a specific member.
+
+        Note: The memberId param may be silently ignored by the API on some versions.
+        Results are post-filtered by member_id as a fallback.
+        """
+        contributions = []
+        skip = 0
+        page = 0
+
+        while page < MAX_PAGES:
+            params = {
+                "memberId": member_id,
+                "madeWhenFrom": start_date,
+                "madeWhenTo": end_date,
+                "take": 20,
+                "skip": skip,
+            }
+
+            data = await self._get(
+                f"{WRITTEN_QS_API_BASE}/api/writtenstatements/statements", params
+            )
+            if not data:
+                break
+
+            results = data.get("results", [])
+            if not results:
+                break
+            total = data.get("totalResults", 0)
+
+            for item in results:
+                val = item.get("value", {})
+                statement_id = str(val.get("id", ""))
+                text = val.get("text", "") or val.get("statementText", "")
+                heading = val.get("title", "") or val.get("heading", "")
+                house = val.get("house", "")
+                date_made = val.get("dateMade", "")
+                uin = val.get("uin", "")
+
+                try:
+                    dt = datetime.fromisoformat(date_made.replace("Z", "+00:00"))
+                except (ValueError, AttributeError):
+                    dt = datetime.now()
+
+                if not text:
+                    continue
+
+                member = val.get("member") or val.get("makingMember")
+                member_id_val = str(val.get("memberId", ""))
+                if member:
+                    name = member.get("name", "")
+                    item_member_id = str(member.get("id", member_id_val or member_id))
+                else:
+                    name = member_name
+                    item_member_id = member_id_val or member_id
+
+                if not name:
+                    continue
+
+                # Post-filter: skip if this statement belongs to a different member
+                if item_member_id and item_member_id != member_id:
+                    continue
+
+                url = ""
+                if uin:
+                    url = f"https://questions-statements.parliament.uk/written-statements/detail/{dt.strftime('%Y-%m-%d')}/{uin}"
+
+                contributions.append(Contribution(
+                    id=f"ws-{statement_id}",
+                    member_name=name.strip(),
+                    member_id=item_member_id,
+                    text=_strip_html(text),
+                    date=dt,
+                    house=house,
+                    source_type="written_statement",
+                    context=heading,
+                    url=url,
+                    matched_keywords=[],
+                ))
+
+            skip += 20
+            page += 1
+            if skip >= total:
+                break
+
+        return contributions
+
+    async def fetch_member_edms(
+        self, member_id: str, member_name: str, start_date: str, end_date: str
+    ) -> list[Contribution]:
+        """Fetch EDMs where this member is the primary sponsor (uses MNIS ID)."""
+        contributions = []
+        skip = 0
+
+        while True:
+            params = {
+                "primarySponsorId": member_id,
+                "tabledStartDate": start_date,
+                "tabledEndDate": end_date,
+                "take": 100,
+                "skip": skip,
+            }
+
+            data = await self._get(f"{EDM_API_BASE}/EarlyDayMotions/list", params)
+            if not data:
+                break
+
+            response = data.get("Response", [])
+            if not response:
+                response = data if isinstance(data, list) else []
+                if not response:
+                    break
+
+            paging = data.get("PagingInfo", {})
+            total = paging.get("Total", len(response))
+
+            for edm in response:
+                edm_id = str(edm.get("Id", ""))
+                title = edm.get("Title", "")
+                motion_text = edm.get("MotionText", "")
+                date_tabled = edm.get("DateTabled", "")
+                sponsor = edm.get("PrimarySponsor", {})
+                sponsor_name = sponsor.get("Name", "") or member_name
+                sponsor_id = str(sponsor.get("MnisId", member_id))
+                sponsors_count = edm.get("SponsorsCount", 0)
+
+                try:
+                    dt = datetime.fromisoformat(date_tabled.replace("Z", "+00:00"))
+                except (ValueError, AttributeError):
+                    dt = datetime.now()
+
+                text = f"{title}\n\n{_strip_html(motion_text)}" if motion_text else title
+                url = f"https://edm.parliament.uk/early-day-motion/{edm_id}"
+
+                contributions.append(Contribution(
+                    id=f"edm-{edm_id}",
+                    member_name=sponsor_name.strip(),
+                    member_id=sponsor_id,
+                    text=text,
+                    date=dt,
+                    house="Commons",
+                    source_type="edm",
+                    context=f"Early Day Motion: {title} ({sponsors_count} sponsors)",
+                    url=url,
+                    matched_keywords=[],
+                ))
+
+            skip += 100
+            if skip >= total:
+                break
+
+        return contributions
+
+    async def fetch_member_all(
+        self,
+        member_id: str,
+        member_name: str,
+        start_date: str,
+        end_date: str,
+        enabled_sources: list[str] | None = None,
+        cancel_event: asyncio.Event | None = None,
+    ) -> list[Contribution]:
+        """Fetch all activity for a specific member from applicable sources in parallel.
+
+        Divisions and Bills are omitted — no per-member list endpoints exist.
+        They are still covered in keyword+member mode via post-filtering.
+        """
+        all_sources = [
+            ("hansard", self.fetch_member_hansard),
+            ("written_questions", self.fetch_member_written_questions),
+            ("written_statements", self.fetch_member_written_statements),
+            ("edms", self.fetch_member_edms),
+        ]
+
+        if enabled_sources is not None:
+            sources = [(key, method) for key, method in all_sources if key in enabled_sources]
+        else:
+            sources = all_sources
+
+        async def _fetch_one(key, method):
+            if cancel_event and cancel_event.is_set():
+                return []
+            try:
+                logger.info("Fetching member %s from %s", member_id, key)
+                found = await method(member_id, member_name, start_date, end_date)
+                logger.info("  -> %d results from %s", len(found), key)
+                return found
+            except Exception as e:
+                logger.error("Error fetching member %s from %s: %s", member_id, key, e)
+                return []
+
+        tasks = [_fetch_one(key, method) for key, method in sources]
+        source_results = await asyncio.gather(*tasks)
+
+        results = []
+        for found in source_results:
+            results.extend(found)
         return results

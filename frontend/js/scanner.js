@@ -33,8 +33,11 @@ async function startScan() {
 
     // Use checked topics only
     const topicIds = Array.from(checkedTopicIds);
-    if (topicIds.length === 0) {
-        alert('Please select at least one topic to scan.');
+    const memberIds = selectedMembers.map(m => m.id);
+    const memberNames = selectedMembers.map(m => m.name);
+
+    if (topicIds.length === 0 && memberIds.length === 0) {
+        alert('Please select at least one topic or a member to scan.');
         return;
     }
 
@@ -79,6 +82,8 @@ async function startScan() {
             end_date: endDate,
             topic_ids: topicIds,
             sources: sources,
+            target_member_ids: memberIds,
+            target_member_names: memberNames,
         });
 
         state.currentScanId = res.scan_id;
@@ -325,10 +330,27 @@ function renderKeywordChips(stats) {
 function renderPipelineBoxes(stats) {
     if (!pipelineStatsRow) return;
 
-    const totalClassified = (stats.classified_relevant || 0) + (stats.classified_discarded || 0);
+    const totalApiResults = stats.total_api_results || 0;
     const sentToClassifier = stats.sent_to_classifier || 0;
+
+    // Member-only scan: no LLM classification, just show fetched count
+    if (sentToClassifier === 0 && totalApiResults > 0) {
+        pipelineStatsRow.innerHTML = `<div class="pipe-box pipe-box-relevant" data-scroll-target="results-section" style="cursor:pointer;">
+            <div class="pipe-box-value">${totalApiResults}</div>
+            <div class="pipe-box-label">Items Fetched</div>
+        </div>`;
+        pipelineStatsRow.querySelectorAll('[data-scroll-target]').forEach(el => {
+            el.addEventListener('click', () => {
+                const target = document.getElementById(el.dataset.scrollTarget);
+                if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            });
+        });
+        return;
+    }
+
+    const totalClassified = (stats.classified_relevant || 0) + (stats.classified_discarded || 0);
     const boxes = [
-        { label: 'Keyword Results', value: stats.total_api_results || 0, cls: '' },
+        { label: 'Keyword Results', value: totalApiResults, cls: '' },
         { label: 'Classified', value: `${totalClassified}/${sentToClassifier}`, cls: '' },
         { label: 'Relevant', value: stats.classified_relevant || 0, cls: 'pipe-box-relevant', target: 'results-section' },
         { label: 'Discarded', value: stats.classified_discarded || 0, cls: 'pipe-box-discarded', target: 'audit-section' },
@@ -425,6 +447,7 @@ function renderSourceCircles(stats) {
 function friendlyError(msg) {
     if (!msg) return 'Unknown error. Please try again.';
     const lower = msg.toLowerCase();
+    if (lower.includes('no topics or member')) return 'Please select at least one topic or a member to scan.';
     if (lower.includes('no topics selected')) return 'No topics selected. Please check at least one topic.';
     if (lower.includes('rate limit') || lower.includes('429')) return 'API rate limit reached. Try again in a few minutes or reduce the date range.';
     if (lower.includes('timeout') || lower.includes('timed out')) return 'Request timed out. The Parliament API may be slow — try a shorter date range.';
@@ -447,3 +470,163 @@ document.querySelectorAll('#source-toggles .ps-chip').forEach(btn => {
         btn.classList.toggle('ps-chip--active');
     });
 });
+
+// ---- Topic Add Expander ----
+
+(function() {
+    const expander = document.getElementById('topicAddExpander');
+    const input = document.getElementById('newTopicName');
+
+    if (!expander || !input) return;
+
+    function expand() {
+        expander.classList.add('expanded');
+        input.focus();
+    }
+
+    function collapse() {
+        expander.classList.remove('expanded');
+        input.value = '';
+    }
+
+    expander.addEventListener('click', (e) => {
+        if (!expander.classList.contains('expanded')) expand();
+    });
+
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); collapse(); }
+        if (e.key === 'Enter') setTimeout(collapse, 80);
+    });
+
+    document.addEventListener('click', (e) => {
+        if (expander.classList.contains('expanded') && !expander.contains(e.target)) {
+            collapse();
+        }
+    });
+})();
+
+// ---- Member Autocomplete (multi-select) ----
+
+window.selectedMembers = []; // [{id, name, meta}, ...]
+
+(function initMemberAutocomplete() {
+    const input = document.getElementById('memberSearchInput');
+    const dropdown = document.getElementById('memberDropdown');
+    const pillsContainer = document.getElementById('memberSelectedPills');
+
+    if (!input) return;
+
+    let debounceTimer = null;
+
+    function renderPills() {
+        if (!pillsContainer) return;
+        if (selectedMembers.length === 0) {
+            pillsContainer.innerHTML = '';
+            return;
+        }
+        pillsContainer.innerHTML = selectedMembers.map(m => `
+            <span class="member-selected-pill" data-id="${escapeHtml(m.id)}">
+                <span class="member-selected-pill__name">${escapeHtml(m.name)}</span>
+                <button class="member-selected-pill__clear" data-id="${escapeHtml(m.id)}" title="Remove">&#x2715;</button>
+            </span>
+        `).join('');
+
+        pillsContainer.querySelectorAll('.member-selected-pill__clear').forEach(btn => {
+            btn.addEventListener('click', () => removeMember(btn.dataset.id));
+        });
+    }
+
+    function addMember(id, name, meta) {
+        if (selectedMembers.some(m => m.id === id)) return; // no duplicates
+        selectedMembers.push({ id, name, meta });
+        renderPills();
+        input.value = '';
+        dropdown.style.display = 'none';
+        input.focus();
+    }
+
+    function removeMember(id) {
+        selectedMembers = selectedMembers.filter(m => m.id !== id);
+        renderPills();
+        input.focus();
+    }
+
+    const PARTY_ABBR = {
+        'Conservative': 'Con', 'Labour': 'Lab', 'Liberal Democrats': 'Lib Dem',
+        'Scottish National Party': 'SNP', 'Green Party': 'Green', 'Reform UK': 'Reform',
+        'Independent': 'Ind', 'Plaid Cymru': 'PC', 'Democratic Unionist Party': 'DUP',
+        'Sinn Féin': 'SF', 'Social Democratic & Labour Party': 'SDLP',
+        'Alliance': 'Alliance', 'Ulster Unionist Party': 'UUP',
+        'Alba Party': 'Alba', 'Traditional Unionist Voice': 'TUV',
+        'Workers Party of Britain': 'WPB',
+    };
+
+    function formatMemberLabel(m) {
+        const party = PARTY_ABBR[m.party] || m.party || '';
+        const type = m.member_type || '';
+        const suffix = [party, type].filter(Boolean).join(' ');
+        return suffix ? `${m.name} — ${suffix}` : m.name;
+    }
+
+    function renderDropdown(members) {
+        if (!members || members.length === 0) {
+            dropdown.innerHTML = `<div class="member-autocomplete__empty">No results found</div>`;
+            dropdown.style.display = '';
+            return;
+        }
+        const alreadySelected = new Set(selectedMembers.map(m => m.id));
+        let html = '';
+        for (const m of members) {
+            const meta = [m.party, m.member_type].filter(Boolean).join(' · ');
+            const dimmed = alreadySelected.has(String(m.id)) ? ' style="opacity:0.45;"' : '';
+            html += `<div class="member-autocomplete__item" data-id="${escapeHtml(String(m.id))}" data-name="${escapeHtml(m.name)}" data-meta="${escapeHtml(meta)}"${dimmed}>
+                <span class="member-autocomplete__item-name">${escapeHtml(m.name)}</span>
+                ${meta ? `<span class="member-autocomplete__item-meta">${escapeHtml(meta)}</span>` : ''}
+            </div>`;
+        }
+        dropdown.innerHTML = html;
+        dropdown.style.display = '';
+
+        dropdown.querySelectorAll('.member-autocomplete__item').forEach(item => {
+            item.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                addMember(item.dataset.id, item.dataset.name, item.dataset.meta);
+            });
+        });
+    }
+
+    async function doSearch(q) {
+        try {
+            const url = `/api/scans/members/search?q=${encodeURIComponent(q)}`;
+            const members = await API.get(url);
+            renderDropdown(members);
+        } catch (e) {
+            dropdown.style.display = 'none';
+        }
+    }
+
+    input.addEventListener('input', () => {
+        clearTimeout(debounceTimer);
+        const q = input.value.trim();
+        if (q.length < 2) {
+            dropdown.style.display = 'none';
+            return;
+        }
+        debounceTimer = setTimeout(() => doSearch(q), 300);
+    });
+
+    input.addEventListener('focus', () => {
+        // Re-show dropdown if there's a query already typed
+        const q = input.value.trim();
+        if (q.length >= 2 && dropdown.innerHTML && dropdown.innerHTML.trim()) {
+            dropdown.style.display = '';
+        }
+    });
+
+    document.addEventListener('click', (e) => {
+        const wrap = document.getElementById('memberAutocomplete');
+        if (wrap && !wrap.contains(e.target)) {
+            dropdown.style.display = 'none';
+        }
+    });
+})();

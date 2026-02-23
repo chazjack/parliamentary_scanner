@@ -11,6 +11,28 @@ from backend.models import ScanCreate
 
 router = APIRouter(prefix="/api/scans", tags=["scans"])
 
+
+@router.get("/members/parties")
+async def get_member_parties():
+    from backend.services.parliament import ParliamentAPIClient
+    client = ParliamentAPIClient()
+    try:
+        return await client.get_parties()
+    finally:
+        await client.close()
+
+
+@router.get("/members/search")
+async def search_members(q: str = "", house: int = 0):
+    if not q or len(q.strip()) < 2:
+        return []
+    from backend.services.parliament import ParliamentAPIClient
+    client = ParliamentAPIClient()
+    try:
+        return await client.search_members(q.strip(), house=house or None)
+    finally:
+        await client.close()
+
 # In-memory tracking of active scans for cancellation
 active_scan_events: dict[int, asyncio.Event] = {}
 # Will be populated when scanner service is wired up
@@ -37,7 +59,11 @@ async def start_scan(body: ScanCreate):
 
     db = await get_db()
     try:
-        scan_id = await create_scan(db, body.start_date, body.end_date, body.topic_ids, body.sources)
+        scan_id = await create_scan(
+            db, body.start_date, body.end_date, body.topic_ids, body.sources,
+            target_member_ids=body.target_member_ids,
+            target_member_names=body.target_member_names,
+        )
     finally:
         await db.close()
 

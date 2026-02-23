@@ -41,7 +41,9 @@ CREATE TABLE IF NOT EXISTS scans (
     total_relevant INTEGER DEFAULT 0,
     error_message TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    completed_at TIMESTAMP
+    completed_at TIMESTAMP,
+    target_member_id TEXT,
+    target_member_name TEXT
 );
 
 CREATE TABLE IF NOT EXISTS results (
@@ -339,6 +341,14 @@ async def init_db():
             await db.execute("ALTER TABLE scans ADD COLUMN alert_id INTEGER")
             await db.commit()
             logger.info("Migrated scans: added alert_id column")
+        if "target_member_id" not in scan_columns:
+            await db.execute("ALTER TABLE scans ADD COLUMN target_member_id TEXT")
+            await db.commit()
+            logger.info("Migrated scans: added target_member_id column")
+        if "target_member_name" not in scan_columns:
+            await db.execute("ALTER TABLE scans ADD COLUMN target_member_name TEXT")
+            await db.commit()
+            logger.info("Migrated scans: added target_member_name column")
 
         # Seed admin user from environment if no users exist yet
         from backend.config import ADMIN_USERNAME, ADMIN_PASSWORD
@@ -448,6 +458,8 @@ async def create_scan(
     end_date: str,
     topic_ids: list[int],
     sources: list[str] | None = None,
+    target_member_ids: list[str] | None = None,
+    target_member_names: list[str] | None = None,
 ) -> int:
     """Create a scan record. Returns scan ID."""
     default_sources = [
@@ -456,8 +468,13 @@ async def create_scan(
     ]
     sources_json = json.dumps(sources or default_sources)
     cursor = await db.execute(
-        "INSERT INTO scans (start_date, end_date, topic_ids, sources) VALUES (?, ?, ?, ?)",
-        (start_date, end_date, json.dumps(topic_ids), sources_json),
+        "INSERT INTO scans (start_date, end_date, topic_ids, sources, target_member_id, target_member_name) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            start_date, end_date, json.dumps(topic_ids), sources_json,
+            json.dumps(target_member_ids or []),
+            json.dumps(target_member_names or []),
+        ),
     )
     await db.commit()
     return cursor.lastrowid
