@@ -114,7 +114,7 @@
                         <span class="ps-chip-group__label">TOPICS</span>
                         <div style="display:flex;gap:4px;align-items:center;" onclick="event.stopPropagation()">
                             <button class="ps-btn ps-btn--ghost ps-btn--sm btn-undo disabled" id="undoBtn" onclick="undoLastAction()" title="Undo">&#8617;</button>
-                            <span style="font-size:var(--ps-text-sm);color:var(--ps-text-muted);cursor:pointer;" id="topicToggleAllBtn" onclick="toggleAllTopicsBtn()">All</span>
+                            <span style="font-size:var(--ps-text-sm);color:var(--ps-text-muted);cursor:pointer;" id="topicToggleAllBtn" onclick="toggleAllTopicsBtn()">All – None</span>
                         </div>
                     </div>
                     <div class="ps-chip-group__items topic-chips-row">
@@ -398,6 +398,11 @@
                         <!-- Scan config -->
                         <div id="alertScanConfig">
                             <div style="margin-bottom:12px;">
+                                <label class="source-label" style="margin-bottom:6px;">Sources</label>
+                                <div id="alertSourceCheckboxes" class="ps-chip-group__items"></div>
+                            </div>
+
+                            <div style="margin-bottom:12px;">
                                 <label class="source-label" style="margin-bottom:6px;">Topics</label>
                                 <div id="alertTopicCheckboxes" class="ps-chip-group__items"></div>
                             </div>
@@ -410,11 +415,6 @@
                                     <div class="member-autocomplete__dropdown" id="alertMemberDropdown" style="display:none;"></div>
                                 </div>
                                 <div id="alertMemberSelectedPills" class="member-pills-container"></div>
-                            </div>
-
-                            <div style="margin-bottom:12px;">
-                                <label class="source-label" style="margin-bottom:6px;">Sources</label>
-                                <div id="alertSourceCheckboxes" class="ps-chip-group__items"></div>
                             </div>
                         </div>
 

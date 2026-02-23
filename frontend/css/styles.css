@@ -3394,11 +3394,11 @@ u    padding: 0;
 .topic-add-expander {
     display: inline-flex;
     align-items: center;
-    height: 26px;
+    height: 22px;
     border: 1.5px solid var(--ps-text-muted, var(--text-light));
     border-radius: 999px;
     overflow: hidden;
-    width: 26px;
+    width: 22px;
     cursor: pointer;
     transition: width 0.2s ease, border-color 0.15s;
     flex-shrink: 0;
@@ -3414,12 +3414,12 @@ u    padding: 0;
 
 .topic-add-plus {
     flex-shrink: 0;
-    width: 23px;
-    height: 23px;
+    width: 19px;
+    height: 19px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 1rem;
+    font-size: 0.9rem;
     color: var(--ps-text-muted, var(--text-light));
     transition: color 0.15s;
     pointer-events: none;
@@ -3594,3 +3594,89 @@ u    padding: 0;
     color: var(--ps-danger, var(--accent));
 }
 
+
+/* ── Import mode modal ──────────────────────────────────────────────────────── */
+
+.import-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.import-modal {
+    background: #18181b;
+    border: 1px solid var(--ps-border-strong);
+    border-radius: 10px;
+    padding: 24px;
+    width: 360px;
+    max-width: 90vw;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.import-modal__title {
+    font-size: var(--ps-text-xl);
+    font-weight: 600;
+    color: var(--ps-text-primary);
+    margin: 0;
+}
+
+.import-modal__desc {
+    font-size: var(--ps-text-md);
+    color: var(--ps-text-secondary);
+    margin: 0;
+}
+
+.import-modal__options {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.import-modal__option {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--ps-border-strong);
+    background: var(--ps-bg-muted);
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.15s, background 0.15s;
+}
+
+.import-modal__option:hover {
+    border-color: var(--ps-accent-border);
+    background: var(--ps-accent-soft);
+}
+
+.import-modal__option-title {
+    font-size: var(--ps-text-md);
+    font-weight: 600;
+    color: var(--ps-text-primary);
+}
+
+.import-modal__option-desc {
+    font-size: var(--ps-text-base);
+    color: var(--ps-text-secondary);
+}
+
+.import-modal__cancel {
+    align-self: flex-end;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: var(--ps-text-base);
+    color: var(--ps-text-muted);
+    padding: 4px 0;
+}
+
+.import-modal__cancel:hover {
+    color: var(--ps-text-secondary);
+}

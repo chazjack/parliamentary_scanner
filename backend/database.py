@@ -88,7 +88,8 @@ CREATE TABLE IF NOT EXISTS audit_log (
     activity_date TEXT,
     context TEXT,
     full_text TEXT,
-    matched_keywords TEXT
+    matched_keywords TEXT,
+    source_url TEXT
 );
 
 CREATE TABLE IF NOT EXISTS master_list (
@@ -331,6 +332,10 @@ async def init_db():
             await db.execute("ALTER TABLE audit_log ADD COLUMN matched_keywords TEXT")
             await db.commit()
             logger.info("Migrated audit_log: added matched_keywords column")
+        if "source_url" not in columns:
+            await db.execute("ALTER TABLE audit_log ADD COLUMN source_url TEXT")
+            await db.commit()
+            logger.info("Migrated audit_log: added source_url column")
 
         # Migration: add trigger and alert_id columns to scans if not present
         cursor = await db.execute("PRAGMA table_info(scans)")
@@ -589,12 +594,12 @@ async def insert_audit_log(
 
 async def insert_audit_log_batch(db: aiosqlite.Connection, rows: list[tuple]):
     """Batch insert audit log entries for efficiency.
-    Each row: (scan_id, member_name, source_type, text_preview, classification, activity_date, context, full_text, matched_keywords)
+    Each row: (scan_id, member_name, source_type, text_preview, classification, activity_date, context, full_text, matched_keywords, source_url)
     """
     await db.executemany(
         """INSERT INTO audit_log
-        (scan_id, member_name, source_type, text_preview, classification, activity_date, context, full_text, matched_keywords)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (scan_id, member_name, source_type, text_preview, classification, activity_date, context, full_text, matched_keywords, source_url)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         rows,
     )
     await db.commit()

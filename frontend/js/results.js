@@ -569,9 +569,12 @@ async function loadAudit(scanId) {
             let keywords = [];
             try { keywords = JSON.parse(e.matched_keywords || '[]'); } catch {}
             const snippetHtml = auditSnippet(e.full_text || e.text_preview || '', keywords);
+            const previewContent = e.source_url
+                ? `<a href="${escapeHtml(e.source_url)}" target="_blank" rel="noopener" class="audit-preview-link">${snippetHtml}</a>`
+                : snippetHtml;
             listHtml += `<div class="audit-item">
                 <span class="audit-member">${escapeHtml(e.member_name)}</span>
-                <span class="audit-preview">${snippetHtml}</span>
+                <span class="audit-preview">${previewContent}</span>
                 <button class="audit-toggle-btn ps-btn ps-btn--sm not-relevant${isProcedural ? ' procedural' : ''}"
                         data-audit-id="${e.id}" data-scan-id="${scanId}"
                         data-state="not-relevant">Not relevant</button>

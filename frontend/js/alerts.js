@@ -2,6 +2,7 @@
 
 let alertsList = [];
 let editingAlertId = null;
+let _alertPollTimer = null;
 let _alertRecipients = [];   // internal list of validated email strings
 let _alertMembers = [];      // [{id, name}, ...]
 
@@ -62,8 +63,35 @@ async function loadAlerts() {
         alertsList = await API.get('/api/alerts');
         renderAlertsList();
         _restoreAlertsFromUrl();
+        _updateAlertPolling();
     } catch (e) {
         console.error('Failed to load alerts:', e);
+    }
+}
+
+function _updateAlertPolling() {
+    const anyRunning = alertsList.some(a => a.last_run_status === 'running');
+    if (anyRunning && !_alertPollTimer) {
+        _alertPollTimer = setInterval(async () => {
+            try {
+                alertsList = await API.get('/api/alerts');
+                renderAlertsList();
+                if (!alertsList.some(a => a.last_run_status === 'running')) {
+                    stopAlertPolling();
+                }
+            } catch (e) {
+                console.error('Alert poll failed:', e);
+            }
+        }, 3000);
+    } else if (!anyRunning) {
+        stopAlertPolling();
+    }
+}
+
+function stopAlertPolling() {
+    if (_alertPollTimer) {
+        clearInterval(_alertPollTimer);
+        _alertPollTimer = null;
     }
 }
 
@@ -107,14 +135,13 @@ function renderAlertsList() {
     tableBody.innerHTML = alertsList.map(a => {
         const d = _alertDisplayData(a);
         const typeCls = a.alert_type === 'scan' ? 'ps-badge ps-badge--accent' : 'ps-badge ps-badge--warning';
-        const statusCls = a.enabled ? 'ps-badge ps-badge--success' : 'ps-badge ps-badge--muted';
         return `<tr>
             <td><strong>${_escHtml(a.name)}</strong></td>
             <td><span class="${typeCls}">${d.typeLabel}</span></td>
             <td>${d.cadenceLabel}</td>
-            <td>${d.recipientLabel}</td>
+            <td style="text-align:center;">${d.recipientLabel}</td>
             <td>${d.lastRun}</td>
-            <td><span class="${statusCls}">${d.statusLabel}</span></td>
+            <td style="text-align:center;">${d.statusDot}</td>
             <td class="alert-actions-cell">${_alertActions(a)}</td>
         </tr>`;
     }).join('');
@@ -124,11 +151,10 @@ function renderAlertsList() {
         cardList.innerHTML = alertsList.map(a => {
             const d = _alertDisplayData(a);
             const typeCls = a.alert_type === 'scan' ? 'ps-badge ps-badge--accent' : 'ps-badge ps-badge--warning';
-            const statusCls = a.enabled ? 'ps-badge ps-badge--success' : 'ps-badge ps-badge--muted';
             return `<div class="alert-card">
                 <div class="alert-card-header">
                     <span class="alert-card-name">${_escHtml(a.name)}</span>
-                    <span class="${statusCls}">${d.statusLabel}</span>
+                    ${d.statusDot}
                 </div>
                 <div class="alert-card-meta">
                     <span class="${typeCls}">${d.typeLabel}</span>
@@ -143,8 +169,9 @@ function renderAlertsList() {
 }
 
 function _alertDisplayData(a) {
-    const statusClass = a.enabled ? 'completed' : 'cancelled';
-    const statusLabel = a.enabled ? 'Enabled' : 'Disabled';
+    const isRunning = a.last_run_status === 'running';
+    const statusClass = isRunning ? 'running' : a.enabled ? 'completed' : 'cancelled';
+    const statusLabel = isRunning ? 'Running' : a.enabled ? 'Enabled' : 'Disabled';
     const lastRunStatus = a.last_run_status;
     const lastRunCls = lastRunStatus === 'completed' ? 'ps-badge ps-badge--success'
         : lastRunStatus === 'failed' ? 'ps-badge ps-badge--danger'
@@ -159,8 +186,12 @@ function _alertDisplayData(a) {
     const cadenceLabel = a.cadence === 'daily'
         ? `Daily at ${a.send_time}`
         : `${_capitalize(a.day_of_week)}s at ${a.send_time}`;
-    const recipientLabel = `${recipientCount} recipient${recipientCount !== 1 ? 's' : ''}`;
-    return { statusClass, statusLabel, lastRun, typeLabel, typeBg, typeColor, cadenceLabel, recipientLabel };
+    const recipientLabel = `${recipientCount}`;
+    const dotCls = isRunning ? 'ps-status__dot--checking'
+        : a.enabled ? 'ps-status__dot--connected'
+        : 'ps-status__dot--disconnected';
+    const statusDot = `<span class="ps-status__dot ${dotCls}" title="${statusLabel}"></span>`;
+    return { statusClass, statusLabel, statusDot, lastRun, typeLabel, typeBg, typeColor, cadenceLabel, recipientLabel };
 }
 
 function _alertActions(a) {
@@ -186,7 +217,7 @@ function showAlertForm(alertType, pushUrl = true) {
     editingAlertId = null;
     const form = document.getElementById('alertFormSection');
     const title = document.getElementById('alertFormTitle');
-    title.textContent = 'Create New Alert';
+    title.textContent = (alertType === 'lookahead') ? 'New Calendar Alert' : 'New Scan Alert';
     form.style.display = '';
     document.getElementById('alertFormList').style.display = 'none';
     if (pushUrl) history.pushState(null, '', '/alerts/new');
@@ -530,8 +561,9 @@ function hideAlertHistory() {
 function _formatDate(dateStr) {
     if (!dateStr) return '';
     try {
-        const d = new Date(dateStr + (dateStr.includes('T') ? '' : 'T00:00:00'));
-        return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        const d = new Date(dateStr.replace(' ', 'T'));
+        if (isNaN(d)) return dateStr;
+        return d.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     } catch { return dateStr; }
 }
 

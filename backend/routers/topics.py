@@ -2,7 +2,7 @@
 
 import io
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
 
@@ -92,7 +92,10 @@ async def export_topics_excel():
 
 
 @router.post("/import")
-async def import_topics_excel(file: UploadFile = File(...)):
+async def import_topics_excel(
+    file: UploadFile = File(...),
+    mode: str = Form("merge"),
+):
     contents = await file.read()
     try:
         wb = load_workbook(filename=io.BytesIO(contents), read_only=True, data_only=True)
@@ -106,6 +109,13 @@ async def import_topics_excel(file: UploadFile = File(...)):
 
     db = await get_db()
     try:
+        # In replace mode, delete all existing topics first
+        if mode == "replace":
+            existing_all = await get_all_topics(db)
+            for t in existing_all:
+                await delete_topic(db, t["id"])
+            await db.commit()
+
         existing = await get_all_topics(db)
         by_name = {t["name"].lower(): t for t in existing}
 
@@ -122,7 +132,17 @@ async def import_topics_excel(file: UploadFile = File(...)):
             keywords = [k.strip() for k in kw_raw.split(",") if k.strip()]
 
             if name.lower() in by_name:
-                await replace_keywords(db, by_name[name.lower()]["id"], keywords)
+                topic_id = by_name[name.lower()]["id"]
+                if mode == "merge":
+                    # Add only keywords not already present
+                    for kw in keywords:
+                        await db.execute(
+                            "INSERT OR IGNORE INTO keywords (topic_id, keyword) VALUES (?, ?)",
+                            (topic_id, kw),
+                        )
+                    await db.commit()
+                else:
+                    await replace_keywords(db, topic_id, keywords)
                 updated += 1
             else:
                 await create_topic(db, name, keywords)

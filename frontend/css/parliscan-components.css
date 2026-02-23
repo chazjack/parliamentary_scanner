@@ -414,6 +414,10 @@
    ============================================================================ */
 
 .ps-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
   padding: var(--ps-padding-btn-sm);
   font-size: var(--ps-text-base);
   font-weight: var(--ps-weight-medium);
@@ -785,6 +789,7 @@
 }
 
 .ps-status__dot {
+  display: inline-block;
   width: 6px;
   height: 6px;
   border-radius: var(--ps-radius-full);

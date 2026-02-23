@@ -87,6 +87,8 @@ function switchTab(tabName) {
     }
     if (domTab === 'alerts') {
         loadAlerts();
+    } else {
+        stopAlertPolling();
     }
     if (domTab === 'topics') {
         renderTopicsPage();

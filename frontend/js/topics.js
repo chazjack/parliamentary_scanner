@@ -211,10 +211,7 @@ function toggleAllTopicsBtn() {
 }
 
 function _syncToggleAllBtn() {
-    const btn = document.getElementById('topicToggleAllBtn');
-    if (!btn) return;
-    const allSelected = state.topics.length > 0 && checkedTopicIds.size === state.topics.length;
-    btn.textContent = allSelected ? 'None' : 'All';
+    // Label is always "All / None" — no dynamic update needed
 }
 
 // ── Keyword actions ───────────────────────────────────────────────────────────
@@ -507,13 +504,29 @@ async function deleteTopicFromPage(topicId) {
 
 // ── Topics import ─────────────────────────────────────────────────────────────
 
-async function importTopicsExcel(input) {
+let _pendingImportFile = null;
+
+function importTopicsExcel(input) {
     const file = input.files[0];
     input.value = '';
+    if (!file) return;
+    _pendingImportFile = file;
+    document.getElementById('importModeModal').style.display = 'flex';
+}
+
+function closeImportModal() {
+    _pendingImportFile = null;
+    document.getElementById('importModeModal').style.display = 'none';
+}
+
+async function _doImport(mode) {
+    const file = _pendingImportFile;
+    closeImportModal();
     if (!file) return;
 
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('mode', mode);
 
     try {
         const res = await fetch('/api/topics/import', { method: 'POST', body: formData });
@@ -524,7 +537,8 @@ async function importTopicsExcel(input) {
         }
         await loadTopics();
         renderTopicsPage();
-        alert(`Import complete: ${data.created} topic(s) created, ${data.updated} updated.`);
+        const action = mode === 'replace' ? 'Replaced all topics.' : 'Merged successfully.';
+        alert(`Import complete: ${action} ${data.created} topic(s) created, ${data.updated} updated.`);
     } catch (err) {
         console.error('Import failed:', err);
         alert('Import failed. Please try again.');

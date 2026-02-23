@@ -82,6 +82,13 @@ async def execute_alert(alert_id: int):
 
         logger.info("Executing alert %d (%s): %s", alert_id, alert["alert_type"], alert["name"])
 
+        # Mark as running so the UI can reflect live status
+        await db.execute(
+            "UPDATE email_alerts SET last_run_status = 'running' WHERE id = ?",
+            (alert_id,),
+        )
+        await db.commit()
+
         if alert["alert_type"] == "scan":
             await _execute_scan_alert(db, alert)
         else:

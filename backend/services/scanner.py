@@ -328,6 +328,7 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
                         contribution.date.strftime("%Y-%m-%d") if contribution.date else "",
                         contribution.context or "", contribution.text[:2000],
                         json.dumps(contribution.matched_keywords),
+                        contribution.url,
                     )
 
                 # Update progress periodically
