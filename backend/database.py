@@ -556,7 +556,7 @@ async def get_scan(db: aiosqlite.Connection, scan_id: int) -> dict | None:
 async def get_scan_list(db: aiosqlite.Connection) -> list[dict]:
     """Get all scans ordered by most recent first."""
     cursor = await db.execute(
-        'SELECT id, start_date, end_date, status, total_relevant, created_at, "trigger" '
+        'SELECT id, start_date, end_date, status, total_relevant, created_at, "trigger", error_message '
         "FROM scans ORDER BY created_at DESC"
     )
     return [dict(row) for row in await cursor.fetchall()]

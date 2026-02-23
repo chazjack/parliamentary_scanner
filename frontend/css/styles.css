@@ -1319,6 +1319,11 @@ u    padding: 0;
     color: var(--ps-danger);
 }
 
+.history-status--clickable {
+    cursor: pointer;
+    text-decoration: underline dotted;
+}
+
 .history-status.running {
     background: var(--ps-warning-soft);
     color: var(--ps-warning);

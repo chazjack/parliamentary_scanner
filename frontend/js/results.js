@@ -723,12 +723,22 @@ async function loadHistory() {
         const automatedDot = s.trigger === 'scheduled'
             ? '<span class="history-automated-dot" title="Automated">A</span>'
             : '';
+        const errorMsg = s.error_message || '';
+        const errorTitle = errorMsg ? ` title="${errorMsg.replace(/"/g, '&quot;')}"` : '';
+        const errorClass = errorMsg ? ' history-status--clickable' : '';
         div.innerHTML = `
             <span class="history-date">${formatDate(s.start_date)} to ${formatDate(s.end_date)}</span>
             <span class="history-conducted">${automatedDot}${conductedStr}</span>
             <span>${s.total_relevant || 0} results</span>
-            <span class="history-status-col"><span class="history-status ${s.status}">${s.status}</span></span>
+            <span class="history-status-col"><span class="history-status ${s.status}${errorClass}"${errorTitle}>${s.status}</span></span>
         `;
+        if (errorMsg) {
+            div.querySelector('.history-status').addEventListener('click', (e) => {
+                e.stopPropagation();
+                document.getElementById('scanErrorModalMsg').textContent = errorMsg;
+                document.getElementById('scanErrorModal').style.display = '';
+            });
+        }
         div.addEventListener('click', () => {
             state.currentScanId = s.id;
             loadResults(s.id);
