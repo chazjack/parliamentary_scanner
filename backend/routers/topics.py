@@ -1,6 +1,10 @@
 """Topic and keyword CRUD endpoints."""
 
+import io
+
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
+from openpyxl import Workbook
 
 from backend.database import (
     create_topic,
@@ -57,6 +61,34 @@ async def delete_topic_endpoint(topic_id: int):
         return {"ok": True}
     finally:
         await db.close()
+
+
+@router.get("/export")
+async def export_topics_excel():
+    db = await get_db()
+    try:
+        topics = await get_all_topics(db)
+    finally:
+        await db.close()
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Topics"
+    ws.append(["Topic", "Keywords"])
+    for topic in topics:
+        ws.append([topic["name"], ", ".join(topic["keywords"])])
+    for col in ws.columns:
+        max_len = max(len(str(cell.value or "")) for cell in col)
+        ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 60)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=topics.xlsx"},
+    )
 
 
 @router.put("/{topic_id}/keywords")

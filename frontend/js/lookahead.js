@@ -285,7 +285,15 @@ function _parseBoolQuery(query) {
 
 function _evalBoolNode(node, text) {
     if (!node) return true;
-    if (node.op === 'TERM')  return text.includes(node.value);
+    if (node.op === 'TERM') {
+        const escaped = node.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // Short words (≤3 chars, e.g. "AI", "IP"): whole-word exact match only
+        // Longer words: whole-word match, also accept a trailing "s" (basic plural)
+        const pattern = node.value.length <= 3
+            ? `\\b${escaped}\\b`
+            : `\\w*${escaped}s?\\b`;
+        return new RegExp(pattern).test(text);
+    }
     if (node.op === 'AND')   return _evalBoolNode(node.left, text) && _evalBoolNode(node.right, text);
     if (node.op === 'OR')    return _evalBoolNode(node.left, text) || _evalBoolNode(node.right, text);
     if (node.op === 'NOT')   return !_evalBoolNode(node.operand, text);
