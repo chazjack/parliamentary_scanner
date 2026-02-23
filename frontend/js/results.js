@@ -115,11 +115,6 @@ function loadStatus(scan) {
     resetStageIndicator();
     setSummaryBadge(scan.status || null);
 
-    const automatedBadge = document.getElementById('summaryAutomatedBadge');
-    if (automatedBadge) {
-        automatedBadge.style.display = scan.trigger === 'scheduled' ? '' : 'none';
-    }
-
     const datePill = document.getElementById('summaryScanDate');
     if (datePill) {
         let dateStr = '';
@@ -134,8 +129,12 @@ function loadStatus(scan) {
                 dateStr = `${dd}/${mm}/${yy} ${hh}:${mi}`;
             }
         }
-        datePill.textContent = dateStr;
-        datePill.style.display = dateStr ? '' : 'none';
+        if (dateStr) {
+            datePill.textContent = scan.trigger === 'scheduled' ? `Automated at ${dateStr}` : dateStr;
+            datePill.style.display = '';
+        } else {
+            datePill.style.display = 'none';
+        }
     }
 
     if (statsObj) {
@@ -726,9 +725,9 @@ async function loadHistory() {
             : '';
         div.innerHTML = `
             <span class="history-date">${formatDate(s.start_date)} to ${formatDate(s.end_date)}</span>
-            <span class="history-conducted">${conductedStr}</span>
+            <span class="history-conducted">${automatedDot}${conductedStr}</span>
             <span>${s.total_relevant || 0} results</span>
-            <span class="history-status-col">${automatedDot}<span class="history-status ${s.status}">${s.status}</span></span>
+            <span class="history-status-col"><span class="history-status ${s.status}">${s.status}</span></span>
         `;
         div.addEventListener('click', () => {
             state.currentScanId = s.id;
