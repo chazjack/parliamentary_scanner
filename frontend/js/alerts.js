@@ -3,6 +3,7 @@
 let alertsList = [];
 let editingAlertId = null;
 let _alertRecipients = [];   // internal list of validated email strings
+let _alertMembers = [];      // [{id, name}, ...]
 
 const _EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -198,8 +199,8 @@ function showAlertForm(alertType, pushUrl = true) {
     document.getElementById('alertSendTime').value = '09:00';
     document.getElementById('alertTimezone').value = 'Europe/London';
     _setRecipients([]);
-    document.getElementById('alertScanPeriod').value = '7';
-    document.getElementById('alertLookaheadDays').value = '7';
+    _alertMembers = [];
+    _renderAlertMemberPills();
 
     _updateFormVisibility();
     _loadTopicCheckboxes();
@@ -227,10 +228,10 @@ function _updateFormVisibility() {
 async function _loadTopicCheckboxes() {
     const topics = state.topics || [];
     const chips = topics.map(t =>
-        `<button class="ps-chip alert-topic-chip" data-id="${t.id}" onclick="this.classList.toggle('ps-chip--active')">${_escHtml(t.name)}</button>`
+        `<span class="ps-chip-topic-wrap"><button class="ps-chip alert-topic-chip" data-id="${t.id}" onclick="this.classList.toggle('ps-chip--active');this.closest('.ps-chip-topic-wrap').classList.toggle('ps-chip-topic-wrap--active')">${_escHtml(t.name)}</button></span>`
     ).join('');
     const laChips = topics.map(t =>
-        `<button class="ps-chip alert-la-topic-chip" data-id="${t.id}" onclick="this.classList.toggle('ps-chip--active')">${_escHtml(t.name)}</button>`
+        `<span class="ps-chip-topic-wrap"><button class="ps-chip alert-la-topic-chip" data-id="${t.id}" onclick="this.classList.toggle('ps-chip--active');this.closest('.ps-chip-topic-wrap').classList.toggle('ps-chip-topic-wrap--active')">${_escHtml(t.name)}</button></span>`
     ).join('');
     document.getElementById('alertTopicCheckboxes').innerHTML = chips;
     document.getElementById('alertLookaheadTopicCheckboxes').innerHTML = laChips;
@@ -265,6 +266,97 @@ function _sourceLabel(s) {
     return labels[s] || s;
 }
 
+function _renderAlertMemberPills() {
+    const container = document.getElementById('alertMemberSelectedPills');
+    if (!container) return;
+    container.innerHTML = _alertMembers.map(m =>
+        `<span class="member-selected-pill" data-id="${_escHtml(String(m.id))}">
+            <span class="member-selected-pill__name">${_escHtml(m.name)}</span>
+            <button type="button" class="member-selected-pill__clear" onclick="removeAlertMember('${_escHtml(String(m.id))}')" title="Remove">&#x2715;</button>
+        </span>`
+    ).join('');
+}
+
+function removeAlertMember(id) {
+    _alertMembers = _alertMembers.filter(m => String(m.id) !== String(id));
+    _renderAlertMemberPills();
+}
+
+(function _initAlertMemberAutocomplete() {
+    const PARTY_ABBR = {
+        'Conservative': 'Con', 'Labour': 'Lab', 'Liberal Democrats': 'Lib Dem',
+        'Scottish National Party': 'SNP', 'Green Party': 'Green', 'Reform UK': 'Reform',
+        'Independent': 'Ind', 'Plaid Cymru': 'PC', 'Democratic Unionist Party': 'DUP',
+        'Sinn Féin': 'SF', 'Social Democratic & Labour Party': 'SDLP',
+        'Alliance': 'Alliance', 'Ulster Unionist Party': 'UUP',
+    };
+
+    let debounceTimer = null;
+
+    function getInput()    { return document.getElementById('alertMemberSearchInput'); }
+    function getDropdown() { return document.getElementById('alertMemberDropdown'); }
+
+    function renderDropdown(members) {
+        const dropdown = getDropdown();
+        if (!members || members.length === 0) {
+            dropdown.innerHTML = `<div class="member-autocomplete__empty">No results found</div>`;
+            dropdown.style.display = '';
+            return;
+        }
+        const alreadySelected = new Set(_alertMembers.map(m => String(m.id)));
+        let html = '';
+        for (const m of members) {
+            const party = PARTY_ABBR[m.party] || m.party || '';
+            const type = m.member_type || '';
+            const meta = [party, type].filter(Boolean).join(' · ');
+            const dimmed = alreadySelected.has(String(m.id)) ? ' style="opacity:0.45;"' : '';
+            html += `<div class="member-autocomplete__item" data-id="${_escHtml(String(m.id))}" data-name="${_escHtml(m.name)}"${dimmed}>
+                <span class="member-autocomplete__item-name">${_escHtml(m.name)}</span>
+                ${meta ? `<span class="member-autocomplete__item-meta">${_escHtml(meta)}</span>` : ''}
+            </div>`;
+        }
+        dropdown.innerHTML = html;
+        dropdown.style.display = '';
+        dropdown.querySelectorAll('.member-autocomplete__item').forEach(item => {
+            item.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                if (!_alertMembers.some(m => String(m.id) === item.dataset.id)) {
+                    _alertMembers.push({ id: item.dataset.id, name: item.dataset.name });
+                    _renderAlertMemberPills();
+                }
+                getInput().value = '';
+                getDropdown().style.display = 'none';
+                getInput().focus();
+            });
+        });
+    }
+
+    async function doSearch(q) {
+        try {
+            const members = await API.get(`/api/scans/members/search?q=${encodeURIComponent(q)}`);
+            renderDropdown(members);
+        } catch (e) {
+            getDropdown().style.display = 'none';
+        }
+    }
+
+    document.addEventListener('input', (e) => {
+        if (e.target.id !== 'alertMemberSearchInput') return;
+        clearTimeout(debounceTimer);
+        const q = e.target.value.trim();
+        if (q.length < 2) { getDropdown().style.display = 'none'; return; }
+        debounceTimer = setTimeout(() => doSearch(q), 300);
+    });
+
+    document.addEventListener('click', (e) => {
+        const wrap = document.getElementById('alertMemberAutocomplete');
+        if (wrap && !wrap.contains(e.target)) {
+            const dropdown = getDropdown();
+            if (dropdown) dropdown.style.display = 'none';
+        }
+    });
+})();
+
 function _collectFormData() {
     const alertType = document.getElementById('alertType').value;
     const topicChipClass = alertType === 'lookahead' ? '.alert-la-topic-chip.ps-chip--active' : '.alert-topic-chip.ps-chip--active';
@@ -283,11 +375,13 @@ function _collectFormData() {
         timezone: document.getElementById('alertTimezone').value,
         topic_ids: topicIds,
         sources: sources,
-        scan_period_days: parseInt(document.getElementById('alertScanPeriod').value) || 7,
-        lookahead_days: parseInt(document.getElementById('alertLookaheadDays').value) || 7,
+        scan_period_days: document.getElementById('alertCadence').value === 'daily' ? 1 : 7,
+        lookahead_days: document.getElementById('alertCadence').value === 'daily' ? 1 : 7,
         event_types: eventTypes.length ? eventTypes : null,
         houses: houses.length ? houses : null,
         recipients: recipients,
+        member_ids: _alertMembers.map(m => m.id),
+        member_names: _alertMembers.map(m => m.name),
     };
 }
 
@@ -316,7 +410,7 @@ async function editAlert(alertId, pushUrl = true) {
     editingAlertId = alertId;
     showAlertForm(a.alert_type, false);
     if (pushUrl) history.pushState(null, '', `/alerts/${alertId}/edit`);
-    document.getElementById('alertFormTitle').textContent = 'Edit Alert';
+    document.getElementById('alertFormTitle').textContent = a.alert_type === 'scan' ? 'Edit Scan Alert' : 'Edit Calendar Alert';
 
     document.getElementById('alertName').value = a.name;
     document.getElementById('alertType').value = a.alert_type;
@@ -325,15 +419,19 @@ async function editAlert(alertId, pushUrl = true) {
     document.getElementById('alertSendTime').value = a.send_time || '09:00';
     document.getElementById('alertTimezone').value = a.timezone || 'Europe/London';
     _setRecipients(a.recipients || []);
-    document.getElementById('alertScanPeriod').value = a.scan_period_days || 7;
-    document.getElementById('alertLookaheadDays').value = a.lookahead_days || 7;
+    const savedMemberIds = _parseJsonField(a.member_ids);
+    const savedMemberNames = _parseJsonField(a.member_names);
+    _alertMembers = savedMemberIds.map((id, i) => ({ id: String(id), name: savedMemberNames[i] || String(id) }));
+    _renderAlertMemberPills();
 
     _updateFormVisibility();
 
     // Set topic chips
     const topicIds = _parseJsonField(a.topic_ids);
     document.querySelectorAll('.alert-topic-chip, .alert-la-topic-chip').forEach(c => {
-        c.classList.toggle('ps-chip--active', topicIds.includes(parseInt(c.dataset.id)));
+        const active = topicIds.includes(parseInt(c.dataset.id));
+        c.classList.toggle('ps-chip--active', active);
+        c.closest('.ps-chip-topic-wrap')?.classList.toggle('ps-chip-topic-wrap--active', active);
     });
 
     // Set source chips

@@ -958,12 +958,6 @@ function _updateFilterBtnBadge(filterCount) {
     const existingBadge = btn.querySelector('.la-filter-badge');
     if (existingBadge) existingBadge.remove();
     btn.classList.toggle('la-filter-btn--active', laState.showFilters || filterCount > 0);
-    if (filterCount > 0) {
-        const badge = document.createElement('span');
-        badge.className = 'la-filter-badge';
-        badge.textContent = filterCount;
-        btn.appendChild(badge);
-    }
 }
 
 function _showLaEmpty(message) {

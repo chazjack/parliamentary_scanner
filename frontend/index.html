@@ -338,8 +338,10 @@
             <section id="alertFormSection" class="control-group-card" style="display:none;">
                 <div class="results-header" style="margin-bottom:16px;">
                     <h2 id="alertFormTitle">Create New Alert</h2>
-                    <button class="ps-btn ps-btn--ghost ps-btn--sm" onclick="hideAlertForm()">Cancel</button>
+                    <button class="ps-btn ps-btn--ghost ps-btn--sm" onclick="hideAlertForm()" aria-label="Close" style="padding:4px 8px;font-size:1.1rem;line-height:1;">&#x2715;</button>
                 </div>
+
+                <input type="hidden" id="alertType">
 
                 <div class="alert-form-grid">
                     <!-- Left column: Basic config -->
@@ -347,14 +349,6 @@
                         <div style="margin-bottom:12px;">
                             <label class="source-label" style="margin-bottom:4px;">Alert Name</label>
                             <input class="ps-input" type="text" id="alertName" placeholder="e.g. Weekly AI Scan">
-                        </div>
-
-                        <div style="margin-bottom:12px;">
-                            <label class="source-label" style="margin-bottom:4px;">Alert Type</label>
-                            <select class="ps-select" id="alertType" onchange="_updateFormVisibility()">
-                                <option value="scan">Scan (past activity)</option>
-                                <option value="lookahead">Calendar (upcoming events)</option>
-                            </select>
                         </div>
 
                         <div class="alert-schedule-row">
@@ -378,18 +372,12 @@
                                 </select>
                             </div>
                             <div style="flex:1">
-                                <label class="source-label" style="margin-bottom:4px;">Time (UTC)</label>
+                                <label class="source-label" style="margin-bottom:4px;">Time</label>
                                 <input class="ps-input" type="time" id="alertSendTime" value="09:00">
                             </div>
                         </div>
 
-                        <div style="margin-bottom:12px;">
-                            <label class="source-label" style="margin-bottom:4px;">Timezone</label>
-                            <select class="ps-select" id="alertTimezone">
-                                <option value="Europe/London">Europe/London (GMT/BST)</option>
-                                <option value="UTC">UTC</option>
-                            </select>
-                        </div>
+                        <input type="hidden" id="alertTimezone" value="Europe/London">
 
                         <div style="margin-bottom:12px;">
                             <label class="source-label" style="margin-bottom:4px;">Recipients</label>
@@ -410,13 +398,18 @@
                         <!-- Scan config -->
                         <div id="alertScanConfig">
                             <div style="margin-bottom:12px;">
-                                <label class="source-label" style="margin-bottom:4px;">Scan Period (days back)</label>
-                                <input class="ps-input" type="number" id="alertScanPeriod" value="7" min="1" max="90" style="width:100px;">
+                                <label class="source-label" style="margin-bottom:6px;">Topics</label>
+                                <div id="alertTopicCheckboxes" class="ps-chip-group__items"></div>
                             </div>
 
                             <div style="margin-bottom:12px;">
-                                <label class="source-label" style="margin-bottom:6px;">Topics</label>
-                                <div id="alertTopicCheckboxes" class="ps-chip-group__items"></div>
+                                <label class="source-label" style="margin-bottom:6px;">Members</label>
+                                <div class="member-autocomplete" id="alertMemberAutocomplete">
+                                    <input type="text" id="alertMemberSearchInput" class="ps-input ps-input--sm"
+                                           placeholder="Search by name..." autocomplete="off">
+                                    <div class="member-autocomplete__dropdown" id="alertMemberDropdown" style="display:none;"></div>
+                                </div>
+                                <div id="alertMemberSelectedPills" class="member-pills-container"></div>
                             </div>
 
                             <div style="margin-bottom:12px;">
@@ -428,11 +421,6 @@
                         <!-- Lookahead config -->
                         <div id="alertLookaheadConfig" style="display:none;">
                             <div style="margin-bottom:12px;">
-                                <label class="source-label" style="margin-bottom:4px;">Days Ahead</label>
-                                <input class="ps-input" type="number" id="alertLookaheadDays" value="7" min="1" max="90" style="width:100px;">
-                            </div>
-
-                            <div style="margin-bottom:12px;">
                                 <label class="source-label" style="margin-bottom:6px;">Event Types</label>
                                 <div id="alertEventTypeCheckboxes" class="ps-chip-group__items"></div>
                             </div>
@@ -443,7 +431,7 @@
                             </div>
 
                             <div style="margin-bottom:12px;">
-                                <label class="source-label" style="margin-bottom:6px;">Topics (for keyword filtering)</label>
+                                <label class="source-label" style="margin-bottom:6px;">Topics</label>
                                 <div id="alertLookaheadTopicCheckboxes" class="ps-chip-group__items"></div>
                             </div>
                         </div>
@@ -518,6 +506,25 @@
         <div class="topic-popover__add">
             <input class="ps-input" type="text" id="topicPopoverInput" placeholder="Add keyword...">
             <button class="ps-btn ps-btn--ghost ps-btn--sm" onclick="addKeywordFromPopover()">Add</button>
+        </div>
+    </div>
+
+    <!-- ===== Import Mode Modal ===== -->
+    <div id="importModeModal" class="import-modal-overlay" style="display:none;" onclick="if(event.target===this)closeImportModal()">
+        <div class="import-modal">
+            <h3 class="import-modal__title">Import Topics</h3>
+            <p class="import-modal__desc">How would you like to import?</p>
+            <div class="import-modal__options">
+                <button class="import-modal__option" onclick="_doImport('merge')">
+                    <span class="import-modal__option-title">Merge</span>
+                    <span class="import-modal__option-desc">Add new keywords to existing topics without removing any</span>
+                </button>
+                <button class="import-modal__option" onclick="_doImport('replace')">
+                    <span class="import-modal__option-title">Replace</span>
+                    <span class="import-modal__option-desc">Clear all existing topics and rebuild from the imported file</span>
+                </button>
+            </div>
+            <button class="import-modal__cancel" onclick="closeImportModal()">Cancel</button>
         </div>
     </div>
 </body>

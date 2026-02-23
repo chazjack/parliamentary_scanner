@@ -187,6 +187,8 @@ CREATE TABLE IF NOT EXISTS email_alerts (
     lookahead_days INTEGER DEFAULT 7,
     event_types TEXT,
     houses TEXT,
+    member_ids TEXT,
+    member_names TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_run_at TIMESTAMP,
@@ -349,6 +351,17 @@ async def init_db():
             await db.execute("ALTER TABLE scans ADD COLUMN target_member_name TEXT")
             await db.commit()
             logger.info("Migrated scans: added target_member_name column")
+
+        cursor = await db.execute("PRAGMA table_info(email_alerts)")
+        alert_columns = [row[1] for row in await cursor.fetchall()]
+        if "member_ids" not in alert_columns:
+            await db.execute("ALTER TABLE email_alerts ADD COLUMN member_ids TEXT")
+            await db.commit()
+            logger.info("Migrated email_alerts: added member_ids column")
+        if "member_names" not in alert_columns:
+            await db.execute("ALTER TABLE email_alerts ADD COLUMN member_names TEXT")
+            await db.commit()
+            logger.info("Migrated email_alerts: added member_names column")
 
         # Seed admin user from environment if no users exist yet
         from backend.config import ADMIN_USERNAME, ADMIN_PASSWORD
@@ -984,8 +997,9 @@ async def create_alert(db: aiosqlite.Connection, data: dict) -> int:
     cursor = await db.execute(
         """INSERT INTO email_alerts
         (name, alert_type, enabled, cadence, day_of_week, send_time, timezone,
-         topic_ids, sources, scan_period_days, lookahead_days, event_types, houses)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+         topic_ids, sources, scan_period_days, lookahead_days, event_types, houses,
+         member_ids, member_names)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             data["name"], data["alert_type"], data.get("enabled", 1),
             data.get("cadence", "weekly"), data.get("day_of_week", "monday"),
@@ -996,6 +1010,8 @@ async def create_alert(db: aiosqlite.Connection, data: dict) -> int:
             data.get("lookahead_days", 7),
             json.dumps(data.get("event_types")) if data.get("event_types") else None,
             json.dumps(data.get("houses")) if data.get("houses") else None,
+            json.dumps(data.get("member_ids", [])),
+            json.dumps(data.get("member_names", [])),
         ),
     )
     alert_id = cursor.lastrowid
@@ -1025,7 +1041,7 @@ async def update_alert(db: aiosqlite.Connection, alert_id: int, data: dict) -> b
             params.append(data[key])
 
     # JSON fields
-    for key in ("topic_ids", "sources", "event_types", "houses"):
+    for key in ("topic_ids", "sources", "event_types", "houses", "member_ids", "member_names"):
         if key in data:
             fields.append(f"{key} = ?")
             params.append(json.dumps(data[key]) if data[key] is not None else None)

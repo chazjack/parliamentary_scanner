@@ -45,6 +45,8 @@ class AlertCreate(BaseModel):
     topic_ids: list[int] = []
     sources: list[str] = []
     scan_period_days: int = 7
+    member_ids: list[str] = []
+    member_names: list[str] = []
     # lookahead config
     lookahead_days: int = 7
     event_types: list[str] | None = None
@@ -64,6 +66,8 @@ class AlertUpdate(BaseModel):
     topic_ids: list[int] | None = None
     sources: list[str] | None = None
     scan_period_days: int | None = None
+    member_ids: list[str] | None = None
+    member_names: list[str] | None = None
     lookahead_days: int | None = None
     event_types: list[str] | None = None
     houses: list[str] | None = None
