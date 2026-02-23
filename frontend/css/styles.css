@@ -943,7 +943,7 @@ u    padding: 0;
 
 /* Progress */
 #progress-section h2 {
-    font-size: 1.1rem;
+    font-size: 1.25rem;
     color: #fff;
     margin-bottom: 10px;
 }
@@ -1234,7 +1234,7 @@ u    padding: 0;
 }
 
 #history-section h2 {
-    font-size: 1.1rem;
+    font-size: 1.25rem;
     color: #fff;
     margin-bottom: 10px;
 }
@@ -1309,6 +1309,21 @@ u    padding: 0;
 .history-status.running {
     background: var(--ps-warning-soft);
     color: var(--ps-warning);
+}
+
+#summaryScanDate {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 10px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    border: 1px solid rgba(255,255,255,0.25);
+    color: rgba(255,255,255,0.55);
+    letter-spacing: 0.01em;
+}
+
+#summaryScanDate:empty {
+    display: none;
 }
 
 .history-pagination {
@@ -1536,7 +1551,7 @@ u    padding: 0;
 }
 
 #audit-section h2 {
-    font-size: 1.1rem;
+    font-size: 1.25rem;
     color: #fff;
 }
 
@@ -1672,8 +1687,8 @@ u    padding: 0;
     color: var(--text-light);
     font-style: normal;
     font-size: var(--ps-text-sm);
-    padding: 32px 20px;
-    text-align: center;
+    padding: 16px 20px;
+    text-align: left;
     background: var(--ps-bg-subtle);
     border-radius: var(--radius);
     margin: 16px 0;

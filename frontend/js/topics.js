@@ -505,6 +505,32 @@ async function deleteTopicFromPage(topicId) {
     renderTopicsPage();
 }
 
+// ── Topics import ─────────────────────────────────────────────────────────────
+
+async function importTopicsExcel(input) {
+    const file = input.files[0];
+    input.value = '';
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        const res = await fetch('/api/topics/import', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (!res.ok) {
+            alert('Import failed: ' + (data.detail || 'Unknown error'));
+            return;
+        }
+        await loadTopics();
+        renderTopicsPage();
+        alert(`Import complete: ${data.created} topic(s) created, ${data.updated} updated.`);
+    } catch (err) {
+        console.error('Import failed:', err);
+        alert('Import failed. Please try again.');
+    }
+}
+
 // ── No-op stubs kept for any external callers ─────────────────────────────────
 
 function expandToTopic(topicId) {

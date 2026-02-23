@@ -2,9 +2,9 @@
 
 import io
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 
 from backend.database import (
     create_topic,
@@ -89,6 +89,48 @@ async def export_topics_excel():
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=topics.xlsx"},
     )
+
+
+@router.post("/import")
+async def import_topics_excel(file: UploadFile = File(...)):
+    contents = await file.read()
+    try:
+        wb = load_workbook(filename=io.BytesIO(contents), read_only=True, data_only=True)
+    except Exception:
+        raise HTTPException(400, "Invalid Excel file")
+
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    if len(rows) < 2:
+        raise HTTPException(400, "File has no data rows")
+
+    db = await get_db()
+    try:
+        existing = await get_all_topics(db)
+        by_name = {t["name"].lower(): t for t in existing}
+
+        created = 0
+        updated = 0
+
+        for row in rows[1:]:
+            if not row or not row[0]:
+                continue
+            name = str(row[0]).strip()
+            if not name:
+                continue
+            kw_raw = str(row[1]).strip() if len(row) > 1 and row[1] is not None else ""
+            keywords = [k.strip() for k in kw_raw.split(",") if k.strip()]
+
+            if name.lower() in by_name:
+                await replace_keywords(db, by_name[name.lower()]["id"], keywords)
+                updated += 1
+            else:
+                await create_topic(db, name, keywords)
+                created += 1
+
+        return {"ok": True, "created": created, "updated": updated}
+    finally:
+        await db.close()
 
 
 @router.put("/{topic_id}/keywords")

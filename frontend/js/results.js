@@ -12,6 +12,10 @@ const SVG_CROSS = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" s
 let historyPage = 1;
 const HISTORY_PER_PAGE = 5;
 
+let resultsPage = 1;
+const RESULTS_PER_PAGE = 20;
+let currentDisplayResults = [];
+
 // Party colour map — { color: bright text/border, bg: soft fill }
 const PARTY_COLOURS = {
     'Conservative':          { color: '#68ADE9', bg: 'rgba(104,173,233,0.15)' },
@@ -109,6 +113,25 @@ function loadStatus(scan) {
         .filter(g => g.keywords.length > 0);
 
     resetStageIndicator();
+    setSummaryBadge(scan.status || null);
+
+    const datePill = document.getElementById('summaryScanDate');
+    if (datePill) {
+        let dateStr = '';
+        if (scan.created_at) {
+            const d = new Date(scan.created_at);
+            if (!isNaN(d)) {
+                const dd = String(d.getDate()).padStart(2, '0');
+                const mm = String(d.getMonth() + 1).padStart(2, '0');
+                const yy = String(d.getFullYear()).slice(-2);
+                const hh = String(d.getHours()).padStart(2, '0');
+                const mi = String(d.getMinutes()).padStart(2, '0');
+                dateStr = `${dd}/${mm}/${yy} ${hh}:${mi}`;
+            }
+        }
+        datePill.textContent = dateStr;
+        datePill.style.display = dateStr ? '' : 'none';
+    }
 
     if (statsObj) {
         if (scan.status === 'completed') {
@@ -207,18 +230,28 @@ function getKeywordsForTopics(topicNames) {
 }
 
 function renderResults(results) {
+    currentDisplayResults = results;
+    resultsPage = 1;
+    renderResultsPage();
+}
+
+function renderResultsPage() {
     const tbody = document.getElementById('resultsBody');
     tbody.innerHTML = '';
 
-    if (results.length === 0) {
+    if (currentDisplayResults.length === 0) {
         const msg = state.currentScanId
-            ? 'No relevant results found for this scan.'
-            : 'Select a scan from Scan History or start a new scan to see results.';
+            ? 'No results.'
+            : 'No scan selected or active.';
         tbody.innerHTML = `<tr><td colspan="7" class="empty-state-preview">${msg}</td></tr>`;
+        renderResultsPagination();
         return;
     }
 
-    for (const r of results) {
+    const start = (resultsPage - 1) * RESULTS_PER_PAGE;
+    const pageResults = currentDisplayResults.slice(start, start + RESULTS_PER_PAGE);
+
+    for (const r of pageResults) {
         const tr = document.createElement('tr');
 
         // Parse topics JSON
@@ -282,6 +315,25 @@ function renderResults(results) {
 
         tbody.appendChild(tr);
     }
+
+    renderResultsPagination();
+}
+
+function renderResultsPagination() {
+    const container = document.getElementById('resultsPagination');
+    if (!container) return;
+    const totalPages = Math.ceil(currentDisplayResults.length / RESULTS_PER_PAGE);
+    if (totalPages <= 1) {
+        container.innerHTML = '';
+        return;
+    }
+    container.innerHTML = `
+        <button class="ps-btn ps-btn--ghost ps-btn--sm" ${resultsPage <= 1 ? 'disabled' : ''}
+                onclick="resultsPage--; renderResultsPage()">&larr;</button>
+        <span class="page-info">Page ${resultsPage} of ${totalPages}</span>
+        <button class="ps-btn ps-btn--ghost ps-btn--sm" ${resultsPage >= totalPages ? 'disabled' : ''}
+                onclick="resultsPage++; renderResultsPage()">&rarr;</button>
+    `;
 }
 
 function setupMasterButton(btn) {
@@ -490,7 +542,7 @@ async function loadAudit(scanId) {
         if (entries.length === 0) {
             // Show empty state instead of hiding
             summaryDiv.innerHTML = '';
-            listDiv.innerHTML = '<p class="empty-state-preview">No discarded items for this scan.</p>';
+            listDiv.innerHTML = '<p class="empty-state-preview">No discarded items.</p>';
             return;
         }
 
@@ -536,7 +588,7 @@ async function loadAudit(scanId) {
         const listDiv = document.getElementById('auditList');
         const summaryDiv = document.getElementById('auditSummary');
         summaryDiv.innerHTML = '';
-        listDiv.innerHTML = '<p class="empty-state-preview">No audit data available for this scan.</p>';
+        listDiv.innerHTML = '<p class="empty-state-preview">No discarded items.</p>';
     }
 }
 

@@ -129,7 +129,7 @@
 
             <!-- Progress -->
             <section id="progress-section">
-                <h2 style="color:#ffffff;font-size:1.4rem;font-weight:700;margin-bottom:12px;">Summary</h2>
+                <h2 style="color:#ffffff;font-size:1.25rem;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:10px;">Summary <span id="summaryStatusBadge"></span><span id="summaryScanDate" style="display:none;"></span></h2>
                 <div id="progressContent">
                     <p id="progressLabel">No scan selected or currently active.</p>
                     <div id="progressPanels" style="display:none;">
@@ -150,7 +150,7 @@
             <section id="results-section">
                 <div class="results-header">
                     <h2>Results</h2>
-                    <button id="exportBtn" class="ps-btn ps-btn--ghost ps-btn--sm" title="Export to Excel" style="display:inline-flex;align-items:center;">
+                    <button id="exportBtn" class="ps-btn ps-btn--ghost ps-btn--sm" title="Export to Excel" style="display:inline-flex;align-items:center;border:none;">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
                         </svg>
@@ -169,9 +169,10 @@
                                 <th></th>
                             </tr>
                         </thead>
-                        <tbody id="resultsBody"></tbody>
+                        <tbody id="resultsBody"><tr><td colspan="7" class="empty-state-preview">No scan selected or active.</td></tr></tbody>
                     </table>
                 </div>
+                <div id="resultsPagination" class="history-pagination"></div>
             </section>
 
             <!-- Audit Panel -->
@@ -181,7 +182,7 @@
                     <span class="toggle-icon">&#9660;</span>
                 </div>
                 <div id="auditSummary" class="audit-summary"></div>
-                <div id="auditList" class="audit-container"></div>
+                <div id="auditList" class="audit-container"><p class="empty-state-preview">No scan selected or active.</p></div>
             </section>
         </div>
 
@@ -472,7 +473,11 @@
                 <button class="ps-btn ps-btn--ghost ps-btn--sm btn-undo disabled" id="topicsPageUndoBtn" onclick="undoLastAction()" title="Undo" style="margin-left:auto;">&#8617;</button>
             </div>
             <div id="topicsPageGrid" class="topics-page-grid"></div>
-            <a href="/api/topics/export" download style="display:inline-block;margin-top:12px;font-size:0.85rem;color:var(--text-light);text-decoration:underline;background:none;border:none;cursor:pointer;">Export</a>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:12px;">
+                <a href="/api/topics/export" download class="ps-btn ps-btn--ghost ps-btn--sm" style="border:none;text-decoration:none;">Export</a>
+                <button class="ps-btn ps-btn--ghost ps-btn--sm" style="border:none;" onclick="document.getElementById('topicsImportInput').click()">Import</button>
+                <input type="file" id="topicsImportInput" accept=".xlsx" style="display:none;" onchange="importTopicsExcel(this)">
+            </div>
         </div>
 
     </main>

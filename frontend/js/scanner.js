@@ -1,5 +1,13 @@
 /* Parliamentary Scanner — Scan control and SSE progress */
 
+function setSummaryBadge(status) {
+    const badge = document.getElementById('summaryStatusBadge');
+    if (!badge) return;
+    if (!status) { badge.className = ''; badge.textContent = ''; return; }
+    badge.className = `history-status ${status}`;
+    badge.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+}
+
 const scanBtn = document.getElementById('scanBtn');
 const cancelBtn = document.getElementById('cancelBtn');
 const progressSection = document.getElementById('progress-section');
@@ -46,6 +54,9 @@ async function startScan() {
 
     scanBtn.disabled = true;
     cancelBtn.style.display = '';
+    setSummaryBadge('running');
+    const _dp = document.getElementById('summaryScanDate');
+    if (_dp) { _dp.textContent = ''; _dp.style.display = 'none'; }
     progressLabel.textContent = 'Starting scan...';
     progressPanels.style.display = 'none';
     keywordProgressPanel.innerHTML = '';
@@ -124,11 +135,13 @@ function connectSSE(scanId) {
         }
 
         if (data.status === 'completed') {
+            setSummaryBadge('completed');
             es.close();
             state.eventSource = null;
             _stopLiveResults();
             onScanComplete(scanId, data, statsObj);
         } else if (data.status === 'cancelled') {
+            setSummaryBadge('cancelled');
             es.close();
             state.eventSource = null;
             _stopLiveResults();
@@ -141,6 +154,7 @@ function connectSSE(scanId) {
             loadResults(scanId);  // show whatever results were saved
             loadHistory();
         } else if (data.status === 'error') {
+            setSummaryBadge('error');
             es.close();
             state.eventSource = null;
             _stopLiveResults();
@@ -316,13 +330,14 @@ function renderPipelineBoxes(stats) {
     const boxes = [
         { label: 'Keyword Results', value: stats.total_api_results || 0, cls: '' },
         { label: 'Classified', value: `${totalClassified}/${sentToClassifier}`, cls: '' },
-        { label: 'Relevant', value: stats.classified_relevant || 0, cls: 'pipe-box-relevant' },
-        { label: 'Discarded', value: stats.classified_discarded || 0, cls: 'pipe-box-discarded' },
+        { label: 'Relevant', value: stats.classified_relevant || 0, cls: 'pipe-box-relevant', target: 'results-section' },
+        { label: 'Discarded', value: stats.classified_discarded || 0, cls: 'pipe-box-discarded', target: 'audit-section' },
     ];
 
     let html = '';
     for (const box of boxes) {
-        html += `<div class="pipe-box ${box.cls}">
+        const clickable = box.target ? `data-scroll-target="${box.target}" style="cursor:pointer;"` : '';
+        html += `<div class="pipe-box ${box.cls}" ${clickable}>
             <div class="pipe-box-value">${box.value}</div>
             <div class="pipe-box-label">${box.label}</div>
         </div>`;
@@ -345,6 +360,13 @@ function renderPipelineBoxes(stats) {
     }
 
     pipelineStatsRow.innerHTML = html;
+
+    pipelineStatsRow.querySelectorAll('[data-scroll-target]').forEach(el => {
+        el.addEventListener('click', () => {
+            const target = document.getElementById(el.dataset.scrollTarget);
+            if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    });
 }
 
 /* ---- Source Circles (below both columns) ---- */
