@@ -115,6 +115,11 @@ function loadStatus(scan) {
     resetStageIndicator();
     setSummaryBadge(scan.status || null);
 
+    const automatedBadge = document.getElementById('summaryAutomatedBadge');
+    if (automatedBadge) {
+        automatedBadge.style.display = scan.trigger === 'scheduled' ? '' : 'none';
+    }
+
     const datePill = document.getElementById('summaryScanDate');
     if (datePill) {
         let dateStr = '';
@@ -716,11 +721,14 @@ async function loadHistory() {
             }
         }
 
+        const automatedDot = s.trigger === 'scheduled'
+            ? '<span class="history-automated-dot" title="Automated">A</span>'
+            : '';
         div.innerHTML = `
             <span class="history-date">${formatDate(s.start_date)} to ${formatDate(s.end_date)}</span>
             <span class="history-conducted">${conductedStr}</span>
             <span>${s.total_relevant || 0} results</span>
-            <span class="history-status-col"><span class="history-status ${s.status}">${s.status}</span></span>
+            <span class="history-status-col">${automatedDot}<span class="history-status ${s.status}">${s.status}</span></span>
         `;
         div.addEventListener('click', () => {
             state.currentScanId = s.id;

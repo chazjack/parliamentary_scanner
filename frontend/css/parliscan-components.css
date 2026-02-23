@@ -550,6 +550,12 @@
   border-color: var(--ps-danger-border);
 }
 
+.ps-badge--automated {
+  background: rgba(59, 130, 246, 0.12);
+  color: #60a5fa;
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
 .ps-badge--muted {
   background: transparent;
   color: var(--ps-text-tertiary);

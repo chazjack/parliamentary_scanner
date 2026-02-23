@@ -1274,6 +1274,23 @@ u    padding: 0;
 
 .history-status-col {
     flex: 0 0 90px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.history-automated-dot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(59, 130, 246, 0.5);
+    color: #60a5fa;
+    font-size: 0.65rem;
+    font-weight: 700;
+    flex-shrink: 0;
 }
 
 .history-status {

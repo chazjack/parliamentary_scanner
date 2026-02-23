@@ -137,7 +137,17 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
         )
         return
 
-    # Case 1 or 3: Topics scan (with optional member post-filter)
+    if selected_topics and target_member_ids:
+        # Case 3: Member + topics — fetch member activity directly, then classify
+        # (more reliable than broad keyword search + member_id post-filter)
+        await _run_member_topic_scan(
+            scan_id, cancel_event, db,
+            start_date, end_date, target_member_ids, target_member_names,
+            enabled_sources, selected_topics, stats, _update_with_stats,
+        )
+        return
+
+    # Case 1: Topics only — keyword search + classification
 
     # Build keyword list from selected topics only (for API search)
     all_keywords = set()
@@ -404,6 +414,143 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
         total_relevant=total_relevant,
     )
     logger.info("Scan %d completed: %d relevant results stored", scan_id, total_relevant)
+
+
+async def _run_member_topic_scan(
+    scan_id: int,
+    cancel_event: asyncio.Event,
+    db,
+    start_date: str,
+    end_date: str,
+    target_member_ids: list[str],
+    target_member_names: list[str],
+    enabled_sources: list[str] | None,
+    selected_topics: dict,
+    stats: dict,
+    _update_with_stats,
+):
+    """Fetch member activity via dedicated endpoints, then classify against topics."""
+    display_names = ", ".join(target_member_names) if target_member_names else ", ".join(target_member_ids)
+    stats["phase"] = f"Fetching activity for {display_names}..."
+    await _update_with_stats(10)
+
+    client = ParliamentAPIClient()
+    try:
+        member_tasks = [
+            client.fetch_member_all(
+                mid,
+                target_member_names[i] if i < len(target_member_names) else "",
+                start_date, end_date,
+                enabled_sources=enabled_sources,
+                cancel_event=cancel_event,
+            )
+            for i, mid in enumerate(target_member_ids)
+        ]
+        all_results = await asyncio.gather(*member_tasks)
+        contributions = _dedup_contributions([c for group in all_results for c in group])
+    finally:
+        await client.close()
+
+    if cancel_event.is_set():
+        await update_scan_progress(db, scan_id, status="cancelled")
+        return
+
+    total_api = len(contributions)
+    stats["total_api_results"] = total_api
+    stats["unique_after_dedup"] = total_api
+    await update_scan_progress(db, scan_id, total_api_results=total_api)
+
+    # Pre-filter procedurals
+    to_classify = []
+    procedural_items = []
+    for c in contributions:
+        if is_procedural(c.text, c.source_type):
+            procedural_items.append(c)
+        else:
+            to_classify.append(c)
+
+    stats["removed_by_prefilter"] = len(procedural_items)
+    stats["sent_to_classifier"] = len(to_classify)
+    await _update_with_stats(25)
+
+    if procedural_items:
+        audit_rows = [
+            (scan_id, c.member_name, c.source_type, c.text[:200],
+             "procedural_filter", c.date.strftime("%Y-%m-%d") if c.date else "",
+             c.context or "", c.text[:2000], json.dumps(c.matched_keywords), c.url)
+            for c in procedural_items
+        ]
+        await insert_audit_log_batch(db, audit_rows)
+
+    # Enrich member info
+    client2 = ParliamentAPIClient()
+    try:
+        member_infos = await asyncio.gather(*[client2.lookup_member(mid) for mid in target_member_ids])
+    finally:
+        await client2.close()
+    member_info_map = {mid: info for mid, info in zip(target_member_ids, member_infos)}
+
+    # Classify against selected topics
+    classifier = TopicClassifier(selected_topics)
+    total_relevant = 0
+    classified_count = 0
+
+    for c in to_classify:
+        if cancel_event.is_set():
+            break
+
+        classification = await classifier.classify(c)
+        classified_count += 1
+
+        if classification:
+            info = member_info_map.get(c.member_id) or member_info_map.get(target_member_ids[0], {})
+            await insert_result(
+                db, scan_id,
+                dedup_key=f"{c.source_type}:{c.id}",
+                member_name=c.member_name or info.get("name", ""),
+                member_id=c.member_id,
+                party=info.get("party", ""),
+                member_type=info.get("member_type", ""),
+                constituency=info.get("constituency", ""),
+                topics=json.dumps(classification["topics"]),
+                summary=classification["summary"],
+                activity_date=c.date.strftime("%Y-%m-%d"),
+                forum=_forum_label(c),
+                verbatim_quote=classification.get("verbatim_quote", ""),
+                source_url=c.url,
+                confidence=classification["confidence"],
+                position_signal=classification.get("position_signal", ""),
+                source_type=c.source_type,
+                raw_text=c.text[:2000],
+            )
+            total_relevant += 1
+        else:
+            await insert_audit_log_batch(db, [(
+                scan_id, c.member_name, c.source_type, c.text[:200], "not_relevant",
+                c.date.strftime("%Y-%m-%d") if c.date else "",
+                c.context or "", c.text[:2000], json.dumps(c.matched_keywords), c.url,
+            )])
+
+        stats["classified_relevant"] = total_relevant
+        stats["classified_discarded"] = classified_count - total_relevant
+        progress = 25 + (classified_count / max(len(to_classify), 1)) * 70
+        stats["phase"] = f"Classifying {classified_count}/{len(to_classify)}..."
+        await _update_with_stats(min(progress, 95), total_relevant=total_relevant)
+
+    if cancel_event.is_set():
+        await update_scan_progress(db, scan_id, status="cancelled")
+        return
+
+    stats["phase"] = "Scan complete"
+    stats["classifier_api_errors"] = classifier.api_errors
+    await update_scan_progress(
+        db, scan_id,
+        status="completed",
+        progress=100,
+        current_phase=json.dumps(stats),
+        total_relevant=total_relevant,
+    )
+    logger.info("Scan %d (member+topic) completed: %d/%d relevant", scan_id, total_relevant, classified_count)
 
 
 async def _run_member_only_scan(
