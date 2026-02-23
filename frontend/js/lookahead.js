@@ -24,6 +24,7 @@ const laState = {
     enabledHouses: new Set(['Commons', 'Lords']),
     activeTopicIds: new Set(),
     showAllEvents: false,   // when true, bypass keyword filtering entirely
+    searchQuery: '',
     initialized: false,
     loading: false,
     lastFilteredCount: 0,
@@ -43,6 +44,16 @@ function initLookahead() {
         _initTopicIds();
         // Restore view/week/filters from URL if navigating directly to /calendar/...
         _restoreCalendarFromUrl();
+        // Keep --la-header-height in sync so sticky day headers offset correctly
+        const stickyHeader = document.getElementById('laStickyHeader');
+        if (stickyHeader) {
+            const ro = new ResizeObserver(() => {
+                document.documentElement.style.setProperty(
+                    '--la-header-height', stickyHeader.offsetHeight + 'px'
+                );
+            });
+            ro.observe(stickyHeader);
+        }
     }
     _renderLaTopicPills();
     // Sync view toggle buttons to match restored state
@@ -137,6 +148,12 @@ function _setupLaListeners() {
         _renderInfoBar(laState.lastFilteredCount);
     });
 
+    // Search
+    document.getElementById('laSearch').addEventListener('input', e => {
+        laState.searchQuery = e.target.value;
+        _renderLaView();
+    });
+
     // Refresh
     document.getElementById('laRefreshBtn').addEventListener('click', _forceRefresh);
 }
@@ -185,7 +202,7 @@ async function _loadLaEvents() {
 async function _forceRefresh() {
     const btn = document.getElementById('laRefreshBtn');
     btn.disabled = true;
-    btn.textContent = 'Refreshing...';
+    btn.textContent = '↻';
 
     const start = _fmtDate(laState.weekStart);
     const endDate = new Date(laState.weekStart);
@@ -199,18 +216,97 @@ async function _forceRefresh() {
         console.error('Refresh failed:', err);
     } finally {
         btn.disabled = false;
-        btn.textContent = '↻ Refresh';
+        btn.textContent = '↻';
     }
 }
 
 // --- Rendering ---
+
+// --- Boolean search ---
+
+function _tokeniseBoolQuery(query) {
+    const tokens = [];
+    const re = /"([^"]*)"|\b(AND|OR|NOT)\b|([()])|(-\S+)|(\S+)/g;
+    let m;
+    while ((m = re.exec(query)) !== null) {
+        if (m[1] !== undefined)      tokens.push({ type: 'TERM', value: m[1] });
+        else if (m[2])               tokens.push({ type: m[2].toUpperCase() });
+        else if (m[3] === '(')       tokens.push({ type: 'LPAREN' });
+        else if (m[3] === ')')       tokens.push({ type: 'RPAREN' });
+        else if (m[4])               tokens.push({ type: 'NOT' }, { type: 'TERM', value: m[4].slice(1) });
+        else if (m[5])               tokens.push({ type: 'TERM', value: m[5] });
+    }
+    return tokens;
+}
+
+function _parseBoolQuery(query) {
+    const tokens = _tokeniseBoolQuery(query.trim());
+    let pos = 0;
+    const peek  = () => tokens[pos];
+    const eat   = () => tokens[pos++];
+    const done  = () => pos >= tokens.length;
+
+    function parseExpr() {
+        let node = parseAnd();
+        while (!done() && peek().type === 'OR') {
+            eat();
+            node = { op: 'OR', left: node, right: parseAnd() };
+        }
+        return node;
+    }
+    function parseAnd() {
+        let node = parseNot();
+        while (!done() && peek().type !== 'OR' && peek().type !== 'RPAREN') {
+            if (peek().type === 'AND') eat();
+            const right = parseNot();
+            if (right) node = { op: 'AND', left: node, right };
+        }
+        return node;
+    }
+    function parseNot() {
+        if (!done() && peek().type === 'NOT') { eat(); return { op: 'NOT', operand: parseNot() }; }
+        return parseAtom();
+    }
+    function parseAtom() {
+        if (done()) return null;
+        const t = peek();
+        if (t.type === 'LPAREN') {
+            eat();
+            const node = parseExpr();
+            if (!done() && peek().type === 'RPAREN') eat();
+            return node;
+        }
+        if (t.type === 'TERM') { eat(); return { op: 'TERM', value: t.value.toLowerCase() }; }
+        eat();
+        return null;
+    }
+    return parseExpr();
+}
+
+function _evalBoolNode(node, text) {
+    if (!node) return true;
+    if (node.op === 'TERM')  return text.includes(node.value);
+    if (node.op === 'AND')   return _evalBoolNode(node.left, text) && _evalBoolNode(node.right, text);
+    if (node.op === 'OR')    return _evalBoolNode(node.left, text) || _evalBoolNode(node.right, text);
+    if (node.op === 'NOT')   return !_evalBoolNode(node.operand, text);
+    return true;
+}
+
+function _matchesSearchQuery(ev) {
+    const q = laState.searchQuery.trim();
+    if (!q) return true;
+    const text = [ev.title, ev.committee_name, ev.inquiry_name, ev.location]
+        .filter(Boolean).join(' ').toLowerCase();
+    return _evalBoolNode(_parseBoolQuery(q), text);
+}
 
 function _renderLaView() {
     _updateCalendarUrl();
     const filtered = laState.events.filter(ev =>
         laState.enabledTypes.has(ev.event_type) &&
         laState.enabledHouses.has(ev.house) &&
-        (!laState.starredOnly || ev.is_starred)
+        (!laState.starredOnly || ev.is_starred) &&
+        _matchesSearchQuery(ev)
     );
 
     _renderInfoBar(filtered.length);
@@ -285,7 +381,7 @@ function _renderWeekView(events) {
             + (isToday ? ' la-grid-col--today' : '')
             + (recessLabel ? ' la-grid-col--recess' : '');
 
-        // Sticky day header
+        // Day header
         const header = document.createElement('div');
         header.className = 'la-grid-day-header' + (isToday ? ' la-grid-day-header--today' : '');
         const dayNameEl = document.createElement('span');
@@ -316,6 +412,22 @@ function _renderWeekView(events) {
                 pill.className = 'la-grid-untimed-pill';
                 pill.style.cssText = `background:${colors.bg};border-left:3px solid ${colors.color};color:${colors.color};`;
                 pill.textContent = ev.title.length > 42 ? ev.title.substring(0, 39) + '…' : ev.title;
+
+                const pillTooltip = _buildEventTooltip(ev, colors);
+                pill.appendChild(pillTooltip);
+                pill.addEventListener('mouseenter', () => {
+                    pillTooltip.style.display = 'block';
+                    pillTooltip.style.left = 'calc(100% + 6px)';
+                    pillTooltip.style.right = 'auto';
+                    pillTooltip.style.top = '0';
+                    const r = pillTooltip.getBoundingClientRect();
+                    if (r.right > window.innerWidth - 8) {
+                        pillTooltip.style.left = 'auto';
+                        pillTooltip.style.right = 'calc(100% + 6px)';
+                    }
+                });
+                pill.addEventListener('mouseleave', () => { pillTooltip.style.display = 'none'; });
+
                 strip.appendChild(pill);
             }
             col.appendChild(strip);
@@ -384,7 +496,6 @@ function _renderWeekView(events) {
             evEl.addEventListener('mouseenter', () => {
                 tooltip.style.display = 'block';
                 evEl.style.zIndex = '20';
-                // Default: right of event; flip left if it overflows viewport
                 tooltip.style.left = 'calc(100% + 6px)';
                 tooltip.style.right = 'auto';
                 const r = tooltip.getBoundingClientRect();
@@ -466,6 +577,18 @@ function _buildEventTooltip(ev, colors) {
         _toggleStar(ev.id, ev.is_starred, starBtn);
     });
     footer.appendChild(starBtn);
+
+    const calBtn = document.createElement('button');
+    calBtn.className = 'la-cal-dl-btn';
+    calBtn.title = 'Save to calendar (.ics)';
+    calBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`;
+    calBtn.style.cssText = 'margin-top:0;';
+    calBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        _downloadIcs(ev);
+    });
+    footer.appendChild(calBtn);
+
     tooltip.appendChild(footer);
 
     return tooltip;
@@ -575,10 +698,14 @@ function _renderListView(events) {
                     <span class="la-list-badge" style="${houseBadgeStyle}">${_escHtml(ev.house || '')}</span>
                 </div>
                 <button class="${starClass}" data-event-id="${_escHtml(String(ev.id))}" title="Star">${starChar}</button>
+                <button class="la-cal-dl-btn" title="Save to calendar (.ics)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></button>
             `;
 
             const starBtn = row.querySelector('.la-star-btn');
             starBtn.addEventListener('click', () => _toggleStar(ev.id, ev.is_starred, starBtn));
+
+            const calBtn = row.querySelector('.la-cal-dl-btn');
+            calBtn.addEventListener('click', () => _downloadIcs(ev));
 
             group.appendChild(row);
         }
@@ -668,38 +795,29 @@ function _renderFilterPanel() {
         const topicGroup = document.createElement('div');
         topicGroup.className = 'la-fp-group la-fp-group--row2';
 
-        const topicHeaderRow = document.createElement('div');
-        topicHeaderRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;';
-
         const topicLabel = document.createElement('span');
         topicLabel.className = 'la-fp-label';
-        topicLabel.style.marginBottom = '0';
         topicLabel.textContent = 'Topics';
-        topicHeaderRow.appendChild(topicLabel);
-
-        const modeBtn = document.createElement('button');
-        modeBtn.className = 'la-topic-mode-btn' + (laState.showAllEvents ? ' la-topic-mode-btn--all' : '');
-        modeBtn.textContent = laState.showAllEvents ? 'Show filtered topics' : 'Show all events';
-        modeBtn.addEventListener('click', () => {
-            laState.showAllEvents = !laState.showAllEvents;
-            if (!laState.showAllEvents) _initTopicIds();
-            _renderFilterPanel();
-            _loadLaEvents();
-        });
-        topicHeaderRow.appendChild(modeBtn);
-        topicGroup.appendChild(topicHeaderRow);
+        topicGroup.appendChild(topicLabel);
 
         const topicChips = document.createElement('div');
         topicChips.className = 'la-fp-chips';
 
         for (const topic of state.topics) {
             const isActive = !laState.showAllEvents && laState.activeTopicIds.has(topic.id);
-            const chip = document.createElement('button');
-            chip.className = 'la-filter-chip' + (isActive ? ' la-filter-chip--active' : '');
-            if (laState.showAllEvents) chip.style.opacity = '0.4';
-            chip.textContent = topic.name;
-            chip.addEventListener('click', () => {
-                // Clicking a specific topic switches to Topics mode
+            const isOpen = activePopoverTopicId === topic.id;
+
+            // Pill wrap (matches scanner style)
+            const wrap = document.createElement('span');
+            wrap.className = 'ps-chip-topic-wrap' + (isActive ? ' ps-chip-topic-wrap--active' : '');
+            if (laState.showAllEvents) wrap.style.opacity = '0.4';
+
+            // Left: toggle button
+            const toggleBtn = document.createElement('button');
+            toggleBtn.className = 'ps-chip' + (isActive ? ' ps-chip--active' : '');
+            toggleBtn.dataset.topicId = topic.id;
+            toggleBtn.textContent = topic.name;
+            toggleBtn.addEventListener('click', () => {
                 if (laState.showAllEvents) {
                     laState.showAllEvents = false;
                     laState.activeTopicIds = new Set([topic.id]);
@@ -714,7 +832,21 @@ function _renderFilterPanel() {
                 _renderFilterPanel();
                 _loadLaEvents();
             });
-            topicChips.appendChild(chip);
+
+            // Right: arrow button that opens the keyword popover
+            const editBtn = document.createElement('button');
+            editBtn.className = 'ps-chip-edit' + (isOpen ? ' open' : '');
+            editBtn.dataset.topicId = topic.id;
+            editBtn.title = 'Edit keywords';
+            const arrow = document.createElement('span');
+            arrow.className = 'chip-arrow';
+            arrow.textContent = '›';
+            editBtn.appendChild(arrow);
+            editBtn.addEventListener('click', () => openTopicPopover(topic.id, editBtn));
+
+            wrap.appendChild(toggleBtn);
+            wrap.appendChild(editBtn);
+            topicChips.appendChild(wrap);
         }
         topicGroup.appendChild(topicChips);
         panel.appendChild(topicGroup);
@@ -746,6 +878,18 @@ function _renderInfoBar(filteredCount) {
         (laState.starredOnly ? 1 : 0);
 
     bar.innerHTML = '';
+
+    // Filter status toggle button
+    const statusBtn = document.createElement('button');
+    statusBtn.className = 'la-info-status-btn' + (laState.showAllEvents ? ' la-info-status-btn--all' : ' la-info-status-btn--filtered');
+    statusBtn.textContent = laState.showAllEvents ? 'No event filter applied' : 'Showing filtered events';
+    statusBtn.addEventListener('click', () => {
+        laState.showAllEvents = !laState.showAllEvents;
+        if (!laState.showAllEvents) _initTopicIds();
+        _updateTopicModeToggle();
+        _loadLaEvents();
+    });
+    bar.appendChild(statusBtn);
 
     const countEl = document.createElement('span');
     countEl.className = 'la-info-count';
@@ -994,4 +1138,67 @@ function _escHtml(str) {
     const div = document.createElement('div');
     div.textContent = str || '';
     return div.innerHTML;
+}
+
+
+// --- Calendar (.ics) download ---
+
+function _icsEscape(str) {
+    return (str || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+}
+
+function _downloadIcs(ev) {
+    const dateStr = (ev.start_date || '').replace(/-/g, '');
+
+    let dtStart, dtEnd;
+    if (ev.start_time) {
+        const startTime = ev.start_time.replace(':', '') + '00';
+        dtStart = `DTSTART:${dateStr}T${startTime}`;
+        if (ev.end_time) {
+            dtEnd = `DTEND:${dateStr}T${ev.end_time.replace(':', '')}00`;
+        } else {
+            const [h, m] = ev.start_time.split(':').map(Number);
+            dtEnd = `DTEND:${dateStr}T${String(h + 1).padStart(2, '0')}${String(m).padStart(2, '0')}00`;
+        }
+    } else {
+        dtStart = `DTSTART;VALUE=DATE:${dateStr}`;
+        const next = new Date(ev.start_date + 'T00:00:00');
+        next.setDate(next.getDate() + 1);
+        dtEnd = `DTEND;VALUE=DATE:${_fmtDate(next).replace(/-/g, '')}`;
+    }
+
+    let desc = '';
+    if (ev.committee_name) {
+        desc += ev.committee_name;
+        if (ev.inquiry_name) desc += ': ' + ev.inquiry_name;
+    }
+
+    const dtstamp = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15) + 'Z';
+    const uid = `parlyscan-${ev.id || Date.now()}@parliscan`;
+
+    const lines = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//ParlyScan//EN',
+        'BEGIN:VEVENT',
+        `UID:${uid}`,
+        `DTSTAMP:${dtstamp}`,
+        dtStart,
+        dtEnd,
+        `SUMMARY:${_icsEscape(ev.title)}`,
+    ];
+    if (ev.location) lines.push(`LOCATION:${_icsEscape(ev.location)}`);
+    if (desc)        lines.push(`DESCRIPTION:${desc}`);
+    if (ev.source_url) lines.push(`URL:${ev.source_url}`);
+    lines.push('END:VEVENT', 'END:VCALENDAR');
+
+    const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (ev.title || 'event').replace(/[^a-z0-9]/gi, '_').slice(0, 50) + '.ics';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
 }

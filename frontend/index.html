@@ -40,6 +40,7 @@
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
                 </span>
                 <span class="ps-sidebar__nav-label">Record</span>
+                <span class="ps-sidebar__nav-beta">Beta</span>
             </button>
             <button class="ps-sidebar__nav-item tab-btn" data-tab="alerts" onclick="switchTab('alerts')" title="Alerts">
                 <span class="ps-sidebar__nav-icon">
@@ -124,18 +125,6 @@
                 </div>
             </div>
 
-            <!-- Topic keyword popover (positioned by JS) -->
-            <div id="topicPopover" class="topic-popover" style="display:none;">
-                <div class="topic-popover__header">
-                    <span class="topic-popover__title"></span>
-                    <button class="topic-popover__delete" id="topicPopoverDelete" title="Delete topic">Delete topic</button>
-                </div>
-                <div class="topic-popover__keywords" id="topicPopoverKeywords"></div>
-                <div class="topic-popover__add">
-                    <input class="ps-input" type="text" id="topicPopoverInput" placeholder="Add keyword...">
-                    <button class="ps-btn ps-btn--ghost ps-btn--sm" onclick="addKeywordFromPopover()">Add</button>
-                </div>
-            </div>
             </section>
 
             <!-- Progress -->
@@ -243,6 +232,8 @@
         <!-- ===== Calendar Tab ===== -->
         <div id="tab-lookahead">
 
+            <div class="la-sticky-header" id="laStickyHeader">
+
             <!-- Calendar header -->
             <div class="la-cal-header">
                 <h2 class="la-cal-title">Calendar</h2>
@@ -262,12 +253,16 @@
                         <button class="la-view-btn" data-view="list">List</button>
                     </div>
                     <!-- Filter toggle -->
-                    <button class="la-filter-btn" id="laFilterBtn">
+                    <button class="la-filter-btn" id="laFilterBtn" title="Filters">
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-                        Filters
                     </button>
                     <!-- Refresh -->
-                    <button class="la-refresh-btn" id="laRefreshBtn" title="Refresh from Parliament">&#8635; Refresh</button>
+                    <button class="la-refresh-btn" id="laRefreshBtn" title="Refresh from Parliament">&#8635;</button>
+                    <!-- Search -->
+                    <div class="la-search-wrap">
+                        <svg class="la-search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                        <input type="search" id="laSearch" class="la-search-input" placeholder="" autocomplete="off" spellcheck="false">
+                    </div>
                 </div>
             </div>
 
@@ -276,6 +271,8 @@
 
             <!-- Info bar (rendered by JS) -->
             <div id="laInfoBar" class="la-info-bar"></div>
+
+            </div><!-- /.la-sticky-header -->
 
             <!-- Week view (time grid, rendered by JS) -->
             <div id="la-week-view" class="la-time-grid-outer"></div>
@@ -382,8 +379,16 @@
                         </div>
 
                         <div style="margin-bottom:12px;">
-                            <label class="source-label" style="margin-bottom:4px;">Recipients (one per line or comma-separated)</label>
-                            <textarea class="ps-textarea" id="alertRecipients" rows="3" placeholder="email@example.com"></textarea>
+                            <label class="source-label" style="margin-bottom:4px;">Recipients</label>
+                            <div class="ps-email-input" id="alertRecipientsContainer">
+                                <div id="alertRecipientTags" class="ps-email-input__tags"></div>
+                                <div class="ps-email-input__row">
+                                    <input class="ps-email-input__field" type="email" id="alertRecipientInput"
+                                           placeholder="email@example.com — press Enter to add" autocomplete="off"
+                                           onkeydown="if(event.key==='Enter'){event.preventDefault();addAlertRecipient();}">
+                                </div>
+                                <div class="ps-email-input__error" id="alertRecipientError"></div>
+                            </div>
                         </div>
                     </div>
 
@@ -484,5 +489,18 @@
     <script src="/js/master.js"></script>
     <script src="/js/lookahead.js"></script>
     <script src="/js/alerts.js"></script>
+
+    <!-- Topic keyword popover — lives at body level so it's never hidden by a tab's display:none -->
+    <div id="topicPopover" class="topic-popover" style="display:none;">
+        <div class="topic-popover__header">
+            <span class="topic-popover__title"></span>
+            <button class="topic-popover__delete" id="topicPopoverDelete" title="Delete topic">Delete topic</button>
+        </div>
+        <div class="topic-popover__keywords" id="topicPopoverKeywords"></div>
+        <div class="topic-popover__add">
+            <input class="ps-input" type="text" id="topicPopoverInput" placeholder="Add keyword...">
+            <button class="ps-btn ps-btn--ghost ps-btn--sm" onclick="addKeywordFromPopover()">Add</button>
+        </div>
+    </div>
 </body>
 </html>

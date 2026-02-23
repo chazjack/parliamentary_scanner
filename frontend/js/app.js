@@ -58,6 +58,10 @@ function switchTab(tabName) {
         if (!window.location.pathname.startsWith('/calendar')) {
             history.pushState(null, '', '/calendar');
         }
+    } else if (tabName === 'alerts') {
+        if (!window.location.pathname.startsWith('/alerts')) {
+            history.pushState(null, '', '/alerts');
+        }
     } else {
         history.pushState(null, '', '/' + tabName);
     }
@@ -192,10 +196,12 @@ window.addEventListener('popstate', () => {
     const pathTab = window.location.pathname.slice(1).split('/')[0];
     if (!validTabs.includes(pathTab)) return;
     const calendarVisible = document.getElementById('tab-lookahead').style.display !== 'none';
+    const alertsVisible = document.getElementById('tab-alerts').style.display !== 'none';
     if (pathTab === 'calendar' && calendarVisible) {
-        // Already on calendar tab — restore sub-path state and reload
         _restoreCalendarFromUrl();
         _loadLaEvents();
+    } else if (pathTab === 'alerts' && alertsVisible) {
+        _handleAlertsPopstate();
     } else {
         switchTab(pathTab);
     }

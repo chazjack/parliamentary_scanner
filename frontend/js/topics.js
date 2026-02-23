@@ -64,6 +64,12 @@ function renderTopicChips() {
                 </button>
             </span>`;
     }).join('');
+
+    // Sync arrow open/close state for topic pills rendered outside this container (e.g. calendar filter panel)
+    document.querySelectorAll('.ps-chip-edit').forEach(btn => {
+        if (btn.closest('#topicChipGroup')) return;
+        btn.classList.toggle('open', Number(btn.dataset.topicId) === activePopoverTopicId);
+    });
 }
 
 // ── Popover ──────────────────────────────────────────────────────────────────
@@ -390,20 +396,22 @@ document.getElementById('topicsPageAddBtn').addEventListener('click', async () =
     const input = document.getElementById('topicsPageNewName');
     const name = input.value.trim();
     if (!name) return;
-    await API.post('/api/topics', { name, keywords: [] });
+    const newTopic = await API.post('/api/topics', { name, keywords: [] });
     input.value = '';
     await loadTopics();
     renderTopicsPage();
+    highlightNewTopic(newTopic.id);
 });
 
 document.getElementById('topicsPageNewName').addEventListener('keydown', async (e) => {
     if (e.key !== 'Enter') return;
     const name = e.target.value.trim();
     if (!name) return;
-    await API.post('/api/topics', { name, keywords: [] });
+    const newTopic = await API.post('/api/topics', { name, keywords: [] });
     e.target.value = '';
     await loadTopics();
     renderTopicsPage();
+    highlightNewTopic(newTopic.id);
 });
 
 document.getElementById('newTopicName').addEventListener('keydown', async (e) => {
@@ -455,6 +463,16 @@ function renderTopicsPage() {
     `).join('');
 }
 
+function highlightNewTopic(topicId) {
+    const card = document.querySelector(`.topics-page-card[data-topic-id="${topicId}"]`);
+    if (!card) return;
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    card.classList.add('topics-page-card--new');
+    setTimeout(() => card.classList.remove('topics-page-card--new'), 2000);
+    const kwInput = document.getElementById(`page-kw-input-${topicId}`);
+    if (kwInput) setTimeout(() => kwInput.focus(), 100);
+}
+
 async function addKeywordFromPage(topicId) {
     const input = document.getElementById(`page-kw-input-${topicId}`);
     const kw = input.value.trim();
@@ -466,6 +484,7 @@ async function addKeywordFromPage(topicId) {
     input.value = '';
     await loadTopics();
     renderTopicsPage();
+    document.getElementById(`page-kw-input-${topicId}`)?.focus();
 }
 
 async function removeKeywordFromPage(topicId, keyword) {

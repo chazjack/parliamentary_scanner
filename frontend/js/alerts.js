@@ -2,13 +2,92 @@
 
 let alertsList = [];
 let editingAlertId = null;
+let _alertRecipients = [];   // internal list of validated email strings
+
+const _EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+function _renderRecipientTags() {
+    const container = document.getElementById('alertRecipientTags');
+    if (!container) return;
+    container.innerHTML = _alertRecipients.map((email, i) =>
+        `<span class="ps-email-input__tag" title="${email}">
+            <span>${email}</span>
+            <button type="button" class="ps-email-input__tag-remove" onclick="removeAlertRecipient(${i})" aria-label="Remove ${email}">×</button>
+        </span>`
+    ).join('');
+}
+
+function addAlertRecipient() {
+    const input = document.getElementById('alertRecipientInput');
+    const error = document.getElementById('alertRecipientError');
+    const raw = input.value.trim().toLowerCase();
+
+    if (!raw) return;
+
+    if (!_EMAIL_RE.test(raw)) {
+        error.textContent = 'Please enter a valid email address.';
+        input.focus();
+        return;
+    }
+    if (_alertRecipients.includes(raw)) {
+        error.textContent = 'This email has already been added.';
+        input.focus();
+        return;
+    }
+
+    _alertRecipients.push(raw);
+    _renderRecipientTags();
+    input.value = '';
+    error.textContent = '';
+    input.focus();
+}
+
+function removeAlertRecipient(index) {
+    _alertRecipients.splice(index, 1);
+    _renderRecipientTags();
+}
+
+function _setRecipients(list) {
+    _alertRecipients = (list || []).map(e => e.trim().toLowerCase()).filter(Boolean);
+    _renderRecipientTags();
+    const input = document.getElementById('alertRecipientInput');
+    const error = document.getElementById('alertRecipientError');
+    if (input) input.value = '';
+    if (error) error.textContent = '';
+}
 
 async function loadAlerts() {
     try {
         alertsList = await API.get('/api/alerts');
         renderAlertsList();
+        _restoreAlertsFromUrl();
     } catch (e) {
         console.error('Failed to load alerts:', e);
+    }
+}
+
+// Called after loadAlerts() — opens form if URL is a sub-path (e.g. on initial page load)
+function _restoreAlertsFromUrl() {
+    const parts = window.location.pathname.slice(1).split('/');
+    if (parts[0] !== 'alerts') return;
+    if (parts[1] === 'new') {
+        showAlertForm(undefined, false);
+    } else if (parts[2] === 'edit') {
+        const id = parseInt(parts[1]);
+        if (!isNaN(id)) editAlert(id, false);
+    }
+}
+
+// Called by popstate when already on the alerts tab
+function _handleAlertsPopstate() {
+    const parts = window.location.pathname.slice(1).split('/');
+    if (parts[1] === 'new') {
+        showAlertForm(undefined, false);
+    } else if (parts[2] === 'edit') {
+        const id = parseInt(parts[1]);
+        if (!isNaN(id)) editAlert(id, false);
+    } else {
+        hideAlertForm(false);
     }
 }
 
@@ -26,7 +105,7 @@ function renderAlertsList() {
     // Desktop table rows
     tableBody.innerHTML = alertsList.map(a => {
         const d = _alertDisplayData(a);
-        const typeCls = a.alert_type === 'scan' ? 'ps-badge ps-badge--accent' : 'ps-badge ps-badge--success';
+        const typeCls = a.alert_type === 'scan' ? 'ps-badge ps-badge--accent' : 'ps-badge ps-badge--warning';
         const statusCls = a.enabled ? 'ps-badge ps-badge--success' : 'ps-badge ps-badge--muted';
         return `<tr>
             <td><strong>${_escHtml(a.name)}</strong></td>
@@ -43,7 +122,7 @@ function renderAlertsList() {
     if (cardList) {
         cardList.innerHTML = alertsList.map(a => {
             const d = _alertDisplayData(a);
-            const typeCls = a.alert_type === 'scan' ? 'ps-badge ps-badge--accent' : 'ps-badge ps-badge--success';
+            const typeCls = a.alert_type === 'scan' ? 'ps-badge ps-badge--accent' : 'ps-badge ps-badge--warning';
             const statusCls = a.enabled ? 'ps-badge ps-badge--success' : 'ps-badge ps-badge--muted';
             return `<div class="alert-card">
                 <div class="alert-card-header">
@@ -102,13 +181,14 @@ function _alertActions(a) {
         </div>`;
 }
 
-function showAlertForm(alertType) {
+function showAlertForm(alertType, pushUrl = true) {
     editingAlertId = null;
     const form = document.getElementById('alertFormSection');
     const title = document.getElementById('alertFormTitle');
     title.textContent = 'Create New Alert';
     form.style.display = '';
     document.getElementById('alertFormList').style.display = 'none';
+    if (pushUrl) history.pushState(null, '', '/alerts/new');
 
     // Reset form
     document.getElementById('alertName').value = '';
@@ -117,7 +197,7 @@ function showAlertForm(alertType) {
     document.getElementById('alertDayOfWeek').value = 'monday';
     document.getElementById('alertSendTime').value = '09:00';
     document.getElementById('alertTimezone').value = 'Europe/London';
-    document.getElementById('alertRecipients').value = '';
+    _setRecipients([]);
     document.getElementById('alertScanPeriod').value = '7';
     document.getElementById('alertLookaheadDays').value = '7';
 
@@ -128,10 +208,11 @@ function showAlertForm(alertType) {
     _loadHouseCheckboxes();
 }
 
-function hideAlertForm() {
+function hideAlertForm(pushUrl = true) {
     document.getElementById('alertFormSection').style.display = 'none';
     document.getElementById('alertFormList').style.display = '';
     editingAlertId = null;
+    if (pushUrl) history.pushState(null, '', '/alerts');
 }
 
 function _updateFormVisibility() {
@@ -191,8 +272,7 @@ function _collectFormData() {
     const sources = [...document.querySelectorAll('.alert-source-chip.ps-chip--active')].map(c => c.dataset.source);
     const eventTypes = [...document.querySelectorAll('.alert-event-type-chip.ps-chip--active')].map(c => c.dataset.type);
     const houses = [...document.querySelectorAll('.alert-house-chip.ps-chip--active')].map(c => c.dataset.house);
-    const recipientsStr = document.getElementById('alertRecipients').value.trim();
-    const recipients = recipientsStr ? recipientsStr.split(/[,;\n]+/).map(e => e.trim()).filter(Boolean) : [];
+    const recipients = [..._alertRecipients];
 
     return {
         name: document.getElementById('alertName').value.trim(),
@@ -229,12 +309,13 @@ async function saveAlert() {
     }
 }
 
-async function editAlert(alertId) {
+async function editAlert(alertId, pushUrl = true) {
     const a = alertsList.find(x => x.id === alertId);
     if (!a) return;
 
     editingAlertId = alertId;
-    showAlertForm(a.alert_type);
+    showAlertForm(a.alert_type, false);
+    if (pushUrl) history.pushState(null, '', `/alerts/${alertId}/edit`);
     document.getElementById('alertFormTitle').textContent = 'Edit Alert';
 
     document.getElementById('alertName').value = a.name;
@@ -243,7 +324,7 @@ async function editAlert(alertId) {
     document.getElementById('alertDayOfWeek').value = a.day_of_week || 'monday';
     document.getElementById('alertSendTime').value = a.send_time || '09:00';
     document.getElementById('alertTimezone').value = a.timezone || 'Europe/London';
-    document.getElementById('alertRecipients').value = (a.recipients || []).join(', ');
+    _setRecipients(a.recipients || []);
     document.getElementById('alertScanPeriod').value = a.scan_period_days || 7;
     document.getElementById('alertLookaheadDays').value = a.lookahead_days || 7;
 

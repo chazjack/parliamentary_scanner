@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 
 const ACCENT = "#6366f1";
 const ACCENT_SOFT = "rgba(99,102,241,0.08)";
@@ -97,6 +97,118 @@ function TypeChip({ label, active, onClick, color, bg }) {
       }} />
       {label}
     </button>
+  );
+}
+
+function TopicPill({ label, active, onToggle, keywords = [], onAddKeyword, onRemoveKeyword, isOpen, onOpenToggle }) {
+  const [inputVal, setInputVal] = useState("");
+  const wrapRef = useRef(null);
+  const [popoverPos, setPopoverPos] = useState({ top: 0, left: 0 });
+
+  const handleArrowClick = (e) => {
+    e.stopPropagation();
+    if (!isOpen && wrapRef.current) {
+      const rect = wrapRef.current.getBoundingClientRect();
+      const left = Math.min(rect.left, window.innerWidth - 248);
+      setPopoverPos({ top: rect.bottom + 6, left: Math.max(8, left) });
+    }
+    onOpenToggle();
+  };
+
+  const handleAdd = () => {
+    const kw = inputVal.trim();
+    if (kw) { onAddKeyword(kw); setInputVal(""); }
+  };
+
+  return (
+    <span ref={wrapRef} style={{
+      display: "inline-flex", alignItems: "center",
+      border: `1px solid ${active ? ACCENT_BORDER : "rgba(255,255,255,0.08)"}`,
+      background: active ? ACCENT_SOFT : "transparent",
+      borderRadius: 20,
+      transition: "border-color 0.15s, background 0.15s",
+    }}>
+      {/* Toggle button */}
+      <button onClick={(e) => { e.stopPropagation(); onToggle(); }} style={{
+        background: "none", border: "none",
+        padding: "4px 6px 4px 10px",
+        fontSize: 12, fontWeight: 500,
+        color: active ? ACCENT : "#71717a",
+        cursor: "pointer", fontFamily: "inherit", lineHeight: 1,
+      }}>{label}</button>
+
+      {/* Arrow button */}
+      <button onClick={handleArrowClick} style={{
+        background: "none", border: "none",
+        padding: "4px 8px 4px 2px",
+        cursor: "pointer",
+        color: isOpen ? ACCENT : (active ? ACCENT : "#52525b"),
+        display: "flex", alignItems: "center",
+        fontFamily: "inherit", lineHeight: 1,
+        transition: "color 0.15s",
+      }}>
+        <span style={{
+          display: "inline-block", fontSize: "0.85rem",
+          transition: "transform 0.2s ease",
+          transform: isOpen ? "rotate(90deg)" : "rotate(0deg)",
+        }}>›</span>
+      </button>
+
+      {/* Keyword popover */}
+      {isOpen && (
+        <div onClick={e => e.stopPropagation()} style={{
+          position: "fixed",
+          top: popoverPos.top,
+          left: popoverPos.left,
+          zIndex: 1000,
+          background: "#1c1c20",
+          border: "1px solid rgba(255,255,255,0.1)",
+          borderRadius: 8,
+          padding: "12px 14px",
+          minWidth: 224,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "#e4e4e7", marginBottom: 10 }}>{label}</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 10, minHeight: 24 }}>
+            {keywords.length === 0 ? (
+              <span style={{ fontSize: 12, color: "#3f3f46" }}>No keywords yet — add one below.</span>
+            ) : keywords.map(kw => (
+              <span key={kw} style={{
+                background: "rgba(255,255,255,0.06)", color: "#a1a1aa",
+                padding: "3px 10px", borderRadius: 12, fontSize: 12,
+                display: "inline-flex", alignItems: "center", gap: 6,
+              }}>
+                {kw}
+                <span onClick={() => onRemoveKeyword(kw)} style={{
+                  cursor: "pointer", fontWeight: "bold",
+                  color: "#52525b", fontSize: 14, lineHeight: 1,
+                }}>×</span>
+              </span>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <input
+              autoFocus
+              value={inputVal}
+              onChange={e => setInputVal(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleAdd(); } }}
+              placeholder="Add keyword..."
+              style={{
+                flex: 1, background: "rgba(255,255,255,0.06)",
+                border: "1px solid rgba(255,255,255,0.1)",
+                borderRadius: 4, padding: "5px 8px",
+                fontSize: 12, color: "#e4e4e7", fontFamily: "inherit", outline: "none",
+              }}
+            />
+            <button onClick={handleAdd} style={{
+              padding: "5px 10px", fontSize: 12, fontWeight: 500,
+              background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)",
+              borderRadius: 4, color: "#a1a1aa", cursor: "pointer", fontFamily: "inherit",
+            }}>Add</button>
+          </div>
+        </div>
+      )}
+    </span>
   );
 }
 
@@ -348,7 +460,7 @@ function ListView({ events }) {
 }
 
 /* ─── Filter panel (collapsible) ─── */
-function FilterPanel({ show, activeTypes, toggleType, activeHouses, toggleHouse, activeTopics, toggleTopic, eventCount, totalCount }) {
+function FilterPanel({ show, activeTypes, toggleType, activeHouses, toggleHouse, activeTopics, toggleTopic, eventCount, totalCount, openTopicId, toggleTopicOpen, topicKeywords, addTopicKeyword, removeTopicKeyword }) {
   if (!show) return null;
   return (
     <div style={{
@@ -388,7 +500,17 @@ function FilterPanel({ show, activeTypes, toggleType, activeHouses, toggleHouse,
         <span style={{ fontSize: 10, fontWeight: 600, color: "#52525b", textTransform: "uppercase", letterSpacing: "0.08em" }}>Topics</span>
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
           {TOPICS.map(t => (
-            <FilterChip key={t} label={t} active={activeTopics.includes(t)} onClick={() => toggleTopic(t)} />
+            <TopicPill
+              key={t}
+              label={t}
+              active={activeTopics.includes(t)}
+              onToggle={() => toggleTopic(t)}
+              keywords={topicKeywords[t] || []}
+              onAddKeyword={(kw) => addTopicKeyword(t, kw)}
+              onRemoveKeyword={(kw) => removeTopicKeyword(t, kw)}
+              isOpen={openTopicId === t}
+              onOpenToggle={() => toggleTopicOpen(t)}
+            />
           ))}
         </div>
       </div>
@@ -403,10 +525,15 @@ export default function ParliScanCalendar() {
   const [activeTypes, setActiveTypes] = useState(Object.keys(EVENT_TYPES));
   const [activeHouses, setActiveHouses] = useState([...HOUSES]);
   const [activeTopics, setActiveTopics] = useState([]);
+  const [openTopicId, setOpenTopicId] = useState(null);
+  const [topicKeywords, setTopicKeywords] = useState({});
 
   const toggleType = (t) => setActiveTypes(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
   const toggleHouse = (h) => setActiveHouses(prev => prev.includes(h) ? prev.filter(x => x !== h) : [...prev, h]);
   const toggleTopic = (t) => setActiveTopics(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
+  const toggleTopicOpen = (t) => setOpenTopicId(prev => prev === t ? null : t);
+  const addTopicKeyword = (t, kw) => setTopicKeywords(prev => ({ ...prev, [t]: [...(prev[t] || []), kw] }));
+  const removeTopicKeyword = (t, kw) => setTopicKeywords(prev => ({ ...prev, [t]: (prev[t] || []).filter(k => k !== kw) }));
 
   const filtered = useMemo(() => {
     return MOCK_EVENTS.filter(e => {
@@ -423,6 +550,7 @@ export default function ParliScanCalendar() {
     setActiveTypes(Object.keys(EVENT_TYPES));
     setActiveHouses([...HOUSES]);
     setActiveTopics([]);
+    setOpenTopicId(null);
   };
 
   return (
@@ -511,6 +639,11 @@ export default function ParliScanCalendar() {
         }}>↻</button>
       </header>
 
+      {/* Click-outside overlay to close topic popovers */}
+      {openTopicId && (
+        <div onClick={() => setOpenTopicId(null)} style={{ position: "fixed", inset: 0, zIndex: 999 }} />
+      )}
+
       {/* Filters */}
       <FilterPanel
         show={showFilters}
@@ -518,6 +651,8 @@ export default function ParliScanCalendar() {
         activeHouses={activeHouses} toggleHouse={toggleHouse}
         activeTopics={activeTopics} toggleTopic={toggleTopic}
         eventCount={filtered.length} totalCount={MOCK_EVENTS.length}
+        openTopicId={openTopicId} toggleTopicOpen={toggleTopicOpen}
+        topicKeywords={topicKeywords} addTopicKeyword={addTopicKeyword} removeTopicKeyword={removeTopicKeyword}
       />
 
       {/* Info bar */}

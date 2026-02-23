@@ -193,15 +193,15 @@
 }
 
 .ps-sidebar__logo-img {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   flex-shrink: 0;
   filter: brightness(0) invert(1);
   opacity: 0.9;
 }
 
 .ps-sidebar__logo-title {
-  font-size: 17px;
+  font-size: 19px;
   font-weight: var(--ps-weight-bold);
   color: var(--ps-text-primary);
   letter-spacing: var(--ps-tracking-tight);
@@ -262,6 +262,24 @@
 
 .ps-sidebar__nav-label {
   line-height: 1;
+}
+
+.ps-sidebar__nav-beta {
+  font-size: 9px;
+  font-weight: var(--ps-weight-semi);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #a78bfa;
+  background: rgba(167, 139, 250, 0.15);
+  border: 1px solid rgba(167, 139, 250, 0.35);
+  border-radius: 4px;
+  padding: 1px 5px;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+.ps-sidebar.collapsed .ps-sidebar__nav-beta {
+  display: none;
 }
 
 .ps-sidebar__footer {
@@ -894,6 +912,105 @@
 .ps-textarea:focus {
   border-color: var(--ps-accent-border);
   box-shadow: 0 0 0 2px var(--ps-accent-glow);
+}
+
+/* ============================================================================
+   10b. EMAIL TAG INPUT
+   ============================================================================ */
+
+.ps-email-input {
+  background: var(--ps-bg-muted);
+  border: 1px solid var(--ps-border-strong);
+  border-radius: var(--ps-radius-md);
+  padding: 6px 8px;
+  transition: border-color var(--ps-transition-normal);
+}
+
+.ps-email-input:focus-within {
+  border-color: var(--ps-accent-border);
+  box-shadow: 0 0 0 2px var(--ps-accent-glow);
+}
+
+.ps-email-input__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.ps-email-input__tags:empty {
+  display: none;
+}
+
+.ps-email-input__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px 3px 10px;
+  background: rgba(99,102,241,0.15);
+  border: 1px solid rgba(99,102,241,0.35);
+  border-radius: 20px;
+  font-size: var(--ps-text-sm);
+  color: var(--ps-text-primary);
+  line-height: 1.4;
+  max-width: 100%;
+  word-break: break-all;
+}
+
+.ps-email-input__tag-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(99,102,241,0.2);
+  color: var(--ps-text-secondary);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: background var(--ps-transition-normal), color var(--ps-transition-normal);
+}
+
+.ps-email-input__tag-remove:hover {
+  background: rgba(248,113,113,0.3);
+  color: #f87171;
+}
+
+.ps-email-input__row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.ps-email-input__field {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  font-size: var(--ps-text-md);
+  font-family: var(--ps-font-family);
+  background: transparent;
+  border: none;
+  color: var(--ps-text-primary);
+  outline: none;
+}
+
+.ps-email-input__field::placeholder {
+  color: var(--ps-text-faint);
+}
+
+.ps-email-input__error {
+  font-size: var(--ps-text-sm);
+  color: #f87171;
+  margin-top: 4px;
+  min-height: 0;
+}
+
+.ps-email-input__error:empty {
+  display: none;
 }
 
 

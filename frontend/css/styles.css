@@ -52,7 +52,8 @@ body {
 /* Main content: restore the padding body used to provide; allow scrolling */
 main.ps-main {
     padding: 20px 20px 40px;
-    overflow-y: auto;
+    overflow: clip; /* clip (not hidden) so position:sticky in children works against the viewport */
+    min-width: 0; /* allow flex item to shrink below content width, accounting for sidebar */
 }
 
 /* Sidebar Quick Search box — constrain width and tighten font */
@@ -2159,6 +2160,14 @@ u    padding: 0;
 /* ========== CALENDAR TAB ========== */
 
 /* Calendar header bar */
+.la-sticky-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--ps-bg-base);
+    box-shadow: 0 12px 0 0 var(--ps-bg-base);
+}
+
 .la-cal-header {
     display: flex;
     flex-direction: column;
@@ -2268,8 +2277,9 @@ u    padding: 0;
 .la-filter-btn {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    padding: 5px 12px;
+    justify-content: center;
+    gap: 0;
+    padding: 5px 9px;
     font-size: 12px;
     font-weight: 500;
     border-radius: 6px;
@@ -2301,6 +2311,48 @@ u    padding: 0;
 }
 
 /* Refresh button */
+.la-search-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.la-search-icon {
+    position: absolute;
+    left: 8px;
+    color: var(--ps-text-dim);
+    pointer-events: none;
+    flex-shrink: 0;
+}
+
+.la-search-input {
+    padding: 5px 10px 5px 28px;
+    font-size: 12px;
+    font-family: inherit;
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 20px;
+    color: var(--ps-text-primary);
+    width: 105px;
+    min-width: 0;
+    transition: border-color 0.15s, width 0.2s;
+    outline: none;
+}
+
+.la-search-input::placeholder {
+    color: var(--ps-text-dim);
+}
+
+.la-search-input:focus {
+    width: 160px;
+    border-color: rgba(255,255,255,0.2);
+}
+
+/* hide browser's native clear button */
+.la-search-input::-webkit-search-cancel-button { display: none; }
+
 .la-refresh-btn {
     padding: 5px 10px;
     font-size: 12px;
@@ -2409,32 +2461,6 @@ u    padding: 0;
     transition: all 0.15s;
 }
 
-/* Topic mode toggle — plain text link */
-.la-topic-mode-btn {
-    font-size: 11px;
-    font-weight: 500;
-    padding: 0;
-    border: none;
-    background: none;
-    color: var(--ps-text);
-    cursor: pointer;
-    font-family: inherit;
-    transition: color 0.12s;
-    text-decoration: underline;
-    text-underline-offset: 2px;
-}
-
-.la-topic-mode-btn:hover {
-    color: var(--ps-text-muted);
-}
-
-.la-topic-mode-btn--all {
-    color: var(--ps-text);
-}
-
-.la-topic-mode-btn--all:hover {
-    color: var(--ps-text-muted);
-}
 
 .la-filter-chip--active {
     border-color: rgba(99,102,241,0.25);
@@ -2456,6 +2482,35 @@ u    padding: 0;
     border-bottom: 1px solid rgba(255,255,255,0.06);
     font-size: 12px;
     min-height: 34px;
+}
+
+/* Filter status toggle in info bar */
+.la-info-status-btn {
+    padding: 2px 9px;
+    font-size: 11px;
+    font-weight: 500;
+    border-radius: 5px;
+    border: 1px solid;
+    background: transparent;
+    cursor: pointer;
+    font-family: inherit;
+    transition: opacity 0.12s;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.la-info-status-btn:hover { opacity: 0.8; }
+
+.la-info-status-btn--filtered {
+    border-color: rgba(99,102,241,0.35);
+    color: var(--ps-accent);
+    background: rgba(99,102,241,0.08);
+}
+
+.la-info-status-btn--all {
+    border-color: rgba(251,146,60,0.35);
+    color: #fb923c;
+    background: rgba(251,146,60,0.08);
 }
 
 .la-info-count  { color: var(--ps-text-muted); }
@@ -2503,8 +2558,7 @@ u    padding: 0;
 
 .la-time-grid-outer {
     overflow-x: auto;
-    margin: 0 -20px;       /* bleed to ps-main edges */
-    padding: 0 20px;
+    overflow-y: clip; /* clip (not auto) so position:sticky day headers work against the viewport */
 }
 
 .la-time-grid {
@@ -2585,10 +2639,7 @@ u    padding: 0;
     justify-content: center;
     gap: 6px;
     border-bottom: 1px solid rgba(255,255,255,0.06);
-    position: sticky;
-    top: 0;
-    background: var(--ps-bg);
-    z-index: 10;
+    background: var(--ps-bg-base);
 }
 
 .la-grid-day-name {
@@ -2638,6 +2689,7 @@ u    padding: 0;
 }
 
 .la-grid-untimed-pill {
+    position: relative;
     font-size: 10px;
     font-weight: 500;
     padding: 2px 5px;
@@ -2646,6 +2698,12 @@ u    padding: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     cursor: default;
+    z-index: 1;
+}
+
+.la-grid-untimed-pill:hover {
+    overflow: visible;
+    z-index: 20;
 }
 
 /* Absolutely positioned grid events */
@@ -2697,10 +2755,11 @@ u    padding: 0;
     max-width: 280px;
     padding: 6px 8px;
     border-radius: 4px;
-    /* background and border-left set inline to match event colours */
+    background: var(--card-bg) !important;
     box-shadow: 0 6px 24px rgba(0,0,0,0.55);
     z-index: 100;
     pointer-events: auto;
+    white-space: normal;
 }
 
 .la-tooltip__title {
@@ -2725,6 +2784,25 @@ u    padding: 0;
     display: flex;
     align-items: center;
     margin-top: 6px;
+}
+
+/* Calendar download button (shared by tooltip + list view) */
+.la-cal-dl-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px 3px;
+    color: var(--ps-text-dim);
+    opacity: 0.6;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    border-radius: 4px;
+    transition: opacity 0.15s, color 0.15s;
+}
+.la-cal-dl-btn:hover {
+    opacity: 1;
+    color: var(--ps-accent);
 }
 
 /* Star button (shared by week + list views) */
@@ -2774,6 +2852,10 @@ u    padding: 0;
     padding: 12px 0 4px;
     border-bottom: 1px solid rgba(255,255,255,0.04);
     margin-bottom: 2px;
+    position: sticky;
+    top: var(--la-header-height, 0px);
+    background: var(--ps-bg-base);
+    z-index: 2;
 }
 
 .la-list-row {
@@ -2854,9 +2936,10 @@ u    padding: 0;
     white-space: nowrap;
 }
 
-/* in list view, star btn is inline */
-.la-list-row .la-star-btn {
-    display: inline;
+/* in list view, star + cal btns are inline */
+.la-list-row .la-star-btn,
+.la-list-row .la-cal-dl-btn {
+    display: inline-flex;
     margin: 0;
     flex-shrink: 0;
 }
@@ -2930,6 +3013,7 @@ u    padding: 0;
     font-size: 1.1rem !important;
     line-height: 1;
     letter-spacing: 0;
+    border: none !important;
 }
 
 .alert-actions-menu {
@@ -3155,6 +3239,15 @@ u    padding: 0;
     display: flex;
     gap: 8px;
     margin-bottom: 24px;
+}
+
+@keyframes topic-highlight {
+    0%, 75% { border-color: gold; box-shadow: 0 0 0 2px rgba(255, 215, 0, 0.4); }
+    100%    { border-color: var(--border); box-shadow: none; }
+}
+
+.topics-page-card--new {
+    animation: topic-highlight 2s ease-out forwards;
 }
 
 .topics-page-add .ps-input {
