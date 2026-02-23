@@ -1,7 +1,10 @@
 """SQLite database initialisation, schema, and query helpers."""
 
+import hashlib
 import json
 import logging
+import secrets
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import aiosqlite
@@ -82,7 +85,8 @@ CREATE TABLE IF NOT EXISTS audit_log (
     classification TEXT NOT NULL,
     activity_date TEXT,
     context TEXT,
-    full_text TEXT
+    full_text TEXT,
+    matched_keywords TEXT
 );
 
 CREATE TABLE IF NOT EXISTS master_list (
@@ -151,6 +155,20 @@ CREATE TABLE IF NOT EXISTS lookahead_recess (
 );
 
 CREATE INDEX IF NOT EXISTS idx_recess_dates ON lookahead_recess(start_date, end_date);
+
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    token TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS email_alerts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -298,13 +316,17 @@ async def init_db():
         await db.executescript(SCHEMA_SQL)
         await db.commit()
 
-        # Migration: add full_text column to audit_log if not present
+        # Migration: add full_text and matched_keywords columns to audit_log if not present
         cursor = await db.execute("PRAGMA table_info(audit_log)")
         columns = [row[1] for row in await cursor.fetchall()]
         if "full_text" not in columns:
             await db.execute("ALTER TABLE audit_log ADD COLUMN full_text TEXT")
             await db.commit()
             logger.info("Migrated audit_log: added full_text column")
+        if "matched_keywords" not in columns:
+            await db.execute("ALTER TABLE audit_log ADD COLUMN matched_keywords TEXT")
+            await db.commit()
+            logger.info("Migrated audit_log: added matched_keywords column")
 
         # Migration: add trigger and alert_id columns to scans if not present
         cursor = await db.execute("PRAGMA table_info(scans)")
@@ -317,6 +339,17 @@ async def init_db():
             await db.execute("ALTER TABLE scans ADD COLUMN alert_id INTEGER")
             await db.commit()
             logger.info("Migrated scans: added alert_id column")
+
+        # Seed admin user from environment if no users exist yet
+        from backend.config import ADMIN_USERNAME, ADMIN_PASSWORD
+        if ADMIN_PASSWORD:
+            cursor = await db.execute("SELECT COUNT(*) FROM users")
+            row = await cursor.fetchone()
+            if row[0] == 0:
+                await create_user(db, ADMIN_USERNAME, ADMIN_PASSWORD)
+                logger.info("Seeded admin user: %s", ADMIN_USERNAME)
+        else:
+            logger.warning("ADMIN_PASSWORD not set — login will be disabled until it is configured")
 
         # Check if topics table is empty — seed defaults if so
         cursor = await db.execute("SELECT COUNT(*) FROM topics")
@@ -526,12 +559,12 @@ async def insert_audit_log(
 
 async def insert_audit_log_batch(db: aiosqlite.Connection, rows: list[tuple]):
     """Batch insert audit log entries for efficiency.
-    Each row: (scan_id, member_name, source_type, text_preview, classification, activity_date, context, full_text)
+    Each row: (scan_id, member_name, source_type, text_preview, classification, activity_date, context, full_text, matched_keywords)
     """
     await db.executemany(
         """INSERT INTO audit_log
-        (scan_id, member_name, source_type, text_preview, classification, activity_date, context, full_text)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (scan_id, member_name, source_type, text_preview, classification, activity_date, context, full_text, matched_keywords)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         rows,
     )
     await db.commit()
@@ -1080,3 +1113,74 @@ async def get_enabled_alerts(db: aiosqlite.Connection) -> list[dict]:
         alert["recipients"] = [r["email"] for r in await rcpt_cursor.fetchall()]
         alerts.append(alert)
     return alerts
+
+
+# --- Auth helpers ---
+
+
+def hash_password(password: str) -> str:
+    """Hash a password with PBKDF2-SHA256 and a random salt."""
+    salt = secrets.token_hex(16)
+    key = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100_000)
+    return f"{salt}:{key.hex()}"
+
+
+def verify_password(password: str, stored_hash: str) -> bool:
+    """Verify a password against a stored hash."""
+    try:
+        salt, key_hex = stored_hash.split(":", 1)
+        key = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100_000)
+        return secrets.compare_digest(key.hex(), key_hex)
+    except Exception:
+        return False
+
+
+async def create_user(db: aiosqlite.Connection, username: str, password: str) -> int:
+    """Create a user with a hashed password. Returns the new user ID."""
+    password_hash = hash_password(password)
+    cursor = await db.execute(
+        "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+        (username, password_hash),
+    )
+    await db.commit()
+    return cursor.lastrowid
+
+
+async def get_user_by_username(db: aiosqlite.Connection, username: str) -> dict | None:
+    """Fetch a user row by username."""
+    cursor = await db.execute(
+        "SELECT id, username, password_hash FROM users WHERE username = ?", (username,)
+    )
+    row = await cursor.fetchone()
+    return dict(row) if row else None
+
+
+async def create_session(db: aiosqlite.Connection, user_id: int) -> str:
+    """Create a session token for a user. Returns the token string."""
+    token = secrets.token_urlsafe(32)
+    expires_at = (datetime.utcnow() + timedelta(days=30)).isoformat()
+    await db.execute(
+        "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
+        (token, user_id, expires_at),
+    )
+    await db.commit()
+    return token
+
+
+async def get_session_user(db: aiosqlite.Connection, token: str) -> dict | None:
+    """Return the user for a valid, unexpired session token, or None."""
+    now = datetime.utcnow().isoformat()
+    cursor = await db.execute(
+        """SELECT u.id, u.username FROM sessions s
+           JOIN users u ON u.id = s.user_id
+           WHERE s.token = ? AND s.expires_at > ?""",
+        (token, now),
+    )
+    row = await cursor.fetchone()
+    return dict(row) if row else None
+
+
+async def delete_session(db: aiosqlite.Connection, token: str) -> None:
+    """Delete a session (logout)."""
+    await db.execute("DELETE FROM sessions WHERE token = ?", (token,))
+    await db.commit()

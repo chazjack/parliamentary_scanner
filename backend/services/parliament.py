@@ -238,8 +238,8 @@ class ParliamentAPIClient:
                     matched_keywords=[keyword],
                 ))
 
-            skip += 20
             page += 1
+            skip += len(items)
             if skip >= total:
                 break
 

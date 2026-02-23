@@ -89,6 +89,43 @@ async function loadResults(scanId) {
     allResults = data.results || [];
     renderResults(allResults);
     document.getElementById('results-section').style.display = '';
+    if (data.scan) loadStatus(data.scan);
+}
+
+function loadStatus(scan) {
+    if (!scan) return;
+    const progressSection = document.getElementById('progress-section');
+    const pLabel = document.getElementById('progressLabel');
+    const pPanels = document.getElementById('progressPanels');
+
+    let statsObj = null;
+    try { statsObj = JSON.parse(scan.current_phase); } catch (e) {}
+
+    // Reconstruct scanTopicGroups so keyword chips render correctly
+    const topicIds = JSON.parse(scan.topic_ids || '[]');
+    state.scanTopicGroups = (state.topics || [])
+        .filter(t => topicIds.includes(t.id))
+        .map(t => ({ name: t.name, keywords: [...(t.keywords || [])] }))
+        .filter(g => g.keywords.length > 0);
+
+    resetStageIndicator();
+
+    if (statsObj) {
+        if (scan.status === 'completed') {
+            pLabel.textContent = 'Scan complete!';
+            setStageCompleted(3);
+        } else {
+            pLabel.textContent = statsObj.phase || scan.status || '';
+            updateStageIndicator(statsObj);
+        }
+        pPanels.style.display = '';
+        renderKeywordChips(statsObj);
+        renderPipelineBoxes(statsObj);
+        renderSourceCircles(statsObj);
+    } else {
+        pLabel.textContent = scan.status || '';
+        pPanels.style.display = 'none';
+    }
 }
 
 function trimQuote(text, max = 70) {
@@ -108,6 +145,54 @@ function boldKeywords(html, keywords) {
         html = html.replace(re, '<strong>$1</strong>');
     }
     return html;
+}
+
+function auditSnippet(fullText, keywords) {
+    if (!fullText) return '';
+
+    const MAX_WORDS = 60;
+    const HALF = Math.floor(MAX_WORDS / 2);
+
+    // Use stored keywords first; fall back to all topic keywords for older scan data
+    const kwList = (keywords && keywords.length > 0)
+        ? keywords
+        : (state.topics || []).flatMap(t => t.keywords || []);
+
+    // Find the earliest keyword match (longest first to prefer more specific matches)
+    const sorted = kwList.slice().sort((a, b) => b.length - a.length);
+    let bestCharIdx = -1;
+    let bestKw = null;
+    for (const kw of sorted) {
+        const idx = fullText.toLowerCase().indexOf(kw.toLowerCase());
+        if (idx !== -1 && (bestCharIdx === -1 || idx < bestCharIdx)) {
+            bestCharIdx = idx;
+            bestKw = kw;
+        }
+    }
+
+    const words = fullText.split(/\s+/).filter(w => w.length > 0);
+
+    if (bestCharIdx === -1 || !bestKw) {
+        const snippet = words.slice(0, MAX_WORDS).join(' ');
+        return escapeHtml(snippet + (words.length > MAX_WORDS ? '…' : ''));
+    }
+
+    // Find which word index the keyword starts at
+    const kwWordStart = fullText.slice(0, bestCharIdx).split(/\s+/).filter(w => w.length > 0).length;
+
+    // Build a MAX_WORDS window centred on the keyword
+    let start = Math.max(0, kwWordStart - HALF);
+    let end = Math.min(words.length, start + MAX_WORDS);
+    // If we hit the end boundary, pull start back to fill the window
+    if (end - start < MAX_WORDS) {
+        start = Math.max(0, end - MAX_WORDS);
+    }
+
+    let snippet = words.slice(start, end).join(' ');
+    if (start > 0) snippet = '…' + snippet;
+    if (end < words.length) snippet += '…';
+
+    return boldKeywords(escapeHtml(snippet), [bestKw]);
 }
 
 function getKeywordsForTopics(topicNames) {
@@ -393,6 +478,7 @@ document.getElementById('exportBtn').addEventListener('click', () => {
 // Audit panel
 async function loadAudit(scanId) {
     const auditSection = document.getElementById('audit-section');
+    auditSection.style.display = '';
     try {
         const data = await API.get(`/api/scans/${scanId}/audit`);
         const summary = data.summary || {};
@@ -428,9 +514,12 @@ async function loadAudit(scanId) {
         let listHtml = '';
         for (const e of entries) {
             const isProcedural = e.classification === 'procedural_filter';
+            let keywords = [];
+            try { keywords = JSON.parse(e.matched_keywords || '[]'); } catch {}
+            const snippetHtml = auditSnippet(e.full_text || e.text_preview || '', keywords);
             listHtml += `<div class="audit-item">
                 <span class="audit-member">${escapeHtml(e.member_name)}</span>
-                <span class="audit-preview">${escapeHtml(e.text_preview || '')}</span>
+                <span class="audit-preview">${snippetHtml}</span>
                 <button class="audit-toggle-btn ps-btn ps-btn--sm not-relevant${isProcedural ? ' procedural' : ''}"
                         data-audit-id="${e.id}" data-scan-id="${scanId}"
                         data-state="not-relevant">Not relevant</button>

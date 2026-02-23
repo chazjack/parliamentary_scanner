@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign in — ParliScan</title>
+    <link rel="icon" type="image/svg+xml" href="/icon-no-bg (1).svg">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'DM Sans', sans-serif;
+            background: #09090b;
+            color: #e4e4e7;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .card {
+            width: 100%;
+            max-width: 360px;
+            padding: 2rem;
+            background: #0c0c0e;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 2rem;
+        }
+        .logo img {
+            width: 56px;
+            height: 56px;
+            filter: brightness(0) invert(1);
+        }
+        .logo span { font-size: 1.9rem; font-weight: 700; color: #e4e4e7; }
+
+        h1 { font-size: 1.15rem; font-weight: 600; margin-bottom: 0.25rem; }
+        .subtitle { font-size: 0.82rem; color: #71717a; margin-bottom: 1.5rem; }
+
+        label {
+            display: block;
+            font-size: 0.78rem;
+            font-weight: 500;
+            color: #a1a1aa;
+            margin-bottom: 0.35rem;
+        }
+
+        input {
+            width: 100%;
+            padding: 0.6rem 0.75rem;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 6px;
+            color: #e4e4e7;
+            font-family: inherit;
+            font-size: 0.875rem;
+            outline: none;
+            transition: border-color 0.15s, box-shadow 0.15s;
+            margin-bottom: 1rem;
+        }
+        input:focus {
+            border-color: rgba(99, 102, 241, 0.5);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+        }
+        input::placeholder { color: #52525b; }
+
+        button {
+            width: 100%;
+            padding: 0.65rem;
+            background: #6366f1;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.15s;
+            margin-top: 0.25rem;
+        }
+        button:hover:not(:disabled) { background: #818cf8; }
+        button:disabled { opacity: 0.55; cursor: default; }
+
+        .error {
+            background: rgba(239, 68, 68, 0.08);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            border-radius: 6px;
+            padding: 0.6rem 0.75rem;
+            font-size: 0.8rem;
+            color: #f87171;
+            margin-bottom: 1rem;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="logo">
+            <img src="/icon-no-bg (1).svg" alt="ParliScan logo">
+            <span>ParliScan</span>
+        </div>
+
+        <h1>Sign in</h1>
+        <p class="subtitle">Enter your credentials to continue.</p>
+
+        <div class="error" id="error"></div>
+
+        <form id="login-form">
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username" autocomplete="username" required autofocus>
+
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" autocomplete="current-password" required>
+
+            <button type="submit" id="submit-btn">Sign in</button>
+        </form>
+    </div>
+
+    <script>
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('submit-btn');
+            const errorEl = document.getElementById('error');
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+
+            btn.disabled = true;
+            btn.textContent = 'Signing in…';
+            errorEl.style.display = 'none';
+
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password }),
+                });
+
+                if (res.ok) {
+                    window.location.href = '/';
+                } else {
+                    const data = await res.json().catch(() => ({}));
+                    errorEl.textContent = data.detail || 'Invalid credentials.';
+                    errorEl.style.display = 'block';
+                    btn.disabled = false;
+                    btn.textContent = 'Sign in';
+                }
+            } catch {
+                errorEl.textContent = 'Connection error. Please try again.';
+                errorEl.style.display = 'block';
+                btn.disabled = false;
+                btn.textContent = 'Sign in';
+            }
+        });
+    </script>
+</body>
+</html>

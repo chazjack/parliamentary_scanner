@@ -171,6 +171,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     const validTabs = ['calendar', 'scanner', 'record', 'alerts', 'topics'];
     const pathTab = window.location.pathname.slice(1).split('/')[0];
     switchTab(validTabs.includes(pathTab) ? pathTab : 'calendar');
+
+    // Always show progress/summary section (remove any cached display:none)
+    const ps = document.getElementById('progress-section');
+    if (ps) ps.style.display = '';
+    const pl = document.getElementById('progressLabel');
+    if (pl && !pl.textContent.trim()) pl.textContent = 'No scan selected or currently active.';
+    // Override stale cached default text
+    if (pl && pl.textContent.trim() === 'Preparing scan...') {
+        pl.textContent = 'No scan selected or currently active.';
+    }
 });
 
 // Sidebar collapse toggle

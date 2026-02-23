@@ -46,24 +46,21 @@ async function startScan() {
 
     scanBtn.disabled = true;
     cancelBtn.style.display = '';
-    progressSection.style.display = '';
     progressLabel.textContent = 'Starting scan...';
     progressPanels.style.display = 'none';
     keywordProgressPanel.innerHTML = '';
     pipelineStatsRow.innerHTML = '';
     sourceCirclesRow.style.display = 'none';
     sourceCirclesRow.innerHTML = '';
-    document.getElementById('audit-section').style.display = 'none';
+    document.getElementById('auditSummary').innerHTML = '';
+    document.getElementById('auditList').innerHTML = '<p class="empty-state-preview">Scanning...</p>';
 
     // Reset stage indicator
     resetStageIndicator();
 
     // Make sure progress content is expanded
     const content = document.getElementById('progressContent');
-    const minBtn = document.getElementById('minimizeBtn');
     content.classList.remove('collapsed');
-    minBtn.classList.remove('collapsed');
-    minBtn.style.display = 'none';
 
     try {
         const res = await API.post('/api/scans', {
@@ -76,7 +73,6 @@ async function startScan() {
         state.currentScanId = res.scan_id;
         connectSSE(res.scan_id);
     } catch (err) {
-        progressSection.style.display = '';
         progressLabel.textContent = friendlyError(err.message);
         resetScanUI();
     }
@@ -93,6 +89,7 @@ function connectSSE(scanId) {
     // Show results section and start live-polling for results
     document.getElementById('results-section').style.display = '';
     _startLiveResults(scanId);
+    loadHistory();
 
     es.onmessage = (event) => {
         const data = JSON.parse(event.data);
@@ -166,6 +163,8 @@ function _startLiveResults(scanId) {
     _stopLiveResults();
     _liveResultsInterval = setInterval(() => {
         loadResults(scanId);
+        loadAudit(scanId);
+        loadHistory();
     }, 5000);
 }
 
@@ -199,9 +198,6 @@ async function onScanComplete(scanId, data, statsObj) {
         renderPipelineBoxes(statsObj);
         renderSourceCircles(statsObj);
     }
-
-    // Show minimize button (keep progress visible)
-    document.getElementById('minimizeBtn').style.display = '';
 
     resetScanUI();
     await loadResults(scanId);
@@ -269,15 +265,6 @@ function setStageCompleted(upToStage) {
             line.classList.add('completed');
         }
     });
-}
-
-/* ---- Minimize toggle ---- */
-
-function toggleProgressContent() {
-    const content = document.getElementById('progressContent');
-    const btn = document.getElementById('minimizeBtn');
-    content.classList.toggle('collapsed');
-    btn.classList.toggle('collapsed');
 }
 
 /* ---- Keyword Chips (full width panel) ---- */

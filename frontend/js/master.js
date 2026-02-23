@@ -3,6 +3,9 @@
 // Undo stack for master list deletions
 let masterUndoStack = [];
 
+// Cache of activities per master entry (masterId -> activities[])
+const masterActivitiesCache = new Map();
+
 async function loadMasterList() {
     // Legacy: reload master table if on Record tab
     loadMasterListTable();
@@ -24,6 +27,7 @@ async function loadMasterListTable() {
 
         if (emptyMsg) emptyMsg.style.display = 'none';
         tbody.innerHTML = '';
+        masterActivitiesCache.clear();
 
         for (const entry of entries) {
             const tr = document.createElement('tr');
@@ -45,34 +49,30 @@ async function loadMasterListTable() {
             }
 
             tr.dataset.masterTopics = Array.from(topicSet).join(' ').toLowerCase();
+            tr.dataset.masterId = entry.id;
 
             const topicPills = Array.from(topicSet)
                 .map(t => `<span class="ps-badge ps-badge--accent">${escapeHtml(t)}</span>`)
                 .join(' ');
 
+            masterActivitiesCache.set(entry.id, activities);
+
+            const actLabel = activities.length === 1 ? '1 activity' : `${activities.length} activities`;
+
             tr.innerHTML = `
-                <td><div class="ps-member"><span class="ps-party-dot ps-party-dot--${partyDotClass(entry.party)}"></span><span class="ps-member__name">${escapeHtml(entry.member_name)}</span></div></td>
+                <td><div class="ps-member"><span class="ps-member__name">${escapeHtml(entry.member_name)}</span></div></td>
                 <td>${partyPill(entry.party || '—')}</td>
                 <td>${typePill(entry.member_type || '—')}</td>
-                <td>${escapeHtml(entry.constituency || '—')}</td>
                 <td>${topicPills || '—'}</td>
-                <td>
-                    <select class="ps-select" data-master-id="${entry.id}" data-field="priority" onchange="updateMaster(${entry.id}, 'priority', this.value)">
-                        <option value="" ${!entry.priority ? 'selected' : ''}>—</option>
-                        <option value="High" ${entry.priority === 'High' ? 'selected' : ''}>High</option>
-                        <option value="Medium" ${entry.priority === 'Medium' ? 'selected' : ''}>Medium</option>
-                        <option value="Low" ${entry.priority === 'Low' ? 'selected' : ''}>Low</option>
-                    </select>
-                </td>
-                <td>
-                    <input class="ps-input" type="text" value="${escapeHtml(entry.notes || '')}"
-                           onblur="updateMaster(${entry.id}, 'notes', this.value)"
-                           placeholder="Add notes...">
-                </td>
-                <td>${activities.length}</td>
+                <td><button class="master-activities-toggle" data-master-id="${entry.id}" title="Show activities">${actLabel}</button></td>
                 <td>${formatDate(latestDate)}</td>
                 <td><button class="master-remove-btn" onclick="removeMasterAndRefresh(${entry.id})" title="Remove">&times;</button></td>
             `;
+
+            const toggleBtn = tr.querySelector('.master-activities-toggle');
+            if (toggleBtn) {
+                toggleBtn.addEventListener('click', () => toggleMasterActivities(toggleBtn));
+            }
 
             tbody.appendChild(tr);
         }
@@ -103,6 +103,65 @@ function filterMasterList() {
                       constituency.includes(query) || topics.includes(query);
         tr.style.display = match ? '' : 'none';
     });
+}
+
+function toggleMasterActivities(btn) {
+    const masterId = parseInt(btn.dataset.masterId);
+    const tr = btn.closest('tr');
+    const colCount = tr.cells.length;
+
+    const existing = tr.nextElementSibling;
+    if (existing && existing.classList.contains('master-activities-row')) {
+        existing.remove();
+        btn.classList.remove('active');
+        return;
+    }
+
+    btn.classList.add('active');
+
+    const activities = masterActivitiesCache.get(masterId) || [];
+    const subRow = document.createElement('tr');
+    subRow.className = 'master-activities-row';
+
+    let html = '<div class="master-act-list">';
+    if (activities.length === 0) {
+        html += '<span class="master-act-empty">No activities recorded.</span>';
+    } else {
+        for (const a of activities) {
+            const dateStr = formatDate(a.activity_date);
+            const src = SOURCE_COLOURS[a.source_type];
+            const label = src ? src.label : (a.source_type || '');
+            const badgeHtml = src
+                ? `<span class="ps-badge" style="background:${src.bg};color:${src.color};border-color:${src.color}55">${escapeHtml(label)}</span>`
+                : `<span class="ps-badge ps-badge--muted">${escapeHtml(label)}</span>`;
+
+            const colonIdx = a.forum ? a.forum.indexOf(': ') : -1;
+            const forumDetail = colonIdx >= 0 ? a.forum.slice(colonIdx + 2) : (a.forum || '');
+
+            const summary = a.summary || '';
+            const summaryTrimmed = summary.length > 120 ? summary.slice(0, 120) + '…' : summary;
+            const linkHtml = a.source_url
+                ? `<a href="${escapeHtml(a.source_url)}" target="_blank" class="master-act-link">View ↗</a>`
+                : '';
+
+            html += `
+                <div class="master-act-item">
+                    <div class="master-act-meta">
+                        ${badgeHtml}
+                        <span class="master-act-date">${dateStr}</span>
+                        ${forumDetail ? `<span class="master-act-forum">${escapeHtml(forumDetail)}</span>` : ''}
+                    </div>
+                    <div class="master-act-body">
+                        ${summaryTrimmed ? `<span class="master-act-summary">${escapeHtml(summaryTrimmed)}</span>` : ''}
+                        ${linkHtml}
+                    </div>
+                </div>`;
+        }
+    }
+    html += '</div>';
+
+    subRow.innerHTML = `<td colspan="${colCount}">${html}</td>`;
+    tr.after(subRow);
 }
 
 async function updateMaster(masterId, field, value) {

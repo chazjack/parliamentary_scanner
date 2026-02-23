@@ -942,6 +942,12 @@ u    padding: 0;
 }
 
 /* Progress */
+#progress-section h2 {
+    font-size: 1.1rem;
+    color: #fff;
+    margin-bottom: 10px;
+}
+
 #progress-section {
     background: var(--card-bg);
     padding: 16px 20px;
@@ -1774,6 +1780,122 @@ u    padding: 0;
 
 .master-remove-btn:hover {
     color: var(--accent);
+}
+
+/* Activities toggle button in master table */
+.master-activities-toggle {
+    background: none;
+    border: 1px solid var(--ps-border-strong);
+    border-radius: 20px;
+    color: var(--ps-text-secondary);
+    font-size: 0.78rem;
+    font-weight: 500;
+    padding: 2px 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+    font-family: inherit;
+}
+
+.master-activities-toggle:hover {
+    border-color: var(--ps-accent-border);
+    color: var(--ps-accent);
+    background: var(--ps-accent-soft);
+}
+
+.master-activities-toggle.active {
+    border-color: var(--ps-accent-border);
+    color: var(--ps-accent);
+    background: var(--ps-accent-soft);
+}
+
+/* Expanded activity sub-row */
+.master-activities-row td {
+    padding: 0 8px 12px 8px;
+    border-bottom: 1px solid var(--border);
+}
+
+.master-act-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 12px;
+    background: var(--ps-bg-subtle);
+    border-radius: var(--radius);
+    border-left: 2px solid var(--ps-accent-border);
+}
+
+.master-act-item {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    font-size: 0.8rem;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--ps-border-default);
+}
+
+.master-act-item:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+.master-act-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    min-width: 220px;
+}
+
+.master-act-date {
+    font-weight: 600;
+    color: var(--ps-text-primary);
+    font-size: 0.78rem;
+    white-space: nowrap;
+}
+
+.master-act-forum {
+    color: var(--ps-text-muted);
+    font-size: 0.78rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 140px;
+}
+
+.master-act-body {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+}
+
+.master-act-summary {
+    color: var(--ps-text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+}
+
+.master-act-link {
+    color: var(--ps-accent);
+    text-decoration: none;
+    font-size: 0.75rem;
+    font-weight: 500;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.master-act-link:hover {
+    text-decoration: underline;
+}
+
+.master-act-empty {
+    color: var(--ps-text-muted);
+    font-style: italic;
+    font-size: 0.8rem;
 }
 
 /* Empty state */

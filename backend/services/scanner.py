@@ -106,9 +106,6 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
         for t in all_topics
         if t["id"] in topic_ids
     }
-    # All topics dict for cross-topic classification
-    all_topics_dict = {t["name"]: t["keywords"] for t in all_topics}
-
     if not selected_topics:
         await update_scan_progress(
             db, scan_id, status="error", error_message="No topics selected"
@@ -148,11 +145,10 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
     # Pipeline queue: search → classification
     classify_queue: asyncio.Queue[Contribution | None] = asyncio.Queue()
 
-    # Classifier setup (sees ALL topics for cross-topic detection)
-    classifier = TopicClassifier(all_topics_dict)
+    # Classifier setup (sees only selected topics)
+    classifier = TopicClassifier(selected_topics)
     classify_sem = asyncio.Semaphore(10)
     total_relevant = 0
-    not_relevant_audit: list[tuple] = []
     classified_count = 0
     search_done = False
 
@@ -186,6 +182,7 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
             )
 
             # Incremental dedup + pre-filter under lock, then enqueue
+            new_procedural: list[Contribution] = []
             async with progress_lock:
                 completed_keywords += 1
                 total_api_results += len(results)
@@ -211,6 +208,7 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
                         seen[key] = c
                         if is_procedural(c.text, c.source_type):
                             procedural_items.append(c)
+                            new_procedural.append(c)
                             stats["removed_by_prefilter"] = len(procedural_items)
                         else:
                             queued_for_classify += 1
@@ -221,6 +219,16 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
                 stats["unique_after_dedup"] = len(seen)
                 progress = (completed_keywords / total_keywords) * 60
                 await _update_with_stats(min(progress, 59))
+
+            # Insert procedural audit entries immediately (outside lock)
+            if new_procedural:
+                audit_rows = [
+                    (scan_id, c.member_name, c.source_type, c.text[:200],
+                     "procedural_filter", c.date.strftime("%Y-%m-%d") if c.date else "",
+                     c.context or "", c.text[:2000], json.dumps(c.matched_keywords))
+                    for c in new_procedural
+                ]
+                await insert_audit_log_batch(db, audit_rows)
 
     async def _run_all_searches():
         nonlocal search_done
@@ -269,6 +277,7 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
                     raw_text=contribution.text[:2000],
                 )
 
+            audit_row = None
             async with progress_lock:
                 classified_count += 1
 
@@ -282,12 +291,13 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
                 else:
                     stats["classified_discarded"] += 1
                     stats["classifier_api_errors"] = classifier.api_errors
-                    not_relevant_audit.append((
+                    audit_row = (
                         scan_id, contribution.member_name, contribution.source_type,
                         contribution.text[:200], "not_relevant",
                         contribution.date.strftime("%Y-%m-%d") if contribution.date else "",
                         contribution.context or "", contribution.text[:2000],
-                    ))
+                        json.dumps(contribution.matched_keywords),
+                    )
 
                 # Update progress periodically
                 if classified_count % 2 == 0 or classified_count <= 5:
@@ -305,6 +315,10 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
                         min(progress, 95),
                         total_relevant=total_relevant,
                     )
+
+            # Insert not-relevant audit entry immediately (outside lock)
+            if audit_row:
+                await insert_audit_log_batch(db, [audit_row])
 
     async def _classification_consumer():
         pending: set[asyncio.Task] = set()
@@ -336,20 +350,6 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
     logger.info("Scan %d: %d API results -> %d unique", scan_id, total_api_results, len(seen))
     logger.info("Scan %d: %d after pre-filter (removed %d procedural)",
                 scan_id, queued_for_classify, len(procedural_items))
-
-    # Batch insert procedural audit entries
-    if procedural_items:
-        audit_rows = [
-            (scan_id, c.member_name, c.source_type, c.text[:200],
-             "procedural_filter", c.date.strftime("%Y-%m-%d") if c.date else "",
-             c.context or "", c.text[:2000])
-            for c in procedural_items
-        ]
-        await insert_audit_log_batch(db, audit_rows)
-
-    # Batch insert not-relevant audit entries
-    if not_relevant_audit:
-        await insert_audit_log_batch(db, not_relevant_audit)
 
     if cancel_event.is_set():
         await update_scan_progress(db, scan_id, status="cancelled")
