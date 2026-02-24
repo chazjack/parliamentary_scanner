@@ -32,14 +32,17 @@ def _base_template(title: str, body: str, alert_name: str = "", date_range: str 
         if date_range else ""
     )
     return f"""<!DOCTYPE html>
-<html>
+<html lang="en" style="background:#09090b;">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="only dark">
+<meta name="supported-color-schemes" content="only dark">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  body {{ font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; padding: 0; background: #09090b; color: #a1a1aa; }}
-  .container {{ max-width: 680px; margin: 0 auto; background: #0c0c0e; }}
+  :root {{ color-scheme: only dark; }}
+  body {{ font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; padding: 0; background: #09090b !important; color: #a1a1aa !important; }}
+  .container {{ max-width: 680px; margin: 0 auto; background: #0c0c0e !important; }}
   .header {{ padding: 24px 32px; border-bottom: 1px solid #1c1c1f; }}
   .logo-title {{ font-size: 28px; font-weight: 700; color: #e4e4e7; letter-spacing: -0.02em; }}
   .header-meta {{ margin-top: 16px; }}
@@ -76,8 +79,8 @@ def _base_template(title: str, body: str, alert_name: str = "", date_range: str 
   .divider {{ border: none; border-top: 1px solid #18181b; margin: 20px 0; }}
 </style>
 </head>
-<body>
-<div class="container">
+<body style="background:#09090b !important;color:#a1a1aa !important;margin:0;padding:0;">
+<div class="container" style="max-width:680px;margin:0 auto;background:#0c0c0e !important;">
   <div class="header">
     <div style="display:flex;align-items:center;justify-content:space-between;">
       <div style="display:flex;align-items:center;gap:14px;">
