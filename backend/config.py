@@ -32,6 +32,15 @@ REQUEST_DELAY = 0.2  # seconds between Parliament API calls
 CLASSIFIER_DELAY = 0.1  # seconds between Anthropic API calls
 KEYWORD_PARALLELISM = int(os.getenv("KEYWORD_PARALLELISM", "12"))  # max concurrent keyword searches
 
+# Classifier concurrency — set based on your Anthropic API tier:
+#   Tier 1 (50 RPM):   5  — safe ceiling before burst triggers 429s
+#   Tier 2 (1000 RPM): 10 — comfortably within limits
+#   Tier 3+ (2000+ RPM): 15+
+CLASSIFIER_CONCURRENCY = int(os.getenv("CLASSIFIER_CONCURRENCY", "5"))
+
+# Stagger between starting new classifier calls (seconds) — smooths burst traffic
+CLASSIFIER_STAGGER = float(os.getenv("CLASSIFIER_STAGGER", "0.3"))
+
 # Email (Resend)
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 RESEND_FROM_EMAIL = os.getenv("RESEND_FROM_EMAIL", "Parliscan <alerts@updates.example.com>")

@@ -63,8 +63,13 @@ async def startup():
 
     # Wire up the scan runner so the scans router can launch scans
     try:
-        from backend.services.scanner import run_scan
+        from backend.services.scanner import run_scan, register_scan_complete_callback, MAX_CONCURRENT_SCANS
+        from backend.routers.scans import promote_queued_scan
         scans.register_scan_runner(run_scan)
+        register_scan_complete_callback(promote_queued_scan)
+        # Re-start any scans that were queued before server restart
+        for _ in range(MAX_CONCURRENT_SCANS):
+            await promote_queued_scan()
     except Exception as e:
         logger.error(f"Failed to import scanner: {e}")
         # Server will start but scans won't work

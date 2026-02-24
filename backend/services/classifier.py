@@ -16,6 +16,11 @@ from backend.services.parliament import Contribution
 
 logger = logging.getLogger(__name__)
 
+
+class ClassifierAPIError(Exception):
+    """Raised when the Anthropic API fails persistently — item should be retried later."""
+
+
 # Procedural patterns to pre-filter before sending to LLM
 PROCEDURAL_PATTERNS = [
     r"^(the|this) (question|bill|motion) (is|was) (put|agreed|negatived|read)",
@@ -50,6 +55,7 @@ Classify each contribution and respond ONLY with valid JSON (no markdown, \
 no code fences):
 {{
   "is_relevant": true or false,
+  "discard_reason": "Brief explanation if not relevant, null if relevant.",
   "confidence": "High" or "Medium" or "Low",
   "topics": ["topic1", "topic2"],
   "summary": "One sentence summarising the MP's position or action. Use surname only (e.g. 'Sunak' not 'Rishi Sunak').",
@@ -68,7 +74,11 @@ explicit.
 - The summary must capture the MP's POSITION or VIEW, not just that they mentioned the topic.
 - The verbatim_quote must be copied exactly from the provided text — do not paraphrase.
 - For actions (EDM signatures, bill sponsorship, votes), describe the action in verbatim_quote.
-- If not relevant, set is_relevant to false and other fields to null.\
+- If not relevant, set is_relevant to false and other fields to null.
+- If not relevant, set discard_reason to a brief explanation (e.g. \
+"Procedural mention only", "Generic keyword mention without substantive \
+position", "Topic referenced but no clear stance or interest expressed"). \
+If relevant, set discard_reason to null.\
 """
 
 SOURCE_TYPE_LABELS = {
@@ -123,9 +133,10 @@ class TopicClassifier:
             topics_with_keywords=topics_str
         )
 
-    async def classify(self, contribution: Contribution) -> dict | None:
-        """Classify a single contribution. Returns dict if relevant, None otherwise.
+    async def classify(self, contribution: Contribution) -> tuple[dict | None, str | None]:
+        """Classify a single contribution.
 
+        Returns (dict, None) if relevant, or (None, reason) if discarded.
         Uses prompt caching on the system prompt for cost efficiency.
         """
         text = truncate_text(contribution.text)
@@ -166,7 +177,8 @@ class TopicClassifier:
                 parsed = json.loads(result_text)
 
                 if not parsed.get("is_relevant"):
-                    return None
+                    reason = parsed.get("discard_reason") or "Not relevant"
+                    return None, reason
 
                 return {
                     "confidence": parsed.get("confidence", "Medium"),
@@ -174,7 +186,7 @@ class TopicClassifier:
                     "summary": parsed.get("summary", ""),
                     "position_signal": parsed.get("position_signal", ""),
                     "verbatim_quote": parsed.get("verbatim_quote", ""),
-                }
+                }, None
 
             except json.JSONDecodeError:
                 logger.warning(
@@ -185,7 +197,7 @@ class TopicClassifier:
                     await asyncio.sleep(1)
                     continue
                 self.api_errors += 1
-                return None
+                return None, "Invalid JSON response from classifier"
 
             except anthropic.RateLimitError:
                 wait = 2 ** (attempt + 2)
@@ -199,7 +211,7 @@ class TopicClassifier:
                     await asyncio.sleep(2 ** attempt)
                     continue
                 self.api_errors += 1
-                return None
+                raise ClassifierAPIError("Classifier API timeout")
 
             except anthropic.APIError as e:
                 logger.error("Anthropic API error for %s: %s", contribution.id, e)
@@ -207,7 +219,7 @@ class TopicClassifier:
                     await asyncio.sleep(2 ** attempt)
                     continue
                 self.api_errors += 1
-                return None
+                raise ClassifierAPIError(f"API error: {e}")
 
         self.api_errors += 1
-        return None
+        raise ClassifierAPIError("Rate limited — all retries exhausted")

@@ -13,7 +13,7 @@ let historyPage = 1;
 const HISTORY_PER_PAGE = 5;
 
 let resultsPage = 1;
-const RESULTS_PER_PAGE = 20;
+const RESULTS_PER_PAGE = 10;
 let currentDisplayResults = [];
 
 // Party colour map — { color: bright text/border, bg: soft fill }
@@ -458,7 +458,7 @@ function forumCell(sourceType, forum, dateStr) {
     const detail = colonIdx >= 0 ? forum.slice(colonIdx + 2) : '';
     const detailHtml = detail ? `<br><span class="ps-forum-detail">${escapeHtml(detail)}</span>` : '';
 
-    const dateHtml = dateStr ? `<br><small><strong>${dateStr}</strong></small>` : '';
+    const dateHtml = dateStr ? `<small class="ps-forum-date"><strong>${dateStr}</strong></small>` : '';
     return badgeHtml + detailHtml + dateHtml;
 }
 
@@ -577,7 +577,12 @@ async function loadAudit(scanId) {
         summaryDiv.innerHTML = summaryHtml;
 
         // Render entries
-        let listHtml = '';
+        let listHtml = `<div class="audit-header">
+            <span>Name</span>
+            <span>Contribution</span>
+            <span>Reason discarded</span>
+            <span>Action</span>
+        </div>`;
         for (const e of entries) {
             const isProcedural = e.classification === 'procedural_filter';
             let keywords = [];
@@ -586,20 +591,22 @@ async function loadAudit(scanId) {
             const previewContent = e.source_url
                 ? `<a href="${escapeHtml(e.source_url)}" target="_blank" rel="noopener" class="audit-preview-link">${snippetHtml}</a>`
                 : snippetHtml;
+            const reasonHtml = e.discard_reason
+                ? `<span class="audit-reason">${escapeHtml(e.discard_reason)}</span>`
+                : (isProcedural ? `<span class="audit-reason audit-reason--procedural">Procedural filter</span>` : `<span class="audit-reason audit-reason--muted">—</span>`);
             listHtml += `<div class="audit-item">
                 <span class="audit-member">${escapeHtml(e.member_name)}</span>
                 <span class="audit-preview">${previewContent}</span>
-                <button class="audit-toggle-btn ps-btn ps-btn--sm not-relevant${isProcedural ? ' procedural' : ''}"
-                        data-audit-id="${e.id}" data-scan-id="${scanId}"
-                        data-state="not-relevant">Not relevant</button>
+                ${reasonHtml}
+                <div class="audit-actions-dropdown" id="audit-actions-${e.id}">
+                    <button class="ps-btn ps-btn--ghost ps-btn--sm audit-actions-trigger" onclick="toggleAuditMenu(event, ${e.id})" title="Actions">&#8942;</button>
+                    <div class="audit-actions-menu" id="audit-menu-${e.id}" style="display:none;">
+                        <button onclick="reclassifyAuditItem(${e.id}, ${scanId}); closeAuditMenu(${e.id})">Add to results</button>
+                    </div>
+                </div>
             </div>`;
         }
         listDiv.innerHTML = listHtml;
-
-        // Wire up toggle buttons
-        listDiv.querySelectorAll('.audit-toggle-btn').forEach(btn => {
-            setupAuditToggle(btn);
-        });
     } catch (err) {
         // Audit not available for older scans — show empty state
         const listDiv = document.getElementById('auditList');
@@ -617,80 +624,51 @@ document.getElementById('auditToggle').addEventListener('click', () => {
     icon.classList.toggle('collapsed');
 });
 
-// Setup audit toggle button interactions
-function setupAuditToggle(btn) {
-    btn.addEventListener('mouseenter', () => {
-        const state = btn.dataset.state;
-        if (state === 'not-relevant' && !btn.disabled) {
-            btn.textContent = 'Relevant';
-            btn.classList.add('hover-relevant');
-        } else if (state === 'relevant' && !btn.disabled) {
-            btn.textContent = 'Not relevant';
-            btn.classList.add('hover-not-relevant');
-        }
+// Audit item three-dot menu
+function toggleAuditMenu(e, auditId) {
+    e.stopPropagation();
+    document.querySelectorAll('.audit-actions-menu').forEach(m => {
+        if (m.id !== `audit-menu-${auditId}`) m.style.display = 'none';
     });
-
-    btn.addEventListener('mouseleave', () => {
-        const state = btn.dataset.state;
-        btn.classList.remove('hover-relevant', 'hover-not-relevant');
-        if (state === 'not-relevant') {
-            btn.textContent = 'Not relevant';
-        } else if (state === 'relevant') {
-            btn.textContent = 'Relevant';
-        }
-    });
-
-    btn.addEventListener('click', () => {
-        const state = btn.dataset.state;
-        if (state === 'not-relevant') {
-            reclassifyAuditItem(btn);
-        }
-        // Clicking when relevant does nothing (one-way toggle)
-    });
+    const menu = document.getElementById(`audit-menu-${auditId}`);
+    if (!menu) return;
+    const isHidden = menu.style.display === 'none' || menu.style.display === '';
+    if (isHidden) {
+        const rect = e.currentTarget.getBoundingClientRect();
+        menu.style.display = 'block';
+        const menuW = menu.offsetWidth;
+        const left = Math.max(8, rect.right - menuW);
+        menu.style.top = (rect.bottom + 4) + 'px';
+        menu.style.left = left + 'px';
+    } else {
+        menu.style.display = 'none';
+    }
 }
 
+function closeAuditMenu(auditId) {
+    const menu = document.getElementById(`audit-menu-${auditId}`);
+    if (menu) menu.style.display = 'none';
+}
+
+document.addEventListener('click', () => {
+    document.querySelectorAll('.audit-actions-menu').forEach(m => m.style.display = 'none');
+});
+
 // Reclassify a discarded audit item
-async function reclassifyAuditItem(btn) {
-    const auditId = parseInt(btn.dataset.auditId);
-    const scanId = parseInt(btn.dataset.scanId);
-
-    btn.disabled = true;
-    btn.textContent = '...';
-    btn.classList.remove('hover-relevant', 'hover-not-relevant');
-    btn.classList.add('processing');
-    btn.classList.remove('not-relevant');
-
+async function reclassifyAuditItem(auditId, scanId) {
     try {
         const result = await API.post('/api/audit/reclassify', {
             audit_id: auditId,
             scan_id: scanId,
         });
 
-        btn.classList.remove('processing');
-
         if (result.added) {
-            btn.textContent = 'Relevant';
-            btn.dataset.state = 'relevant';
-            btn.classList.add('relevant');
-            btn.disabled = false;
             // Reload results to show the new entry
             await loadResults(scanId);
-        } else {
-            // Classifier still says not relevant — flash and revert
-            btn.textContent = 'Not relevant';
-            btn.dataset.state = 'not-relevant';
-            btn.classList.add('not-relevant');
-            btn.disabled = false;
-            btn.classList.add('flash-reject');
-            setTimeout(() => btn.classList.remove('flash-reject'), 600);
+            await loadAudit(scanId);
         }
     } catch (err) {
         console.error('Reclassify failed:', err);
-        btn.textContent = 'Not relevant';
-        btn.dataset.state = 'not-relevant';
-        btn.classList.remove('processing');
-        btn.classList.add('not-relevant');
-        btn.disabled = false;
     }
 }
 

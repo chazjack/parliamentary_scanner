@@ -6,8 +6,9 @@ import json
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-from backend.database import get_db, get_scan, get_scan_list, create_scan
+from backend.database import get_db, get_scan, get_scan_list, create_scan, update_scan_progress
 from backend.models import ScanCreate
+from backend.services.scanner import get_active_scan_count, MAX_CONCURRENT_SCANS
 
 router = APIRouter(prefix="/api/scans", tags=["scans"])
 
@@ -47,16 +48,6 @@ def register_scan_runner(fn):
 
 @router.post("", status_code=201)
 async def start_scan(body: ScanCreate):
-    # Check if a scheduled scan is running
-    try:
-        from backend.services.scheduler import get_scan_lock
-        scan_lock = get_scan_lock()
-        if scan_lock.locked():
-            from fastapi import HTTPException as _HTTPException
-            raise _HTTPException(409, "A scheduled scan is currently running. Please try again shortly.")
-    except ImportError:
-        pass
-
     db = await get_db()
     try:
         scan_id = await create_scan(
@@ -64,28 +55,54 @@ async def start_scan(body: ScanCreate):
             target_member_ids=body.target_member_ids,
             target_member_names=body.target_member_names,
         )
+        if get_active_scan_count() >= MAX_CONCURRENT_SCANS:
+            await update_scan_progress(db, scan_id, status="queued")
     finally:
         await db.close()
 
     cancel_event = asyncio.Event()
     active_scan_events[scan_id] = cancel_event
 
-    if _run_scan_fn:
+    if get_active_scan_count() < MAX_CONCURRENT_SCANS and _run_scan_fn:
         asyncio.create_task(_run_scan_fn(scan_id, cancel_event))
 
     return {"scan_id": scan_id}
 
 
+async def promote_queued_scan():
+    """Start the oldest queued scan if capacity is available. Called when a scan completes."""
+    if get_active_scan_count() >= MAX_CONCURRENT_SCANS:
+        return
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT id FROM scans WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1"
+        )
+        row = await cursor.fetchone()
+    finally:
+        await db.close()
+    if not row:
+        return
+    scan_id = row[0]
+    cancel_event = active_scan_events.get(scan_id) or asyncio.Event()
+    active_scan_events[scan_id] = cancel_event
+    if _run_scan_fn:
+        asyncio.create_task(_run_scan_fn(scan_id, cancel_event))
+
+
 @router.post("/{scan_id}/cancel")
 async def cancel_scan(scan_id: int):
     event = active_scan_events.get(scan_id)
-    if not event:
-        raise HTTPException(404, "No active scan with that ID")
-    event.set()
-    # Immediately update DB so SSE picks up cancelled status on next poll
-    from backend.database import update_scan_progress
     db = await get_db()
     try:
+        scan = await get_scan(db, scan_id)
+        if not scan:
+            raise HTTPException(404, "Scan not found")
+        if scan["status"] not in ("running", "queued"):
+            raise HTTPException(400, "Scan is not running")
+        if event:
+            event.set()
+            active_scan_events.pop(scan_id, None)
         await update_scan_progress(db, scan_id, status="cancelled")
     finally:
         await db.close()

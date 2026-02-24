@@ -6,6 +6,13 @@ function setSummaryBadge(status) {
     if (!status) { badge.className = ''; badge.textContent = ''; return; }
     badge.className = `history-status ${status}`;
     badge.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+    const killBtn = document.getElementById('summaryCancelBtn');
+    if (killBtn) {
+        const isActive = status === 'running' || status === 'queued';
+        killBtn.style.display = isActive ? '' : 'none';
+        killBtn.disabled = false;
+        killBtn.textContent = 'Cancel Scan';
+    }
 }
 
 const scanBtn = document.getElementById('scanBtn');
@@ -22,6 +29,7 @@ let _liveResultsInterval = null;
 
 scanBtn.addEventListener('click', startScan);
 cancelBtn.addEventListener('click', cancelScan);
+document.getElementById('summaryCancelBtn').addEventListener('click', cancelScan);
 
 async function startScan() {
     const startDate = document.getElementById('startDate').value;
@@ -137,6 +145,12 @@ function connectSSE(scanId) {
             return;
         }
 
+        if (data.status === 'queued') {
+            progressLabel.textContent = 'Queued — waiting for another scan to complete...';
+            setSummaryBadge('queued');
+            return;
+        }
+
         // Try to parse current_phase as JSON (detailed stats)
         let phaseText = data.current_phase || `${data.status}... ${Math.round(data.progress)}%`;
         let statsObj = null;
@@ -215,11 +229,16 @@ function _stopLiveResults() {
 
 async function cancelScan() {
     if (!state.currentScanId) return;
+    const killBtn = document.getElementById('summaryCancelBtn');
+    if (killBtn) { killBtn.disabled = true; killBtn.textContent = 'Cancelling…'; }
     try {
         await API.post(`/api/scans/${state.currentScanId}/cancel`);
         progressLabel.textContent = 'Cancelling...';
+        setSummaryBadge('cancelled');
+        loadHistory();
     } catch (err) {
         console.error('Cancel failed:', err);
+        if (killBtn) { killBtn.disabled = false; killBtn.textContent = 'Cancel Scan'; }
     }
 }
 

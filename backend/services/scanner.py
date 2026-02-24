@@ -16,11 +16,25 @@ from backend.database import (
     insert_result,
     insert_audit_log_batch,
 )
-from backend.config import KEYWORD_PARALLELISM
+from backend.config import KEYWORD_PARALLELISM, CLASSIFIER_CONCURRENCY, CLASSIFIER_STAGGER
 from backend.services.parliament import ParliamentAPIClient, Contribution
-from backend.services.classifier import TopicClassifier, is_procedural
+from backend.services.classifier import TopicClassifier, ClassifierAPIError, is_procedural
 
 logger = logging.getLogger(__name__)
+
+# ---- Concurrent scan limit ----
+_active_scans: int = 0
+MAX_CONCURRENT_SCANS: int = 2
+_on_scan_complete_cb = None
+
+
+def get_active_scan_count() -> int:
+    return _active_scans
+
+
+def register_scan_complete_callback(fn) -> None:
+    global _on_scan_complete_cb
+    _on_scan_complete_cb = fn
 
 
 def _dedup_contributions(contributions: list[Contribution]) -> list[Contribution]:
@@ -53,6 +67,8 @@ def _forum_label(contribution: Contribution) -> str:
 
 async def run_scan(scan_id: int, cancel_event: asyncio.Event):
     """Execute a full scan pipeline. Updates progress in DB throughout."""
+    global _active_scans
+    _active_scans += 1
     db = await get_db()
     try:
         await _run_scan_inner(scan_id, cancel_event, db)
@@ -62,7 +78,10 @@ async def run_scan(scan_id: int, cancel_event: asyncio.Event):
             db, scan_id, status="error", error_message=str(e)
         )
     finally:
+        _active_scans -= 1
         await db.close()
+        if _on_scan_complete_cb:
+            asyncio.create_task(_on_scan_complete_cb())
 
 
 async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
@@ -184,10 +203,11 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
 
     # Classifier setup (sees only selected topics)
     classifier = TopicClassifier(selected_topics)
-    classify_sem = asyncio.Semaphore(10)
+    classify_sem = asyncio.Semaphore(CLASSIFIER_CONCURRENCY)
     total_relevant = 0
     classified_count = 0
     search_done = False
+    api_failed: list[Contribution] = []  # items to retry after pipeline
 
     # ---- Producer: keyword search with incremental dedup + pre-filter ----
 
@@ -266,7 +286,7 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
                 audit_rows = [
                     (scan_id, c.member_name, c.source_type, c.text[:200],
                      "procedural_filter", c.date.strftime("%Y-%m-%d") if c.date else "",
-                     c.context or "", c.text[:2000], json.dumps(c.matched_keywords))
+                     c.context or "", c.text[:2000], json.dumps(c.matched_keywords), c.url, None)
                     for c in new_procedural
                 ]
                 await insert_audit_log_batch(db, audit_rows)
@@ -286,7 +306,15 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
         async with classify_sem:
             if cancel_event.is_set():
                 return
-            classification = await classifier.classify(contribution)
+            if CLASSIFIER_STAGGER > 0:
+                await asyncio.sleep(CLASSIFIER_STAGGER)
+            try:
+                classification, discard_reason = await classifier.classify(contribution)
+            except ClassifierAPIError:
+                async with progress_lock:
+                    api_failed.append(contribution)
+                    stats["classifier_api_errors"] = classifier.api_errors
+                return
 
             if classification:
                 # Enrich with member info and store immediately
@@ -339,6 +367,7 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
                         contribution.context or "", contribution.text[:2000],
                         json.dumps(contribution.matched_keywords),
                         contribution.url,
+                        discard_reason,
                     )
 
                 # Update progress periodically
@@ -397,10 +426,94 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
         await update_scan_progress(db, scan_id, status="cancelled")
         return
 
+    # ---- Retry any items that failed due to API errors ----
+    if api_failed:
+        retry_wait = 30
+        max_retry_rounds = 4
+        logger.warning(
+            "Scan %d: %d items failed due to API errors — retrying (up to %d rounds)",
+            scan_id, len(api_failed), max_retry_rounds,
+        )
+        for retry_round in range(max_retry_rounds):
+            if cancel_event.is_set():
+                break
+            stats["phase"] = (
+                f"Retrying {len(api_failed)} rate-limited items "
+                f"(round {retry_round + 1}/{max_retry_rounds})..."
+            )
+            await _update_with_stats(97, total_relevant=total_relevant)
+            await asyncio.sleep(retry_wait)
+            retry_wait = min(retry_wait * 2, 300)
+
+            still_failed = []
+            for c in api_failed:
+                if cancel_event.is_set():
+                    still_failed.extend(api_failed)
+                    break
+                try:
+                    classification, discard_reason = await classifier.classify(c)
+                    if classification:
+                        member_info = {"name": "", "party": "", "member_type": "", "constituency": ""}
+                        if c.member_id:
+                            member_info = await client.lookup_member(c.member_id)
+                        await insert_result(
+                            db, scan_id,
+                            dedup_key=f"{c.source_type}:{c.id}",
+                            member_name=c.member_name,
+                            member_id=c.member_id,
+                            party=member_info.get("party", ""),
+                            member_type=member_info.get("member_type", ""),
+                            constituency=member_info.get("constituency", ""),
+                            topics=json.dumps(classification["topics"]),
+                            summary=classification["summary"],
+                            activity_date=c.date.strftime("%Y-%m-%d"),
+                            forum=_forum_label(c),
+                            verbatim_quote=classification.get("verbatim_quote", ""),
+                            source_url=c.url,
+                            confidence=classification["confidence"],
+                            position_signal=classification.get("position_signal", ""),
+                            source_type=c.source_type,
+                            raw_text=c.text[:2000],
+                        )
+                        total_relevant += 1
+                    else:
+                        await insert_audit_log_batch(db, [(
+                            scan_id, c.member_name, c.source_type, c.text[:200], "not_relevant",
+                            c.date.strftime("%Y-%m-%d") if c.date else "",
+                            c.context or "", c.text[:2000],
+                            json.dumps(c.matched_keywords), c.url, discard_reason,
+                        )])
+                except ClassifierAPIError:
+                    still_failed.append(c)
+
+            logger.info(
+                "Scan %d retry round %d: %d succeeded, %d still failing",
+                scan_id, retry_round + 1,
+                len(api_failed) - len(still_failed), len(still_failed),
+            )
+            api_failed = still_failed
+            if not api_failed:
+                break
+
+        # Write any permanently failed items to audit
+        if api_failed:
+            logger.error(
+                "Scan %d: %d items permanently failed after all retries",
+                scan_id, len(api_failed),
+            )
+            await insert_audit_log_batch(db, [
+                (scan_id, c.member_name, c.source_type, c.text[:200], "not_relevant",
+                 c.date.strftime("%Y-%m-%d") if c.date else "",
+                 c.context or "", c.text[:2000],
+                 json.dumps(c.matched_keywords), c.url,
+                 "Rate limited — classification failed after all retries")
+                for c in api_failed
+            ])
+
     logger.info("Scan %d: %d/%d classified as relevant",
                 scan_id, total_relevant, queued_for_classify)
     if classifier.api_errors:
-        logger.error("Scan %d: %d classifier API errors — check ANTHROPIC_API_KEY and model name",
+        logger.warning("Scan %d: %d classifier API errors (some may have been recovered via retry)",
                      scan_id, classifier.api_errors)
 
     # Mark complete (results already stored inline during classification)
@@ -481,7 +594,7 @@ async def _run_member_topic_scan(
         audit_rows = [
             (scan_id, c.member_name, c.source_type, c.text[:200],
              "procedural_filter", c.date.strftime("%Y-%m-%d") if c.date else "",
-             c.context or "", c.text[:2000], json.dumps(c.matched_keywords), c.url)
+             c.context or "", c.text[:2000], json.dumps(c.matched_keywords), c.url, None)
             for c in procedural_items
         ]
         await insert_audit_log_batch(db, audit_rows)
@@ -498,12 +611,18 @@ async def _run_member_topic_scan(
     classifier = TopicClassifier(selected_topics)
     total_relevant = 0
     classified_count = 0
+    api_failed: list[Contribution] = []
 
     for c in to_classify:
         if cancel_event.is_set():
             break
 
-        classification = await classifier.classify(c)
+        try:
+            classification, discard_reason = await classifier.classify(c)
+        except ClassifierAPIError:
+            api_failed.append(c)
+            continue
+
         classified_count += 1
 
         if classification:
@@ -533,6 +652,7 @@ async def _run_member_topic_scan(
                 scan_id, c.member_name, c.source_type, c.text[:200], "not_relevant",
                 c.date.strftime("%Y-%m-%d") if c.date else "",
                 c.context or "", c.text[:2000], json.dumps(c.matched_keywords), c.url,
+                discard_reason,
             )])
 
         stats["classified_relevant"] = total_relevant
@@ -544,6 +664,83 @@ async def _run_member_topic_scan(
     if cancel_event.is_set():
         await update_scan_progress(db, scan_id, status="cancelled")
         return
+
+    # Retry items that failed due to API errors
+    if api_failed:
+        retry_wait = 30
+        max_retry_rounds = 4
+        logger.warning(
+            "Scan %d: %d items failed due to API errors — retrying (up to %d rounds)",
+            scan_id, len(api_failed), max_retry_rounds,
+        )
+        for retry_round in range(max_retry_rounds):
+            if cancel_event.is_set():
+                break
+            stats["phase"] = (
+                f"Retrying {len(api_failed)} rate-limited items "
+                f"(round {retry_round + 1}/{max_retry_rounds})..."
+            )
+            await _update_with_stats(97, total_relevant=total_relevant)
+            await asyncio.sleep(retry_wait)
+            retry_wait = min(retry_wait * 2, 300)
+
+            still_failed = []
+            for c in api_failed:
+                if cancel_event.is_set():
+                    still_failed.extend(api_failed)
+                    break
+                try:
+                    classification, discard_reason = await classifier.classify(c)
+                    if classification:
+                        info = member_info_map.get(c.member_id) or member_info_map.get(target_member_ids[0], {})
+                        await insert_result(
+                            db, scan_id,
+                            dedup_key=f"{c.source_type}:{c.id}",
+                            member_name=c.member_name or info.get("name", ""),
+                            member_id=c.member_id,
+                            party=info.get("party", ""),
+                            member_type=info.get("member_type", ""),
+                            constituency=info.get("constituency", ""),
+                            topics=json.dumps(classification["topics"]),
+                            summary=classification["summary"],
+                            activity_date=c.date.strftime("%Y-%m-%d"),
+                            forum=_forum_label(c),
+                            verbatim_quote=classification.get("verbatim_quote", ""),
+                            source_url=c.url,
+                            confidence=classification["confidence"],
+                            position_signal=classification.get("position_signal", ""),
+                            source_type=c.source_type,
+                            raw_text=c.text[:2000],
+                        )
+                        total_relevant += 1
+                    else:
+                        await insert_audit_log_batch(db, [(
+                            scan_id, c.member_name, c.source_type, c.text[:200], "not_relevant",
+                            c.date.strftime("%Y-%m-%d") if c.date else "",
+                            c.context or "", c.text[:2000],
+                            json.dumps(c.matched_keywords), c.url, discard_reason,
+                        )])
+                except ClassifierAPIError:
+                    still_failed.append(c)
+
+            logger.info(
+                "Scan %d retry round %d: %d succeeded, %d still failing",
+                scan_id, retry_round + 1,
+                len(api_failed) - len(still_failed), len(still_failed),
+            )
+            api_failed = still_failed
+            if not api_failed:
+                break
+
+        if api_failed:
+            await insert_audit_log_batch(db, [
+                (scan_id, c.member_name, c.source_type, c.text[:200], "not_relevant",
+                 c.date.strftime("%Y-%m-%d") if c.date else "",
+                 c.context or "", c.text[:2000],
+                 json.dumps(c.matched_keywords), c.url,
+                 "Rate limited — classification failed after all retries")
+                for c in api_failed
+            ])
 
     stats["phase"] = "Scan complete"
     stats["classifier_api_errors"] = classifier.api_errors

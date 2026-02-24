@@ -32,14 +32,6 @@ scheduler = AsyncIOScheduler(
     job_defaults={"misfire_grace_time": 3600, "coalesce": True}
 )
 
-# Lock to prevent concurrent scans (manual vs automated)
-_scan_lock = asyncio.Lock()
-
-
-def get_scan_lock() -> asyncio.Lock:
-    """Expose the scan lock for use by the scans router."""
-    return _scan_lock
-
 
 DAY_MAP = {
     "monday": "mon", "tuesday": "tue", "wednesday": "wed",
@@ -124,11 +116,17 @@ async def _execute_scan_alert(db, alert: dict):
     )
     await db.commit()
 
-    # Run the scan under the lock
-    async with _scan_lock:
-        from backend.services.scanner import run_scan
-        cancel_event = asyncio.Event()
-        await run_scan(scan_id, cancel_event)
+    # Wait for scan capacity, then run
+    from backend.services.scanner import run_scan, get_active_scan_count, MAX_CONCURRENT_SCANS
+    while get_active_scan_count() >= MAX_CONCURRENT_SCANS:
+        logger.info("Scheduled scan for alert %d waiting for capacity (%d/%d active)...",
+                    alert_id, get_active_scan_count(), MAX_CONCURRENT_SCANS)
+        await asyncio.sleep(30)
+    cancel_event = asyncio.Event()
+    from backend.routers.scans import active_scan_events
+    active_scan_events[scan_id] = cancel_event
+    await run_scan(scan_id, cancel_event)
+    active_scan_events.pop(scan_id, None)
 
     # Fetch results
     results = await get_scan_results(db, scan_id)

@@ -685,6 +685,11 @@
   margin-top: 2px;
 }
 
+.ps-forum-date {
+  display: block;
+  margin-top: 2px;
+}
+
 /* Party dots */
 .ps-party-dot {
   width: 8px;
