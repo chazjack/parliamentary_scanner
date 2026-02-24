@@ -70,6 +70,8 @@ function renderTopicChips() {
         if (btn.closest('#topicChipGroup')) return;
         btn.classList.toggle('open', Number(btn.dataset.topicId) === activePopoverTopicId);
     });
+
+    updateTopicSelectionIndicator();
 }
 
 // ── Popover ──────────────────────────────────────────────────────────────────
@@ -211,7 +213,20 @@ function toggleAllTopicsBtn() {
 }
 
 function _syncToggleAllBtn() {
-    // Label is always "All / None" — no dynamic update needed
+    updateTopicSelectionIndicator();
+}
+
+function updateTopicSelectionIndicator() {
+    const el = document.getElementById('topicSelectionIndicator');
+    if (!el) return;
+    const selectedTopics = state.topics.filter(t => checkedTopicIds.has(t.id));
+    const count = selectedTopics.length;
+    const kwCount = selectedTopics.reduce((sum, t) => sum + t.keywords.length, 0);
+    if (count === 0) {
+        el.textContent = '0 selected';
+    } else {
+        el.textContent = `${count} selected (${kwCount} keyword${kwCount !== 1 ? 's' : ''})`;
+    }
 }
 
 // ── Keyword actions ───────────────────────────────────────────────────────────
@@ -384,9 +399,10 @@ document.getElementById('addTopicBtn').addEventListener('click', async () => {
     const input = document.getElementById('newTopicName');
     const name = input.value.trim();
     if (!name) return;
-    await API.post('/api/topics', { name, keywords: [] });
+    const newTopic = await API.post('/api/topics', { name, keywords: [] });
     input.value = '';
     await loadTopics();
+    expandToTopic(newTopic.id);
 });
 
 document.getElementById('topicsPageAddBtn').addEventListener('click', async () => {
@@ -415,9 +431,10 @@ document.getElementById('newTopicName').addEventListener('keydown', async (e) =>
     if (e.key !== 'Enter') return;
     const name = e.target.value.trim();
     if (!name) return;
-    await API.post('/api/topics', { name, keywords: [] });
+    const newTopic = await API.post('/api/topics', { name, keywords: [] });
     e.target.value = '';
     await loadTopics();
+    expandToTopic(newTopic.id);
 });
 
 // ── Topics page ───────────────────────────────────────────────────────────────

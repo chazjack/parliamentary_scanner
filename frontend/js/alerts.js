@@ -273,7 +273,7 @@ async function _loadTopicCheckboxes() {
 function _loadSourceCheckboxes() {
     const sources = ['hansard', 'written_questions', 'written_statements', 'edms', 'bills', 'divisions'];
     document.getElementById('alertSourceCheckboxes').innerHTML = sources.map(s =>
-        `<button class="ps-chip alert-source-chip" data-source="${s}" onclick="this.classList.toggle('ps-chip--active')">${_sourceLabel(s)}</button>`
+        `<button class="ps-chip ps-chip--active alert-source-chip" data-source="${s}" onclick="this.classList.toggle('ps-chip--active')">${_sourceLabel(s)}</button>`
     ).join('');
 }
 
@@ -297,6 +297,33 @@ function toggleAllLookaheadTopics() {
         c.classList.toggle('ps-chip--active', !allActive);
         c.closest('.ps-chip-topic-wrap')?.classList.toggle('ps-chip-topic-wrap--active', !allActive);
     });
+}
+
+function toggleAllScanSources() {
+    const chips = [...document.querySelectorAll('#alertSourceCheckboxes .alert-source-chip')];
+    const allActive = chips.every(c => c.classList.contains('ps-chip--active'));
+    chips.forEach(c => c.classList.toggle('ps-chip--active', !allActive));
+}
+
+function toggleAllScanTopics() {
+    const chips = [...document.querySelectorAll('#alertTopicCheckboxes .alert-topic-chip')];
+    const allActive = chips.every(c => c.classList.contains('ps-chip--active'));
+    chips.forEach(c => {
+        c.classList.toggle('ps-chip--active', !allActive);
+        c.closest('.ps-chip-topic-wrap')?.classList.toggle('ps-chip-topic-wrap--active', !allActive);
+    });
+}
+
+function toggleAllEventTypes() {
+    const chips = [...document.querySelectorAll('#alertEventTypeCheckboxes .alert-event-type-chip')];
+    const allActive = chips.every(c => c.classList.contains('ps-chip--active'));
+    chips.forEach(c => c.classList.toggle('ps-chip--active', !allActive));
+}
+
+function toggleAllHouses() {
+    const chips = [...document.querySelectorAll('#alertHouseCheckboxes .alert-house-chip')];
+    const allActive = chips.every(c => c.classList.contains('ps-chip--active'));
+    chips.forEach(c => c.classList.toggle('ps-chip--active', !allActive));
 }
 
 function _sourceLabel(s) {

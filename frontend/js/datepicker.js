@@ -1,5 +1,55 @@
 /* Custom Date Range Picker — click start, hover range, click end */
 
+// UK Parliamentary recess periods — update each session as dates are announced.
+// Source: https://www.parliament.uk/business/news/parliamentary-recess-dates/
+const RECESS_PERIODS = [
+    // 2023-24 session
+    { start: '2023-07-20', end: '2023-09-04', label: 'Summer recess' },
+    { start: '2023-09-14', end: '2023-10-16', label: 'Conference recess' },
+    { start: '2023-11-09', end: '2023-11-13', label: 'Remembrance recess' },
+    { start: '2023-12-19', end: '2024-01-08', label: 'Christmas recess' },
+    { start: '2024-02-08', end: '2024-02-19', label: 'February recess' },
+    { start: '2024-03-26', end: '2024-04-15', label: 'Easter recess' },
+    { start: '2024-05-23', end: '2024-06-03', label: 'Whitsun recess' },
+    // 2024-25 session
+    { start: '2024-07-30', end: '2024-09-01', label: 'Summer recess' },
+    { start: '2024-09-19', end: '2024-10-14', label: 'Conference recess' },
+    { start: '2024-11-07', end: '2024-11-11', label: 'Remembrance recess' },
+    { start: '2024-12-19', end: '2025-01-06', label: 'Christmas recess' },
+    { start: '2025-02-13', end: '2025-02-24', label: 'February recess' },
+    { start: '2025-04-11', end: '2025-04-28', label: 'Easter recess' },
+    { start: '2025-05-22', end: '2025-06-02', label: 'Whitsun recess' },
+    { start: '2025-07-22', end: '2025-09-01', label: 'Summer recess' },
+    { start: '2025-09-18', end: '2025-10-13', label: 'Conference recess' },
+    // 2025-26 session — verify exact dates at parliament.uk/business/news/parliamentary-recess-dates/
+    { start: '2025-12-18', end: '2026-01-05', label: 'Christmas recess' },
+    { start: '2026-02-12', end: '2026-02-23', label: 'February recess' },
+    { start: '2026-04-02', end: '2026-04-20', label: 'Easter recess' },
+    { start: '2026-05-21', end: '2026-06-01', label: 'Whitsun recess' },
+];
+
+function getRecessLabel(date) {
+    const d = date.getTime();
+    for (const period of RECESS_PERIODS) {
+        const s = new Date(period.start + 'T00:00:00').getTime();
+        const e = new Date(period.end + 'T00:00:00').getTime();
+        if (d >= s && d <= e) return period.label;
+    }
+    return null;
+}
+
+function rangeOverlapsRecess(start, end) {
+    if (!start || !end) return null;
+    const s = start.getTime();
+    const e = end.getTime();
+    for (const period of RECESS_PERIODS) {
+        const ps = new Date(period.start + 'T00:00:00').getTime();
+        const pe = new Date(period.end + 'T00:00:00').getTime();
+        if (s <= pe && e >= ps) return period.label;
+    }
+    return null;
+}
+
 (function () {
     const wrapper = document.getElementById('datePickerWrapper');
     const display = document.getElementById('datePickerDisplay');
@@ -195,10 +245,16 @@
 
             const isFuture = date > today;
 
+            const recessLabel = getRecessLabel(date);
+
             if (isFuture) {
                 cell.className = 'calendar-day future';
             } else {
                 cell.className = 'calendar-day';
+                if (recessLabel) {
+                    cell.classList.add('recess');
+                    cell.title = `Parliamentary recess (${recessLabel})`;
+                }
                 // Store for hover updates
                 dayCells.push({ el: cell, date });
 
@@ -230,8 +286,40 @@
 
         dropdown.appendChild(grid);
 
-        // Apply range classes
+        // Legend — only show if this month contains any recess days
+        const hasRecessThisMonth = Array.from({ length: daysInMonth }, (_, i) => {
+            const d = new Date(viewYear, viewMonth, i + 1);
+            d.setHours(0, 0, 0, 0);
+            return d <= today && getRecessLabel(d) !== null;
+        }).some(Boolean);
+
+        if (hasRecessThisMonth) {
+            const legend = document.createElement('div');
+            legend.className = 'calendar-legend';
+            const legendDot = document.createElement('span');
+            legendDot.className = 'calendar-legend__dot';
+            legend.appendChild(legendDot);
+            legend.appendChild(document.createTextNode('Parliamentary recess'));
+            dropdown.appendChild(legend);
+        }
+
+        // Apply range classes + recess warning
         updateDayClasses();
+        updateRecessWarning();
+    }
+
+    function updateRecessWarning() {
+        // Remove existing warning if any
+        const existing = dropdown.querySelector('.calendar-recess-warning');
+        if (existing) existing.remove();
+
+        const recessLabel = rangeOverlapsRecess(startDate, endDate);
+        if (recessLabel && startDate && endDate) {
+            const warning = document.createElement('div');
+            warning.className = 'calendar-recess-warning';
+            warning.textContent = `Your selected range includes parliamentary recess. Results may be limited for recess dates.`;
+            dropdown.appendChild(warning);
+        }
     }
 
     function updateDayClasses() {

@@ -90,7 +90,8 @@ CREATE TABLE IF NOT EXISTS audit_log (
     full_text TEXT,
     matched_keywords TEXT,
     source_url TEXT,
-    discard_reason TEXT
+    discard_reason TEXT,
+    discard_category TEXT
 );
 
 CREATE TABLE IF NOT EXISTS master_list (
@@ -349,6 +350,10 @@ async def init_db():
             await db.execute("ALTER TABLE audit_log ADD COLUMN discard_reason TEXT")
             await db.commit()
             logger.info("Migrated audit_log: added discard_reason column")
+        if "discard_category" not in columns:
+            await db.execute("ALTER TABLE audit_log ADD COLUMN discard_category TEXT")
+            await db.commit()
+            logger.info("Migrated audit_log: added discard_category column")
 
         # Migration: add trigger and alert_id columns to scans if not present
         cursor = await db.execute("PRAGMA table_info(scans)")
@@ -612,12 +617,12 @@ async def insert_audit_log(
 
 async def insert_audit_log_batch(db: aiosqlite.Connection, rows: list[tuple]):
     """Batch insert audit log entries for efficiency.
-    Each row: (scan_id, member_name, source_type, text_preview, classification, activity_date, context, full_text, matched_keywords, source_url, discard_reason)
+    Each row: (scan_id, member_name, source_type, text_preview, classification, activity_date, context, full_text, matched_keywords, source_url, discard_reason, discard_category)
     """
     await db.executemany(
         """INSERT INTO audit_log
-        (scan_id, member_name, source_type, text_preview, classification, activity_date, context, full_text, matched_keywords, source_url, discard_reason)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (scan_id, member_name, source_type, text_preview, classification, activity_date, context, full_text, matched_keywords, source_url, discard_reason, discard_category)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         rows,
     )
     await db.commit()
@@ -640,15 +645,24 @@ async def get_audit_entry(db: aiosqlite.Connection, audit_id: int) -> dict | Non
 
 
 async def get_audit_summary(db: aiosqlite.Connection, scan_id: int) -> dict:
-    """Get audit summary counts for a scan."""
+    """Get audit summary counts by discard category for a scan.
+
+    Procedural-filtered items map to 'procedural'; AI-classified items use
+    their discard_category (falling back to 'generic' if unset).
+    """
     cursor = await db.execute(
-        """SELECT classification, COUNT(*) as count
+        """SELECT
+               CASE
+                   WHEN classification = 'procedural_filter' THEN 'procedural'
+                   WHEN discard_category IS NOT NULL THEN discard_category
+                   ELSE 'generic'
+               END as category,
+               COUNT(*) as count
            FROM audit_log WHERE scan_id = ?
-           GROUP BY classification""",
+           GROUP BY category""",
         (scan_id,),
     )
-    counts = {row["classification"]: row["count"] for row in await cursor.fetchall()}
-    return counts
+    return {row["category"]: row["count"] for row in await cursor.fetchall()}
 
 
 async def insert_result(db: aiosqlite.Connection, scan_id: int, **fields) -> int:
@@ -831,8 +845,23 @@ async def remove_master_activity_by_result(db: aiosqlite.Connection, result_id: 
 # --- Look Ahead query helpers ---
 
 
-async def upsert_lookahead_events(db: aiosqlite.Connection, events: list[dict]):
-    """Batch upsert lookahead events."""
+async def upsert_lookahead_events(db: aiosqlite.Connection, events: list[dict], date_range: tuple[str, str] | None = None):
+    """Batch upsert lookahead events.
+
+    If date_range=(start, end) is given, stale events in that range are deleted
+    first so cross-source duplicates from previous fetches are cleaned up.
+    Starred events are preserved by re-starring them after the delete.
+    """
+    if date_range:
+        start, end = date_range
+        # Clear events in range so stale cross-source duplicates don't persist.
+        # lookahead_starred has no FK constraint, so starred entries survive
+        # the delete and re-associate once matching events are re-inserted.
+        await db.execute(
+            "DELETE FROM lookahead_events WHERE start_date >= ? AND start_date <= ?",
+            (start, end),
+        )
+
     for ev in events:
         await db.execute(
             """INSERT OR REPLACE INTO lookahead_events

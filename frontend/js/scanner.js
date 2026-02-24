@@ -411,8 +411,23 @@ function renderPipelineBoxes(stats) {
     }
 
     const totalClassified = (stats.classified_relevant || 0) + (stats.classified_discarded || 0);
+
+    const uniqueAfterDedup = stats.unique_after_dedup || 0;
+    const removedByDedup = Math.max(0, totalApiResults - uniqueAfterDedup);
+    const removedByPrefilter = stats.removed_by_prefilter || 0;
+
+    const kwTooltipRows = [
+        removedByDedup > 0      ? `<span class="pipe-tooltip-row"><span class="pipe-tooltip-num">${removedByDedup}</span> Duplicate${removedByDedup !== 1 ? 's' : ''} removed</span>` : '',
+        removedByPrefilter > 0  ? `<span class="pipe-tooltip-row"><span class="pipe-tooltip-num">${removedByPrefilter}</span> Procedural statement${removedByPrefilter !== 1 ? 's' : ''} removed</span>` : '',
+        sentToClassifier > 0    ? `<span class="pipe-tooltip-row pipe-tooltip-row--sent"><span class="pipe-tooltip-num">${sentToClassifier}</span> Passed to classifier</span>` : '',
+    ].filter(Boolean).join('');
+
+    const kwTooltip = kwTooltipRows
+        ? `<div class="pipe-box-tooltip">${kwTooltipRows}</div>`
+        : '';
+
     const boxes = [
-        { label: 'Keyword Results', value: totalApiResults, cls: '' },
+        { label: 'Keyword Results', value: totalApiResults, cls: 'pipe-box-has-tooltip', tooltip: kwTooltip },
         { label: 'Classified', value: `${totalClassified}/${sentToClassifier}`, cls: '' },
         { label: 'Relevant', value: stats.classified_relevant || 0, cls: 'pipe-box-relevant', target: 'results-section' },
         { label: 'Discarded', value: stats.classified_discarded || 0, cls: 'pipe-box-discarded', target: 'audit-section' },
@@ -424,6 +439,7 @@ function renderPipelineBoxes(stats) {
         html += `<div class="pipe-box ${box.cls}" ${clickable}>
             <div class="pipe-box-value">${box.value}</div>
             <div class="pipe-box-label">${box.label}</div>
+            ${box.tooltip || ''}
         </div>`;
     }
 
@@ -592,8 +608,7 @@ window.selectedGroups = [];  // [{id, name, member_ids, member_names}, ...]
 
         const groupHtml = selectedGroups.map(g => `
             <span class="member-selected-pill member-selected-pill--group" data-id="${escapeHtml(String(g.id))}">
-                <span class="member-selected-pill__badge">Group</span>
-                <span class="member-selected-pill__name">${escapeHtml(g.name)} (${(g.member_ids || []).length} MPs)</span>
+                <span class="member-selected-pill__name">${escapeHtml(g.name)}</span>
                 <button class="member-selected-pill__clear" data-id="${escapeHtml(String(g.id))}" title="Remove" data-kind="group">&#x2715;</button>
             </span>
         `).join('');
@@ -684,7 +699,6 @@ window.selectedGroups = [];  // [{id, name, member_ids, member_names}, ...]
                 html += `<div class="member-autocomplete__item member-autocomplete__item--group"
                     data-group-id="${escapeHtml(String(g.id))}"
                     data-group-name="${escapeHtml(g.name)}"${dimmed}>
-                    <span class="member-autocomplete__item-badge">Group</span>
                     <span class="member-autocomplete__item-name">${escapeHtml(g.name)}</span>
                     <span class="member-autocomplete__item-meta">${count} member${count === 1 ? '' : 's'}</span>
                 </div>`;

@@ -392,6 +392,7 @@ class LookaheadClient:
             return_exceptions=True,
         )
 
+        # Phase 1: ID-based dedup across batches, What's On first (it has richer data)
         all_events = []
         seen_ids = set()
         for batch in results:
@@ -403,5 +404,42 @@ class LookaheadClient:
                     seen_ids.add(ev["id"])
                     all_events.append(ev)
 
-        logger.info("Total unique events fetched: %d", len(all_events))
-        return all_events
+        # Phase 2: Content-based dedup for cross-source duplicates.
+        # The What's On and Committees APIs both list committee sessions.
+        # Prefer What's On entries (they carry member lists); skip any later
+        # event that shares (date, time, location) or (date, time, committee).
+        SOURCE_PRIORITY = {"whatson": 0, "committees": 1}
+        all_events.sort(key=lambda e: SOURCE_PRIORITY.get(e.get("source", ""), 99))
+
+        deduped = []
+        seen_location: set[tuple] = set()   # (date, time, normalised_location)
+        seen_committee: set[tuple] = set()  # (date, time, normalised_committee)
+
+        for ev in all_events:
+            date = ev.get("start_date", "")
+            time = ev.get("start_time", "")
+            location = (ev.get("location") or "").strip().lower()
+            committee = (ev.get("committee_name") or "").strip().lower()
+
+            loc_key = (date, time, location) if location else None
+            com_key = (date, time, committee) if committee else None
+
+            if (loc_key and loc_key in seen_location) or \
+               (com_key and com_key in seen_committee):
+                logger.debug(
+                    "Dedup: dropping cross-source duplicate '%s' (%s) — same as What's On entry",
+                    ev.get("title", ""), ev.get("id", ""),
+                )
+                continue
+
+            if loc_key:
+                seen_location.add(loc_key)
+            if com_key:
+                seen_committee.add(com_key)
+            deduped.append(ev)
+
+        dropped = len(all_events) - len(deduped)
+        if dropped:
+            logger.info("Content-based dedup removed %d cross-source duplicate(s)", dropped)
+        logger.info("Total unique events fetched: %d", len(deduped))
+        return deduped

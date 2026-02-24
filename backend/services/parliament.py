@@ -25,7 +25,7 @@ from backend.config import (
 logger = logging.getLogger(__name__)
 
 # Maximum pages to fetch per API source per keyword (avoids excessive pagination)
-MAX_PAGES = 5
+MAX_PAGES = 10
 
 
 def _strip_html(text: str) -> str:

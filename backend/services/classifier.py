@@ -21,6 +21,14 @@ class ClassifierAPIError(Exception):
     """Raised when the Anthropic API fails persistently — item should be retried later."""
 
 
+DISCARD_CATEGORIES = {
+    "procedural": "Procedural",
+    "no_position": "No Position",
+    "off_topic": "Off-Topic",
+    "generic": "Generic",
+}
+
+
 # Procedural patterns to pre-filter before sending to LLM
 PROCEDURAL_PATTERNS = [
     r"^(the|this) (question|bill|motion) (is|was) (put|agreed|negatived|read)",
@@ -55,6 +63,12 @@ Classify each contribution and respond ONLY with valid JSON (no markdown, \
 no code fences):
 {{
   "is_relevant": true or false,
+  "discard_category": "If not relevant, one of: 'procedural' (administrative or \
+procedural mention, e.g. referring to a previous answer, boilerplate headers), \
+'no_position' (topic mentioned but no substantive stance or meaningful statement \
+expressed), 'off_topic' (keywords matched but content does not actually relate \
+to the monitored topics), 'generic' (reference too vague or superficial to extract \
+a clear position). Set to null if relevant.",
   "discard_reason": "Brief explanation if not relevant, null if relevant.",
   "confidence": "High" or "Medium" or "Low",
   "topics": ["topic1", "topic2"],
@@ -79,6 +93,22 @@ explicit.
 "Procedural mention only", "Generic keyword mention without substantive \
 position", "Topic referenced but no clear stance or interest expressed"). \
 If relevant, set discard_reason to null.\
+"""
+
+SUMMARISE_SYSTEM_PROMPT = """\
+You are an expert parliamentary analyst supporting the Ada Lovelace Institute's \
+parliamentary engagement work.
+
+Summarise each UK parliamentary contribution in a single sentence, capturing what \
+the MP or Peer said, asked, or did. Use surname only (e.g. 'Sunak' not 'Rishi Sunak'). \
+Focus on the substance of the contribution — what position they expressed, what question \
+they asked, or what action they took.
+
+Respond ONLY with valid JSON (no markdown, no code fences):
+{{
+  "summary": "One sentence summary using the speaker's surname only.",
+  "verbatim_quote": "Up to 2 sentences verbatim from the text, or a description of the action."
+}}\
 """
 
 SOURCE_TYPE_LABELS = {
@@ -133,10 +163,10 @@ class TopicClassifier:
             topics_with_keywords=topics_str
         )
 
-    async def classify(self, contribution: Contribution) -> tuple[dict | None, str | None]:
+    async def classify(self, contribution: Contribution) -> tuple[dict | None, str | None, str | None]:
         """Classify a single contribution.
 
-        Returns (dict, None) if relevant, or (None, reason) if discarded.
+        Returns (dict, None, None) if relevant, or (None, reason, category) if discarded.
         Uses prompt caching on the system prompt for cost efficiency.
         """
         text = truncate_text(contribution.text)
@@ -178,7 +208,10 @@ class TopicClassifier:
 
                 if not parsed.get("is_relevant"):
                     reason = parsed.get("discard_reason") or "Not relevant"
-                    return None, reason
+                    category = parsed.get("discard_category") or "generic"
+                    if category not in DISCARD_CATEGORIES:
+                        category = "generic"
+                    return None, reason, category
 
                 return {
                     "confidence": parsed.get("confidence", "Medium"),
@@ -186,7 +219,7 @@ class TopicClassifier:
                     "summary": parsed.get("summary", ""),
                     "position_signal": parsed.get("position_signal", ""),
                     "verbatim_quote": parsed.get("verbatim_quote", ""),
-                }, None
+                }, None, None
 
             except json.JSONDecodeError:
                 logger.warning(
@@ -197,7 +230,7 @@ class TopicClassifier:
                     await asyncio.sleep(1)
                     continue
                 self.api_errors += 1
-                return None, "Invalid JSON response from classifier"
+                return None, "Invalid JSON response from classifier", "generic"
 
             except anthropic.RateLimitError:
                 wait = 2 ** (attempt + 2)
@@ -223,3 +256,79 @@ class TopicClassifier:
 
         self.api_errors += 1
         raise ClassifierAPIError("Rate limited — all retries exhausted")
+
+    async def summarise(self, contribution: Contribution) -> str:
+        """Generate a one-sentence summary for a contribution without topic filtering.
+
+        Used for member-only scans where we want an AI summary but no relevance judgement.
+        Falls back to a truncated raw text if the API call fails.
+        """
+        text = truncate_text(contribution.text)
+        source_label = SOURCE_TYPE_LABELS.get(
+            contribution.source_type, contribution.source_type
+        )
+
+        user_message = (
+            f"Speaker: {contribution.member_name}\n"
+            f"Date: {contribution.date.strftime('%d/%m/%Y')}\n"
+            f"Type: {source_label}\n"
+            f"Context: {contribution.context}\n"
+            f"Text:\n{text}"
+        )
+
+        for attempt in range(3):
+            try:
+                response = await self.client.messages.create(
+                    model=self.model,
+                    max_tokens=200,
+                    system=[
+                        {
+                            "type": "text",
+                            "text": SUMMARISE_SYSTEM_PROMPT,
+                            "cache_control": {"type": "ephemeral"},
+                        }
+                    ],
+                    messages=[{"role": "user", "content": user_message}],
+                )
+
+                result_text = response.content[0].text.strip()
+
+                if result_text.startswith("```"):
+                    result_text = result_text.split("\n", 1)[-1]
+                    result_text = result_text.rsplit("```", 1)[0]
+
+                parsed = json.loads(result_text)
+                return parsed.get("summary") or contribution.context or contribution.text[:120]
+
+            except (json.JSONDecodeError, KeyError):
+                logger.warning(
+                    "Invalid JSON from summarise LLM for %s (attempt %d)",
+                    contribution.id, attempt + 1,
+                )
+                if attempt < 2:
+                    await asyncio.sleep(1)
+                    continue
+                break
+
+            except anthropic.RateLimitError:
+                wait = 2 ** (attempt + 2)
+                logger.warning("Anthropic rate limited during summarise, waiting %ds", wait)
+                await asyncio.sleep(wait)
+                continue
+
+            except anthropic.APITimeoutError:
+                logger.warning("Anthropic timeout during summarise for %s (attempt %d)", contribution.id, attempt + 1)
+                if attempt < 2:
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+                break
+
+            except anthropic.APIError as e:
+                logger.error("Anthropic API error during summarise for %s: %s", contribution.id, e)
+                if attempt < 2:
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+                break
+
+        # Fallback: raw truncation
+        return contribution.context or contribution.text[:120]

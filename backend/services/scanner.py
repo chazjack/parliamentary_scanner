@@ -286,7 +286,7 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
                 audit_rows = [
                     (scan_id, c.member_name, c.source_type, c.text[:200],
                      "procedural_filter", c.date.strftime("%Y-%m-%d") if c.date else "",
-                     c.context or "", c.text[:2000], json.dumps(c.matched_keywords), c.url, None)
+                     c.context or "", c.text[:2000], json.dumps(c.matched_keywords), c.url, None, None)
                     for c in new_procedural
                 ]
                 await insert_audit_log_batch(db, audit_rows)
@@ -309,7 +309,7 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
             if CLASSIFIER_STAGGER > 0:
                 await asyncio.sleep(CLASSIFIER_STAGGER)
             try:
-                classification, discard_reason = await classifier.classify(contribution)
+                classification, discard_reason, discard_category = await classifier.classify(contribution)
             except ClassifierAPIError:
                 async with progress_lock:
                     api_failed.append(contribution)
@@ -368,6 +368,7 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
                         json.dumps(contribution.matched_keywords),
                         contribution.url,
                         discard_reason,
+                        discard_category,
                     )
 
                 # Update progress periodically
@@ -808,15 +809,18 @@ async def _run_member_only_scan(
         await client2.close()
     member_info_map = {mid: info for mid, info in zip(target_member_ids, member_infos)}
 
-    stats["phase"] = f"Storing {total_api} items..."
+    total_to_store = len(contributions)
+    stats["phase"] = f"Summarising {total_to_store} items..."
     await _update_with_stats(60)
 
+    # Use classifier to generate summaries (summarise-only mode — no topic filtering)
+    classifier = TopicClassifier({})
     stored = 0
     for c in contributions:
         if cancel_event.is_set():
             break
         dedup_key = f"{c.source_type}:{c.id}"
-        summary = c.context or c.text[:120]
+        summary = await classifier.summarise(c)
         info = member_info_map.get(c.member_id) or member_info_map.get(target_member_ids[0], {})
         await insert_result(
             db,
@@ -839,6 +843,10 @@ async def _run_member_only_scan(
             raw_text=c.text[:2000],
         )
         stored += 1
+        if stored % 5 == 0 or stored == total_to_store:
+            progress = 60 + (stored / max(total_to_store, 1)) * 35
+            stats["phase"] = f"Summarising {stored}/{total_to_store}..."
+            await _update_with_stats(min(progress, 95))
 
     stats["phase"] = "Scan complete"
     await update_scan_progress(

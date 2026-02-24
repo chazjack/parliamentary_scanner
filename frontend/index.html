@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Parliamentary Scanner</title>
+    <title>ParliScan</title>
     <link rel="icon" type="image/svg+xml" href="/icon-no-bg (1).svg">
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/css/parliscan-tokens.css">
@@ -118,6 +118,7 @@
                 <div class="ps-chip-group">
                     <div class="ps-chip-group__header">
                         <span class="ps-chip-group__label">TOPICS</span>
+                         <span id="topicSelectionIndicator" style="font-size:var(--ps-text-md);color:var(--ps-text-secondary);margin-left:6px;flex:1;"></span>
                         <div style="display:flex;gap:4px;align-items:center;" onclick="event.stopPropagation()">
                             <button class="ps-btn ps-btn--ghost ps-btn--sm btn-undo disabled" id="undoBtn" onclick="undoLastAction()" title="Undo">&#8617;</button>
                             <span style="font-size:var(--ps-text-sm);color:var(--ps-text-muted);cursor:pointer;" id="topicToggleAllBtn" onclick="toggleAllTopicsBtn()">All / None</span>
@@ -188,8 +189,8 @@
                                 <th data-col="party">Party</th>
                                 <th data-col="topics">Topic(s)</th>
                                 <th data-col="summary">Summary</th>
+                                <th data-col="verbatim_quote">QUOTE</th>
                                 <th data-col="forum">Source</th>
-                                <th data-col="verbatim_quote">Quote / Action</th>
                                 <th></th>
                             </tr>
                         </thead>
@@ -405,12 +406,18 @@
                         <!-- Scan config -->
                         <div id="alertScanConfig">
                             <div style="margin-bottom:12px;">
-                                <label class="source-label" style="margin-bottom:6px;">Sources</label>
+                                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                                    <label class="source-label">Sources</label>
+                                    <span style="font-size:var(--ps-text-sm);color:var(--ps-text-muted);cursor:pointer;" onclick="toggleAllScanSources()">All / None</span>
+                                </div>
                                 <div id="alertSourceCheckboxes" class="ps-chip-group__items"></div>
                             </div>
 
                             <div style="margin-bottom:12px;">
-                                <label class="source-label" style="margin-bottom:6px;">Topics</label>
+                                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                                    <label class="source-label">Topics</label>
+                                    <span style="font-size:var(--ps-text-sm);color:var(--ps-text-muted);cursor:pointer;" onclick="toggleAllScanTopics()">All / None</span>
+                                </div>
                                 <div id="alertTopicCheckboxes" class="ps-chip-group__items"></div>
                             </div>
 
@@ -428,12 +435,18 @@
                         <!-- Lookahead config -->
                         <div id="alertLookaheadConfig" style="display:none;">
                             <div style="margin-bottom:12px;">
-                                <label class="source-label" style="margin-bottom:6px;">Event Types</label>
+                                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                                    <label class="source-label">Event Types</label>
+                                    <span style="font-size:var(--ps-text-sm);color:var(--ps-text-muted);cursor:pointer;" onclick="toggleAllEventTypes()">All / None</span>
+                                </div>
                                 <div id="alertEventTypeCheckboxes" class="ps-chip-group__items"></div>
                             </div>
 
                             <div style="margin-bottom:12px;">
-                                <label class="source-label" style="margin-bottom:6px;">Houses</label>
+                                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                                    <label class="source-label">Houses</label>
+                                    <span style="font-size:var(--ps-text-sm);color:var(--ps-text-muted);cursor:pointer;" onclick="toggleAllHouses()">All / None</span>
+                                </div>
                                 <div id="alertHouseCheckboxes" class="ps-chip-group__items"></div>
                             </div>
 
@@ -510,7 +523,7 @@
                             <tr>
                                 <th>Name</th>
                                 <th>Members</th>
-                                <th>Actions</th>
+                                <th style="text-align:center;">Actions</th>
                             </tr>
                         </thead>
                         <tbody id="groupsTableBody"></tbody>
@@ -558,6 +571,21 @@
     <script src="/js/lookahead.js"></script>
     <script src="/js/alerts.js"></script>
     <script src="/js/groups.js"></script>
+
+    <!-- Group members popover — lives at body level so it's never hidden by a tab's display:none -->
+    <div id="groupMembersPopover" class="topic-popover" style="display:none;">
+        <div class="topic-popover__header">
+            <span class="topic-popover__title" id="groupPopoverTitle"></span>
+            <button class="topic-popover__delete" onclick="closeGroupMembersPopover()" style="font-size:1rem;line-height:1;">&times;</button>
+        </div>
+        <div class="topic-popover__keywords" id="groupPopoverMembers"></div>
+        <div class="topic-popover__add">
+            <div class="member-autocomplete" id="groupPopoverAutocomplete">
+                <input type="text" class="ps-input ps-input--sm" id="groupPopoverSearchInput" placeholder="Add member..." autocomplete="off">
+                <div class="member-autocomplete__dropdown" id="groupPopoverDropdown" style="display:none;"></div>
+            </div>
+        </div>
+    </div>
 
     <!-- Topic keyword popover — lives at body level so it's never hidden by a tab's display:none -->
     <div id="topicPopover" class="topic-popover" style="display:none;">

@@ -312,8 +312,8 @@ function renderResultsPage() {
             <td>${partyPill(r.party || '—')}${typeSmall}</td>
             <td>${topicBadges}</td>
             <td>${escapeHtml(r.summary || '—')}</td>
-            <td>${forumCell(r.source_type || '', r.forum || '', dateStr)}</td>
             <td>${quoteHtml}</td>
+            <td>${forumCell(r.source_type || '', r.forum || '', dateStr)}</td>
             <td><button class="${btnClass}" title="${btnTitle}"
                 data-result-id="${r.id}"
                 data-member-name="${escapedName}"
@@ -560,19 +560,21 @@ async function loadAudit(scanId) {
             return;
         }
 
-        // Render summary counts
+        // Render summary counts by discard category
+        const CATEGORY_LABELS = {
+            procedural:  'Procedural',
+            no_position: 'No Position',
+            off_topic:   'Off-Topic',
+            generic:     'Generic',
+        };
         let summaryHtml = '';
-        if (summary.procedural_filter) {
-            summaryHtml += `<div class="audit-count">
-                <span class="count-badge procedural">${summary.procedural_filter}</span>
-                <span>Procedural / filtered</span>
-            </div>`;
-        }
-        if (summary.not_relevant) {
-            summaryHtml += `<div class="audit-count">
-                <span class="count-badge">${summary.not_relevant}</span>
-                <span>Not relevant (AI classified)</span>
-            </div>`;
+        for (const [cat, label] of Object.entries(CATEGORY_LABELS)) {
+            if (summary[cat]) {
+                summaryHtml += `<div class="audit-count">
+                    <span class="count-badge discard-pill--${cat}">${summary[cat]}</span>
+                    <span>${label}</span>
+                </div>`;
+            }
         }
         summaryDiv.innerHTML = summaryHtml;
 
@@ -591,9 +593,12 @@ async function loadAudit(scanId) {
             const previewContent = e.source_url
                 ? `<a href="${escapeHtml(e.source_url)}" target="_blank" rel="noopener" class="audit-preview-link">${snippetHtml}</a>`
                 : snippetHtml;
-            const reasonHtml = e.discard_reason
-                ? `<span class="audit-reason">${escapeHtml(e.discard_reason)}</span>`
-                : (isProcedural ? `<span class="audit-reason audit-reason--procedural">Procedural filter</span>` : `<span class="audit-reason audit-reason--muted">—</span>`);
+            const cat = isProcedural ? 'procedural' : (e.discard_category || 'generic');
+            const CATEGORY_LABELS = { procedural: 'Procedural', no_position: 'No Position', off_topic: 'Off-Topic', generic: 'Generic' };
+            const pillLabel = CATEGORY_LABELS[cat] || cat;
+            const pill = `<span class="discard-pill discard-pill--${cat}">${pillLabel}</span>`;
+            const reasonText = e.discard_reason ? ` ${escapeHtml(e.discard_reason)}` : '';
+            const reasonHtml = `<span class="audit-reason">${pill}${reasonText}</span>`;
             listHtml += `<div class="audit-item">
                 <span class="audit-member">${escapeHtml(e.member_name)}</span>
                 <span class="audit-preview">${previewContent}</span>

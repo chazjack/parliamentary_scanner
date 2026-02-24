@@ -1,17 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <style>
+    rect { fill: #1a1a1a; }
+    @media (prefers-color-scheme: dark) {
+      rect { fill: #ffffff; }
+    }
+  </style>
   <!-- Row 1 -->
-  <rect x="30" y="45" width="60" height="18" rx="9" fill="#1a1a1a"/>
-  <rect x="105" y="45" width="65" height="18" rx="9" fill="#1a1a1a"/>
-  
+  <rect x="30" y="45" width="60" height="18" rx="9"/>
+  <rect x="105" y="45" width="65" height="18" rx="9"/>
+
   <!-- Row 2 -->
-  <rect x="30" y="78" width="80" height="18" rx="9" fill="#1a1a1a"/>
-  <rect x="125" y="78" width="45" height="18" rx="9" fill="#1a1a1a"/>
-  
+  <rect x="30" y="78" width="80" height="18" rx="9"/>
+  <rect x="125" y="78" width="45" height="18" rx="9"/>
+
   <!-- Row 3 -->
-  <rect x="30" y="111" width="50" height="18" rx="9" fill="#1a1a1a"/>
-  <rect x="95" y="111" width="75" height="18" rx="9" fill="#1a1a1a"/>
-  
+  <rect x="30" y="111" width="50" height="18" rx="9"/>
+  <rect x="95" y="111" width="75" height="18" rx="9"/>
+
   <!-- Row 4 -->
-  <rect x="30" y="144" width="70" height="18" rx="9" fill="#1a1a1a"/>
-  <rect x="115" y="144" width="55" height="18" rx="9" fill="#1a1a1a"/>
+  <rect x="30" y="144" width="70" height="18" rx="9"/>
+  <rect x="115" y="144" width="55" height="18" rx="9"/>
 </svg>

@@ -41,7 +41,7 @@ async def _refresh_cache_if_needed(db, start: str, end: str, force: bool = False
         client = LookaheadClient()
         try:
             events = await client.fetch_all_events(start, end)
-            await upsert_lookahead_events(db, events)
+            await upsert_lookahead_events(db, events, date_range=(start, end))
             await set_lookahead_cache_meta(db, cache_key, len(events))
             logger.info("Refreshed lookahead cache: %d events for %s–%s", len(events), start, end)
             return len(events)
