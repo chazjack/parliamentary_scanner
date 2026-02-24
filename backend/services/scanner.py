@@ -447,7 +447,11 @@ async def _run_member_topic_scan(
             for i, mid in enumerate(target_member_ids)
         ]
         all_results = await asyncio.gather(*member_tasks)
-        contributions = _dedup_contributions([c for group in all_results for c in group])
+        raw = [c for group in all_results for c in group]
+        # Hard filter: keep only contributions whose member_id is in the requested set
+        member_id_set = set(target_member_ids)
+        raw = [c for c in raw if c.member_id in member_id_set]
+        contributions = _dedup_contributions(raw)
     finally:
         await client.close()
 
@@ -591,7 +595,8 @@ async def _run_member_only_scan(
         await update_scan_progress(db, scan_id, status="cancelled")
         return
 
-    contributions = [c for group in all_results for c in group]
+    member_id_set = set(target_member_ids)
+    contributions = [c for group in all_results for c in group if c.member_id in member_id_set]
     total_api = len(contributions)
     stats["total_api_results"] = total_api
     await update_scan_progress(db, scan_id, total_api_results=total_api)

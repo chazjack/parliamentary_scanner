@@ -214,6 +214,14 @@ CREATE TABLE IF NOT EXISTS alert_run_log (
     results_count INTEGER DEFAULT 0,
     error_message TEXT
 );
+
+CREATE TABLE IF NOT EXISTS member_groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    member_ids TEXT NOT NULL DEFAULT '[]',
+    member_names TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT DEFAULT (datetime('now'))
+);
 """
 
 # Default topics and keywords seeded on first run (from v1 config)
@@ -1222,3 +1230,60 @@ async def delete_session(db: aiosqlite.Connection, token: str) -> None:
     """Delete a session (logout)."""
     await db.execute("DELETE FROM sessions WHERE token = ?", (token,))
     await db.commit()
+
+
+# --- Member Group query helpers ---
+
+
+async def get_all_groups(db: aiosqlite.Connection) -> list[dict]:
+    """Return all member groups with parsed JSON fields."""
+    cursor = await db.execute("SELECT * FROM member_groups ORDER BY name")
+    rows = await cursor.fetchall()
+    result = []
+    for row in rows:
+        g = dict(row)
+        g["member_ids"] = json.loads(g["member_ids"])
+        g["member_names"] = json.loads(g["member_names"])
+        result.append(g)
+    return result
+
+
+async def create_group(
+    db: aiosqlite.Connection,
+    name: str,
+    member_ids: list[str],
+    member_names: list[str],
+) -> dict:
+    """Create a member group. Returns the new group dict."""
+    cursor = await db.execute(
+        "INSERT INTO member_groups (name, member_ids, member_names) VALUES (?, ?, ?)",
+        (name, json.dumps(member_ids), json.dumps(member_names)),
+    )
+    group_id = cursor.lastrowid
+    await db.commit()
+    return {"id": group_id, "name": name, "member_ids": member_ids, "member_names": member_names}
+
+
+async def update_group(
+    db: aiosqlite.Connection,
+    group_id: int,
+    name: str,
+    member_ids: list[str],
+    member_names: list[str],
+) -> dict | None:
+    """Update a member group. Returns updated dict or None if not found."""
+    cursor = await db.execute(
+        "UPDATE member_groups SET name = ?, member_ids = ?, member_names = ? WHERE id = ?",
+        (name, json.dumps(member_ids), json.dumps(member_names), group_id),
+    )
+    await db.commit()
+    if cursor.rowcount == 0:
+        return None
+    return {"id": group_id, "name": name, "member_ids": member_ids, "member_names": member_names}
+
+
+async def delete_group(db: aiosqlite.Connection, group_id: int) -> bool:
+    """Delete a member group. Returns True if found."""
+    cursor = await db.execute("DELETE FROM member_groups WHERE id = ?", (group_id,))
+    await db.commit()
+    return cursor.rowcount > 0

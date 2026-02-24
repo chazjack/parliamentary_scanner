@@ -34,6 +34,7 @@ const API = {
 // Shared state
 const state = {
     topics: [],
+    groups: [],
     currentScanId: null,
     eventSource: null,
 };
@@ -77,6 +78,7 @@ function switchTab(tabName) {
     document.getElementById('tab-lookahead').style.display = domTab === 'lookahead' ? '' : 'none';
     document.getElementById('tab-alerts').style.display = domTab === 'alerts' ? '' : 'none';
     document.getElementById('tab-topics').style.display = domTab === 'topics' ? '' : 'none';
+    document.getElementById('tab-groups').style.display = domTab === 'groups' ? '' : 'none';
 
     // Load data for the active tab
     if (domTab === 'record') {
@@ -92,6 +94,9 @@ function switchTab(tabName) {
     }
     if (domTab === 'topics') {
         renderTopicsPage();
+    }
+    if (domTab === 'groups') {
+        loadGroups();
     }
 }
 
@@ -138,6 +143,7 @@ async function checkApiHealth() {
 document.addEventListener('DOMContentLoaded', async () => {
     setDefaultDates();
     await loadTopics();
+    state.groups = await API.get('/api/groups');
     await loadHistory();
     checkApiHealth();
     setInterval(checkApiHealth, 60000); // recheck every 60 seconds
@@ -170,7 +176,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Switch to tab from URL path, defaulting to Calendar
-    const validTabs = ['calendar', 'scanner', 'record', 'alerts', 'topics'];
+    const validTabs = ['calendar', 'scanner', 'record', 'alerts', 'topics', 'groups'];
     const pathTab = window.location.pathname.slice(1).split('/')[0];
     switchTab(validTabs.includes(pathTab) ? pathTab : 'calendar');
 
@@ -204,7 +210,7 @@ function sidebarSearch(value) {
 
 // Handle browser back/forward navigation
 window.addEventListener('popstate', () => {
-    const validTabs = ['calendar', 'scanner', 'record', 'alerts', 'topics'];
+    const validTabs = ['calendar', 'scanner', 'record', 'alerts', 'topics', 'groups'];
     const pathTab = window.location.pathname.slice(1).split('/')[0];
     if (!validTabs.includes(pathTab)) return;
     const calendarVisible = document.getElementById('tab-lookahead').style.display !== 'none';

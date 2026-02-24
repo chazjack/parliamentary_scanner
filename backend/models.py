@@ -55,6 +55,18 @@ class AlertCreate(BaseModel):
     recipients: list[str] = []
 
 
+class GroupCreate(BaseModel):
+    name: str
+    member_ids: list[str] = []
+    member_names: list[str] = []
+
+
+class GroupUpdate(BaseModel):
+    name: str
+    member_ids: list[str] = []
+    member_names: list[str] = []
+
+
 class AlertUpdate(BaseModel):
     name: str | None = None
     alert_type: str | None = None
