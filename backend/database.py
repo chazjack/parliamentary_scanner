@@ -89,7 +89,8 @@ CREATE TABLE IF NOT EXISTS audit_log (
     context TEXT,
     full_text TEXT,
     matched_keywords TEXT,
-    source_url TEXT
+    source_url TEXT,
+    discard_reason TEXT
 );
 
 CREATE TABLE IF NOT EXISTS master_list (
@@ -344,6 +345,10 @@ async def init_db():
             await db.execute("ALTER TABLE audit_log ADD COLUMN source_url TEXT")
             await db.commit()
             logger.info("Migrated audit_log: added source_url column")
+        if "discard_reason" not in columns:
+            await db.execute("ALTER TABLE audit_log ADD COLUMN discard_reason TEXT")
+            await db.commit()
+            logger.info("Migrated audit_log: added discard_reason column")
 
         # Migration: add trigger and alert_id columns to scans if not present
         cursor = await db.execute("PRAGMA table_info(scans)")
@@ -376,14 +381,19 @@ async def init_db():
             await db.commit()
             logger.info("Migrated email_alerts: added member_names column")
 
-        # Seed admin user from environment if no users exist yet
+        # Sync admin user from environment on every startup
         from backend.config import ADMIN_USERNAME, ADMIN_PASSWORD
         if ADMIN_PASSWORD:
-            cursor = await db.execute("SELECT COUNT(*) FROM users")
+            cursor = await db.execute("SELECT id FROM users WHERE username = ?", (ADMIN_USERNAME,))
             row = await cursor.fetchone()
-            if row[0] == 0:
+            if row is None:
                 await create_user(db, ADMIN_USERNAME, ADMIN_PASSWORD)
                 logger.info("Seeded admin user: %s", ADMIN_USERNAME)
+            else:
+                new_hash = hash_password(ADMIN_PASSWORD)
+                await db.execute("UPDATE users SET password_hash = ? WHERE username = ?", (new_hash, ADMIN_USERNAME))
+                await db.commit()
+                logger.info("Synced admin password from environment: %s", ADMIN_USERNAME)
         else:
             logger.warning("ADMIN_PASSWORD not set — login will be disabled until it is configured")
 
@@ -602,12 +612,12 @@ async def insert_audit_log(
 
 async def insert_audit_log_batch(db: aiosqlite.Connection, rows: list[tuple]):
     """Batch insert audit log entries for efficiency.
-    Each row: (scan_id, member_name, source_type, text_preview, classification, activity_date, context, full_text, matched_keywords, source_url)
+    Each row: (scan_id, member_name, source_type, text_preview, classification, activity_date, context, full_text, matched_keywords, source_url, discard_reason)
     """
     await db.executemany(
         """INSERT INTO audit_log
-        (scan_id, member_name, source_type, text_preview, classification, activity_date, context, full_text, matched_keywords, source_url)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (scan_id, member_name, source_type, text_preview, classification, activity_date, context, full_text, matched_keywords, source_url, discard_reason)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         rows,
     )
     await db.commit()
