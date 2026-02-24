@@ -262,10 +262,12 @@ async function _loadTopicCheckboxes() {
         `<span class="ps-chip-topic-wrap"><button class="ps-chip alert-topic-chip" data-id="${t.id}" onclick="this.classList.toggle('ps-chip--active');this.closest('.ps-chip-topic-wrap').classList.toggle('ps-chip-topic-wrap--active')">${_escHtml(t.name)}</button></span>`
     ).join('');
     const laChips = topics.map(t =>
-        `<span class="ps-chip-topic-wrap"><button class="ps-chip alert-la-topic-chip" data-id="${t.id}" onclick="this.classList.toggle('ps-chip--active');this.closest('.ps-chip-topic-wrap').classList.toggle('ps-chip-topic-wrap--active')">${_escHtml(t.name)}</button></span>`
+        `<span class="ps-chip-topic-wrap"><button class="ps-chip alert-la-topic-chip ps-chip--active" data-id="${t.id}" onclick="this.classList.toggle('ps-chip--active');this.closest('.ps-chip-topic-wrap').classList.toggle('ps-chip-topic-wrap--active')">${_escHtml(t.name)}</button></span>`
     ).join('');
     document.getElementById('alertTopicCheckboxes').innerHTML = chips;
     document.getElementById('alertLookaheadTopicCheckboxes').innerHTML = laChips;
+    // Default all lookahead topic wraps to active
+    document.querySelectorAll('#alertLookaheadTopicCheckboxes .ps-chip-topic-wrap').forEach(w => w.classList.add('ps-chip-topic-wrap--active'));
 }
 
 function _loadSourceCheckboxes() {
@@ -278,14 +280,23 @@ function _loadSourceCheckboxes() {
 function _loadEventTypeCheckboxes() {
     const types = ['debate', 'oral_questions', 'committee', 'bill_stage', 'westminster_hall', 'statement', 'general_committee'];
     document.getElementById('alertEventTypeCheckboxes').innerHTML = types.map(t =>
-        `<button class="ps-chip alert-event-type-chip" data-type="${t}" onclick="this.classList.toggle('ps-chip--active')">${t.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</button>`
+        `<button class="ps-chip alert-event-type-chip ps-chip--active" data-type="${t}" onclick="this.classList.toggle('ps-chip--active')">${t.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</button>`
     ).join('');
 }
 
 function _loadHouseCheckboxes() {
     document.getElementById('alertHouseCheckboxes').innerHTML = ['Commons', 'Lords'].map(h =>
-        `<button class="ps-chip alert-house-chip" data-house="${h}" onclick="this.classList.toggle('ps-chip--active')">${h}</button>`
+        `<button class="ps-chip alert-house-chip ps-chip--active" data-house="${h}" onclick="this.classList.toggle('ps-chip--active')">${h}</button>`
     ).join('');
+}
+
+function toggleAllLookaheadTopics() {
+    const chips = [...document.querySelectorAll('#alertLookaheadTopicCheckboxes .alert-la-topic-chip')];
+    const allActive = chips.every(c => c.classList.contains('ps-chip--active'));
+    chips.forEach(c => {
+        c.classList.toggle('ps-chip--active', !allActive);
+        c.closest('.ps-chip-topic-wrap')?.classList.toggle('ps-chip-topic-wrap--active', !allActive);
+    });
 }
 
 function _sourceLabel(s) {

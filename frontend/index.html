@@ -114,7 +114,7 @@
                         <span class="ps-chip-group__label">TOPICS</span>
                         <div style="display:flex;gap:4px;align-items:center;" onclick="event.stopPropagation()">
                             <button class="ps-btn ps-btn--ghost ps-btn--sm btn-undo disabled" id="undoBtn" onclick="undoLastAction()" title="Undo">&#8617;</button>
-                            <span style="font-size:var(--ps-text-sm);color:var(--ps-text-muted);cursor:pointer;" id="topicToggleAllBtn" onclick="toggleAllTopicsBtn()">All – None</span>
+                            <span style="font-size:var(--ps-text-sm);color:var(--ps-text-muted);cursor:pointer;" id="topicToggleAllBtn" onclick="toggleAllTopicsBtn()">All / None</span>
                         </div>
                     </div>
                     <div class="ps-chip-group__items topic-chips-row">
@@ -431,7 +431,10 @@
                             </div>
 
                             <div style="margin-bottom:12px;">
-                                <label class="source-label" style="margin-bottom:6px;">Topics</label>
+                                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                                    <label class="source-label">Topics</label>
+                                    <span style="font-size:var(--ps-text-sm);color:var(--ps-text-muted);cursor:pointer;" onclick="toggleAllLookaheadTopics()">All / None</span>
+                                </div>
                                 <div id="alertLookaheadTopicCheckboxes" class="ps-chip-group__items"></div>
                             </div>
                         </div>
