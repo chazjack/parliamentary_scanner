@@ -3,30 +3,49 @@
 from datetime import datetime
 
 
-def _base_template(title: str, body: str, alert_name: str = "") -> str:
+def _fmt_date_ddmmyy(date_str: str) -> str:
+    """Convert YYYY-MM-DD to DD/MM/YY."""
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y"):
+        try:
+            return datetime.strptime(date_str, fmt).strftime("%d/%m/%y")
+        except ValueError:
+            continue
+    return date_str
+
+
+def _fmt_date_range_header(start: str, end: str) -> str:
+    """Format scan date range as 'X Jan to X Feb YYYY' for the header."""
+    try:
+        s = datetime.strptime(start, "%Y-%m-%d")
+        e = datetime.strptime(end, "%Y-%m-%d")
+        if s.year == e.year:
+            return f"{s.day} {s.strftime('%b')} to {e.day} {e.strftime('%b')} {e.year}"
+        return f"{s.day} {s.strftime('%b')} {s.year} to {e.day} {e.strftime('%b')} {e.year}"
+    except ValueError:
+        return f"{start} to {end}"
+
+
+def _base_template(title: str, body: str, alert_name: str = "", date_range: str = "") -> str:
     """Wrap body content in the shared email layout."""
+    date_range_html = (
+        f'<div style="font-size:13px;color:#71717a;white-space:nowrap;">{date_range}</div>'
+        if date_range else ""
+    )
     return f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-l<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   body {{ font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; padding: 0; background: #09090b; color: #a1a1aa; }}
   .container {{ max-width: 680px; margin: 0 auto; background: #0c0c0e; }}
   .header {{ padding: 24px 32px; border-bottom: 1px solid #1c1c1f; }}
-  .header-inner {{ display: flex; align-items: center; gap: 12px; }}
-  .logo-icon {{ width: 48px; height: 48px; display: inline-block; vertical-align: middle; }}
-  .logo-text {{ display: inline-block; vertical-align: middle; margin-left: 14px; }}
-  .logo-title {{ font-size: 22px; font-weight: 700; color: #e4e4e7; letter-spacing: -0.02em; display: block; }}
+  .logo-title {{ font-size: 28px; font-weight: 700; color: #e4e4e7; letter-spacing: -0.02em; }}
   .header-meta {{ margin-top: 16px; }}
   .header-meta h1 {{ margin: 0 0 4px; font-size: 24px; font-weight: 700; color: #e4e4e7; letter-spacing: -0.02em; }}
   .header-meta .subtitle {{ color: #52525b; font-size: 12px; }}
   .content {{ padding: 24px 32px; }}
-  .summary-box {{ background: #131315; border: 1px solid #1c1c1f; border-radius: 8px; padding: 16px 20px; margin-bottom: 20px; }}
-  .summary-box .stat {{ display: inline-block; margin-right: 28px; }}
-  .summary-box .stat-num {{ font-size: 20px; font-weight: 700; color: #e4e4e7; display: block; letter-spacing: -0.02em; }}
-  .summary-box .stat-label {{ font-size: 11px; color: #52525b; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; margin-top: 2px; display: block; }}
   .topics-row {{ margin-bottom: 20px; }}
   .topics-label {{ font-size: 10px; font-weight: 600; color: #52525b; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }}
   .result-card {{ background: #0c0c0e; border: 1px solid #1c1c1f; border-radius: 8px; padding: 16px; margin-bottom: 10px; }}
@@ -36,9 +55,6 @@ l<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;7
   .result-card .summary {{ font-size: 13px; line-height: 1.6; color: #a1a1aa; }}
   .result-card .quote {{ font-style: italic; color: #71717a; font-size: 12px; margin-top: 10px; padding-left: 12px; border-left: 2px solid #27272a; line-height: 1.5; }}
   .topic-pill {{ display: inline-block; background: #13121e; color: #818cf8; font-size: 11px; padding: 2px 8px; border-radius: 4px; margin-right: 4px; margin-bottom: 2px; border: 1px solid #22214a; font-weight: 500; }}
-  .confidence-high {{ color: #4ade80; font-weight: 600; }}
-  .confidence-medium {{ color: #fbbf24; font-weight: 600; }}
-  .confidence-low {{ color: #52525b; }}
   .event-row {{ border-bottom: 1px solid #18181b; padding: 12px 0; }}
   .event-row:last-child {{ border-bottom: none; }}
   .event-type {{ display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 500; margin-bottom: 4px; }}
@@ -63,40 +79,36 @@ l<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;7
 <body>
 <div class="container">
   <div class="header">
-    <div>
-      <svg class="logo-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="48" height="48">
-        <rect x="30" y="45" width="60" height="18" rx="9" fill="#e4e4e7"/>
-        <rect x="105" y="45" width="65" height="18" rx="9" fill="#e4e4e7"/>
-        <rect x="30" y="78" width="80" height="18" rx="9" fill="#e4e4e7"/>
-        <rect x="125" y="78" width="45" height="18" rx="9" fill="#e4e4e7"/>
-        <rect x="30" y="111" width="50" height="18" rx="9" fill="#e4e4e7"/>
-        <rect x="95" y="111" width="75" height="18" rx="9" fill="#e4e4e7"/>
-        <rect x="30" y="144" width="70" height="18" rx="9" fill="#e4e4e7"/>
-        <rect x="115" y="144" width="55" height="18" rx="9" fill="#e4e4e7"/>
-      </svg>
-      <span class="logo-text">
+    <div style="display:flex;align-items:center;justify-content:space-between;">
+      <div style="display:flex;align-items:center;gap:14px;">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="56" height="56">
+          <rect x="30" y="45" width="60" height="18" rx="9" fill="#e4e4e7"/>
+          <rect x="105" y="45" width="65" height="18" rx="9" fill="#e4e4e7"/>
+          <rect x="30" y="78" width="80" height="18" rx="9" fill="#e4e4e7"/>
+          <rect x="125" y="78" width="45" height="18" rx="9" fill="#e4e4e7"/>
+          <rect x="30" y="111" width="50" height="18" rx="9" fill="#e4e4e7"/>
+          <rect x="95" y="111" width="75" height="18" rx="9" fill="#e4e4e7"/>
+          <rect x="30" y="144" width="70" height="18" rx="9" fill="#e4e4e7"/>
+          <rect x="115" y="144" width="55" height="18" rx="9" fill="#e4e4e7"/>
+        </svg>
         <span class="logo-title">ParliScan</span>
-      </span>
+      </div>
+      {date_range_html}
     </div>
     <div class="header-meta">
       <h1>{title}</h1>
-      <div class="subtitle">{alert_name} &mdash; {datetime.utcnow().strftime('%d %B %Y')}</div>
+      <div class="subtitle">{alert_name}</div>
     </div>
   </div>
   <div class="content">
     {body}
   </div>
   <div class="footer">
-    Sent by ParliScan &mdash; Parliamentary Monitor.<br>
-    To manage this alert, visit your alert settings. To unsubscribe, reply with &ldquo;unsubscribe&rdquo; or remove your address from the alert settings.
+    Sent by ParliScan. To manage this alert, visit your alert settings.
   </div>
 </div>
 </body>
 </html>"""
-
-
-def _confidence_class(confidence: str) -> str:
-    return f"confidence-{confidence.lower()}" if confidence else ""
 
 
 def _format_topics(topics_json: str) -> str:
@@ -118,18 +130,9 @@ def scan_digest_html(
 ) -> str:
     """Build HTML for a scan alert digest email."""
     topic_pills = " ".join(f'<span class="topic-pill">{t}</span>' for t in topics)
+    date_range = _fmt_date_range_header(scan_start, scan_end)
 
-    summary_box = f"""
-    <div class="summary-box">
-      <span class="stat">
-        <span class="stat-num">{len(results)}</span>
-        <span class="stat-label">Relevant results</span>
-      </span>
-      <span class="stat">
-        <span class="stat-num">{scan_start} &ndash; {scan_end}</span>
-        <span class="stat-label">Period scanned</span>
-      </span>
-    </div>
+    topics_section = f"""
     <div class="topics-row">
       <div class="topics-label">Topics</div>
       {topic_pills}
@@ -137,8 +140,8 @@ def scan_digest_html(
     """
 
     if not results:
-        body = summary_box + '<p class="empty-msg">No relevant parliamentary activity was found for your selected topics during this period.</p>'
-        return _base_template("Scan Alert: No Activity", body, alert_name)
+        body = topics_section + '<p class="empty-msg">No relevant parliamentary activity was found for your selected topics during this period.</p>'
+        return _base_template("Scan Alert: No Activity", body, alert_name, date_range)
 
     cards = []
     for r in results:
@@ -151,23 +154,24 @@ def scan_digest_html(
             source_link = f' &middot; <a href="{r["source_url"]}">View source &rarr;</a>'
 
         topics_html = _format_topics(r.get("topics", "[]"))
-        topics_section = f'<div class="topics-row" style="margin-bottom:8px;">{topics_html}</div>' if topics_html else ""
+        topics_row = f'<div class="topics-row" style="margin-bottom:8px;">{topics_html}</div>' if topics_html else ""
+
+        activity_date = _fmt_date_ddmmyy(r.get("activity_date", ""))
 
         cards.append(f"""
         <div class="result-card">
           <div class="member">{r.get("member_name", "Unknown")}</div>
           <div class="meta">
-            {r.get("party", "")} &middot; {r.get("forum", "")} &middot; {r.get("activity_date", "")}
-            &middot; <span class="{_confidence_class(r.get("confidence", ""))}">{r.get("confidence", "")}</span>
+            {r.get("party", "")} &middot; {r.get("forum", "")} &middot; {activity_date}
             {source_link}
           </div>
-          {topics_section}
+          {topics_row}
           <div class="summary">{r.get("summary", "")}</div>
           {quote_html}
         </div>""")
 
-    body = summary_box + "\n".join(cards)
-    return _base_template(f"Scan Alert: {len(results)} Results", body, alert_name)
+    body = topics_section + "\n".join(cards)
+    return _base_template(f"Scan Alert: {len(results)} Results", body, alert_name, date_range)
 
 
 def lookahead_digest_html(
@@ -177,22 +181,11 @@ def lookahead_digest_html(
     end_date: str,
 ) -> str:
     """Build HTML for a lookahead alert digest email."""
-    summary_box = f"""
-    <div class="summary-box">
-      <span class="stat">
-        <span class="stat-num">{len(events)}</span>
-        <span class="stat-label">Upcoming events</span>
-      </span>
-      <span class="stat">
-        <span class="stat-num">{start_date} &ndash; {end_date}</span>
-        <span class="stat-label">Period</span>
-      </span>
-    </div>
-    """
+    date_range = _fmt_date_range_header(start_date, end_date)
 
     if not events:
-        body = summary_box + '<p class="empty-msg">No upcoming parliamentary events were found matching your filters for this period.</p>'
-        return _base_template("Lookahead Alert: No Events", body, alert_name)
+        body = '<p class="empty-msg">No upcoming parliamentary events were found matching your filters for this period.</p>'
+        return _base_template("Lookahead Alert: No Events", body, alert_name, date_range)
 
     # Group events by date
     by_date: dict[str, list[dict]] = {}
@@ -231,5 +224,5 @@ def lookahead_digest_html(
               </div>
             </div>""")
 
-    body = summary_box + "\n".join(sections)
-    return _base_template(f"Lookahead Alert: {len(events)} Events", body, alert_name)
+    body = "\n".join(sections)
+    return _base_template(f"Lookahead Alert: {len(events)} Events", body, alert_name, date_range)

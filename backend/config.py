@@ -34,7 +34,7 @@ KEYWORD_PARALLELISM = int(os.getenv("KEYWORD_PARALLELISM", "12"))  # max concurr
 
 # Email (Resend)
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
-RESEND_FROM_EMAIL = os.getenv("RESEND_FROM_EMAIL", "Parliamentary Monitor <alerts@updates.example.com>")
+RESEND_FROM_EMAIL = os.getenv("RESEND_FROM_EMAIL", "Parliscan <alerts@updates.example.com>")
 
 # Auth — set these as environment variables on Railway
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
