@@ -1072,6 +1072,34 @@ u    padding: 0;
     overflow-y: auto;
 }
 
+.member-filter-display {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+    padding: 8px 10px;
+    background: rgba(0,0,0,0.15);
+    border-radius: var(--ps-radius-lg, var(--radius));
+    border: 1px solid var(--ps-border, var(--border));
+}
+
+.member-filter-display__label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ps-text-muted, var(--text-light));
+    flex-shrink: 0;
+}
+
+.member-filter-display__pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
 .kw-summary {
     font-size: 0.8rem;
     font-weight: 600;
@@ -3515,7 +3543,7 @@ u    padding: 0;
 .member-autocomplete {
     position: relative;
     flex: 1;
-    max-width: 360px;
+    max-width: 540px;
 }
 
 .member-autocomplete__dropdown {
@@ -3617,6 +3645,55 @@ u    padding: 0;
 
 .member-selected-pill__clear:hover {
     color: var(--ps-danger, var(--accent));
+}
+
+/* Group pills — distinct indigo/purple styling */
+.member-selected-pill--group {
+    background: rgba(99, 102, 241, 0.12);
+    border-color: rgba(99, 102, 241, 0.35);
+    max-width: 320px;
+}
+
+.member-selected-pill__badge {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #6366f1;
+    background: rgba(99, 102, 241, 0.15);
+    border-radius: 999px;
+    padding: 1px 6px;
+    flex-shrink: 0;
+}
+
+/* Group items in the autocomplete dropdown */
+.member-autocomplete__item--group {
+    background: rgba(99, 102, 241, 0.06);
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+}
+
+.member-autocomplete__item--group:hover {
+    background: rgba(99, 102, 241, 0.12);
+}
+
+.member-autocomplete__item-badge {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #6366f1;
+    background: rgba(99, 102, 241, 0.15);
+    border-radius: 999px;
+    padding: 1px 6px;
+    flex-shrink: 0;
+}
+
+.member-autocomplete__divider {
+    height: 1px;
+    background: var(--ps-border, var(--border));
+    margin: 2px 0;
 }
 
 

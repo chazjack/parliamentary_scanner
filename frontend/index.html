@@ -54,6 +54,12 @@
                 </span>
                 <span class="ps-sidebar__nav-label">Topics</span>
             </button>
+            <button class="ps-sidebar__nav-item tab-btn" data-tab="groups" onclick="switchTab('groups')" title="Groups">
+                <span class="ps-sidebar__nav-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                </span>
+                <span class="ps-sidebar__nav-label">Groups</span>
+            </button>
         </nav>
 
         <!-- Sidebar collapse toggle -->
@@ -128,7 +134,7 @@
                 </div>
 
                 <div class="ps-chip-group" id="member-filter-group">
-                    <span class="ps-chip-group__label">MEMBER</span>
+                    <span class="ps-chip-group__label">MEMBER OR GROUP</span>
                     <div style="flex:1;display:flex;flex-direction:column;gap:6px;">
                         <div class="ps-chip-group__items" style="flex-wrap:wrap;gap:6px;">
                             <div class="member-autocomplete" id="memberAutocomplete">
@@ -151,6 +157,7 @@
                     <p id="progressLabel">No scan selected or currently active.</p>
                     <div id="progressPanels" style="display:none;">
                         <div id="keywordProgress" class="keyword-progress-panel"></div>
+                        <div id="memberFilterDisplay" class="member-filter-display" style="display:none;"></div>
                         <div id="pipelineStats" class="pipeline-stats-row"></div>
                         <div id="sourceCirclesRow" class="source-circles-row" style="display:none;"></div>
                     </div>
@@ -488,6 +495,58 @@
             </div>
         </div>
 
+        <!-- ===== Groups Tab ===== -->
+        <div id="tab-groups" style="display:none;">
+            <div class="la-cal-header" style="border-bottom:none; flex-direction:row; align-items:center; justify-content:space-between;">
+                <h2 class="la-cal-title">Groups</h2>
+                <button class="ps-btn ps-btn--secondary" style="padding:7px 12px;" onclick="showGroupForm()">New Group</button>
+            </div>
+
+            <!-- Groups list -->
+            <section id="groupsListSection" class="control-group-card">
+                <div class="table-container ps-table-wrapper">
+                    <table id="groupsTable" class="ps-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Members</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="groupsTableBody"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Group create/edit form -->
+            <section id="groupFormSection" class="control-group-card" style="display:none;">
+                <div class="results-header" style="margin-bottom:16px;">
+                    <h2 id="groupFormTitle">New Group</h2>
+                    <button class="ps-btn ps-btn--ghost ps-btn--sm" onclick="hideGroupForm()" aria-label="Close" style="padding:4px 8px;font-size:1.1rem;line-height:1;">&#x2715;</button>
+                </div>
+
+                <div style="margin-bottom:12px;">
+                    <label class="source-label" style="margin-bottom:4px;">Group Name</label>
+                    <input class="ps-input" type="text" id="groupName" placeholder="e.g. DSIT Committee">
+                </div>
+
+                <div style="margin-bottom:12px;">
+                    <label class="source-label" style="margin-bottom:6px;">Members</label>
+                    <div class="member-autocomplete" id="groupMemberAutocomplete">
+                        <input type="text" id="groupMemberSearchInput" class="ps-input ps-input--sm"
+                               placeholder="Search by name..." autocomplete="off">
+                        <div class="member-autocomplete__dropdown" id="groupMemberDropdown" style="display:none;"></div>
+                    </div>
+                    <div id="groupMemberPills" class="member-pills-container"></div>
+                </div>
+
+                <div style="display:flex;gap:12px;margin-top:16px;">
+                    <button class="ps-btn ps-btn--primary" onclick="saveGroup()">Save Group</button>
+                    <button class="ps-btn ps-btn--ghost ps-btn--sm" onclick="hideGroupForm()">Cancel</button>
+                </div>
+            </section>
+        </div>
+
     </main>
 
     <script src="/js/app.js"></script>
@@ -498,6 +557,7 @@
     <script src="/js/master.js"></script>
     <script src="/js/lookahead.js"></script>
     <script src="/js/alerts.js"></script>
+    <script src="/js/groups.js"></script>
 
     <!-- Topic keyword popover — lives at body level so it's never hidden by a tab's display:none -->
     <div id="topicPopover" class="topic-popover" style="display:none;">

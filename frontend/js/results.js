@@ -137,6 +137,16 @@ function loadStatus(scan) {
         }
     }
 
+    // Render member filter display from stored scan data
+    if (typeof renderMemberFilterDisplay === 'function') {
+        let memberEntries = [];
+        try {
+            const names = JSON.parse(scan.target_member_name || '[]');
+            memberEntries = names.map(n => ({ name: n }));
+        } catch (e) {}
+        renderMemberFilterDisplay(memberEntries);
+    }
+
     if (statsObj) {
         if (scan.status === 'completed') {
             pLabel.textContent = 'Scan complete!';

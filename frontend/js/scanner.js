@@ -14,6 +14,7 @@ const progressSection = document.getElementById('progress-section');
 const progressLabel = document.getElementById('progressLabel');
 const progressPanels = document.getElementById('progressPanels');
 const keywordProgressPanel = document.getElementById('keywordProgress');
+const memberFilterDisplay = document.getElementById('memberFilterDisplay');
 const pipelineStatsRow = document.getElementById('pipelineStats');
 const sourceCirclesRow = document.getElementById('sourceCirclesRow');
 
@@ -33,13 +34,24 @@ async function startScan() {
 
     // Use checked topics only
     const topicIds = Array.from(checkedTopicIds);
-    const memberIds = selectedMembers.map(m => m.id);
-    const memberNames = selectedMembers.map(m => m.name);
 
-    if (topicIds.length === 0 && memberIds.length === 0) {
+    // Expand groups into flat member arrays
+    const allMemberIds = [
+        ...selectedMembers.map(m => m.id),
+        ...selectedGroups.flatMap(g => g.member_ids),
+    ];
+    const allMemberNames = [
+        ...selectedMembers.map(m => m.name),
+        ...selectedGroups.flatMap(g => g.member_names),
+    ];
+
+    if (topicIds.length === 0 && allMemberIds.length === 0) {
         alert('Please select at least one topic or a member to scan.');
         return;
     }
+
+    const memberIds = allMemberIds;
+    const memberNames = allMemberNames;
 
     // Collect enabled API sources
     const sources = Array.from(document.querySelectorAll('#source-toggles .ps-chip--active'))
@@ -63,9 +75,16 @@ async function startScan() {
     progressLabel.textContent = 'Starting scan...';
     progressPanels.style.display = 'none';
     keywordProgressPanel.innerHTML = '';
+    memberFilterDisplay.innerHTML = '';
+    memberFilterDisplay.style.display = 'none';
     pipelineStatsRow.innerHTML = '';
     sourceCirclesRow.style.display = 'none';
     sourceCirclesRow.innerHTML = '';
+    const _filterEntries = [
+        ...(window.selectedGroups || []).map(g => ({ name: g.name, isGroup: true, count: (g.member_ids || []).length })),
+        ...(window.selectedMembers || []).map(m => ({ name: m.name, meta: m.meta })),
+    ];
+    renderMemberFilterDisplay(_filterEntries);
     document.getElementById('auditSummary').innerHTML = '';
     document.getElementById('auditList').innerHTML = '<p class="empty-state-preview">Scanning...</p>';
 
@@ -325,6 +344,30 @@ function renderKeywordChips(stats) {
     keywordProgressPanel.innerHTML = html;
 }
 
+/* ---- Member / Group Filter Display (summary section) ---- */
+
+// entries: array of {name, isGroup?, count?} — or null to hide
+window.renderMemberFilterDisplay = function renderMemberFilterDisplay(entries) {
+    if (!memberFilterDisplay) return;
+    if (!entries || entries.length === 0) {
+        memberFilterDisplay.style.display = 'none';
+        memberFilterDisplay.innerHTML = '';
+        return;
+    }
+    const pillsHtml = entries.map(e => e.isGroup
+        ? `<span class="member-selected-pill member-selected-pill--group">
+               <span class="member-selected-pill__badge">Group</span>
+               <span class="member-selected-pill__name">${escapeHtml(e.name)}${e.count != null ? ` (${e.count} MPs)` : ''}</span>
+           </span>`
+        : `<span class="member-selected-pill">
+               <span class="member-selected-pill__name">${escapeHtml(e.name)}</span>
+               ${e.meta ? `<span class="member-selected-pill__meta">${escapeHtml(e.meta)}</span>` : ''}
+           </span>`
+    ).join('');
+    memberFilterDisplay.innerHTML = `<div class="member-filter-display__label">MEMBER(S) SELECTED:</div><div class="member-filter-display__pills">${pillsHtml}</div>`;
+    memberFilterDisplay.style.display = '';
+};
+
 /* ---- Pipeline Stat Boxes (horizontal row) ---- */
 
 function renderPipelineBoxes(stats) {
@@ -508,6 +551,7 @@ document.querySelectorAll('#source-toggles .ps-chip').forEach(btn => {
 // ---- Member Autocomplete (multi-select) ----
 
 window.selectedMembers = []; // [{id, name, meta}, ...]
+window.selectedGroups = [];  // [{id, name, member_ids, member_names}, ...]
 
 (function initMemberAutocomplete() {
     const input = document.getElementById('memberSearchInput');
@@ -520,19 +564,31 @@ window.selectedMembers = []; // [{id, name, meta}, ...]
 
     function renderPills() {
         if (!pillsContainer) return;
-        if (selectedMembers.length === 0) {
-            pillsContainer.innerHTML = '';
-            return;
-        }
-        pillsContainer.innerHTML = selectedMembers.map(m => `
+        const memberHtml = selectedMembers.map(m => `
             <span class="member-selected-pill" data-id="${escapeHtml(m.id)}">
                 <span class="member-selected-pill__name">${escapeHtml(m.name)}</span>
-                <button class="member-selected-pill__clear" data-id="${escapeHtml(m.id)}" title="Remove">&#x2715;</button>
+                <button class="member-selected-pill__clear" data-id="${escapeHtml(m.id)}" title="Remove" data-kind="member">&#x2715;</button>
             </span>
         `).join('');
 
+        const groupHtml = selectedGroups.map(g => `
+            <span class="member-selected-pill member-selected-pill--group" data-id="${escapeHtml(String(g.id))}">
+                <span class="member-selected-pill__badge">Group</span>
+                <span class="member-selected-pill__name">${escapeHtml(g.name)} (${(g.member_ids || []).length} MPs)</span>
+                <button class="member-selected-pill__clear" data-id="${escapeHtml(String(g.id))}" title="Remove" data-kind="group">&#x2715;</button>
+            </span>
+        `).join('');
+
+        pillsContainer.innerHTML = groupHtml + memberHtml;
+
         pillsContainer.querySelectorAll('.member-selected-pill__clear').forEach(btn => {
-            btn.addEventListener('click', () => removeMember(btn.dataset.id));
+            btn.addEventListener('click', () => {
+                if (btn.dataset.kind === 'group') {
+                    removeGroup(btn.dataset.id);
+                } else {
+                    removeMember(btn.dataset.id);
+                }
+            });
         });
     }
 
@@ -551,6 +607,24 @@ window.selectedMembers = []; // [{id, name, meta}, ...]
         input.focus();
     }
 
+    function addGroup(group) {
+        if (selectedGroups.some(g => g.id === group.id)) return;
+        selectedGroups.push(group);
+        renderPills();
+        input.value = '';
+        dropdown.style.display = 'none';
+        input.focus();
+    }
+
+    function removeGroup(id) {
+        selectedGroups = selectedGroups.filter(g => String(g.id) !== String(id));
+        renderPills();
+        input.focus();
+    }
+
+    // Expose addGroup for groups.js "Scan" button
+    window.addGroupToScanner = addGroup;
+
     const PARTY_ABBR = {
         'Conservative': 'Con', 'Labour': 'Lab', 'Liberal Democrats': 'Lib Dem',
         'Scottish National Party': 'SNP', 'Green Party': 'Green', 'Reform UK': 'Reform',
@@ -568,26 +642,65 @@ window.selectedMembers = []; // [{id, name, meta}, ...]
         return suffix ? `${m.name} — ${suffix}` : m.name;
     }
 
-    function renderDropdown(members) {
-        if (!members || members.length === 0) {
+    function renderDropdown(matchingGroups, members) {
+        const hasGroups = matchingGroups && matchingGroups.length > 0;
+        const hasMembers = members && members.length > 0;
+
+        if (!hasGroups && !hasMembers) {
             dropdown.innerHTML = `<div class="member-autocomplete__empty">No results found</div>`;
             dropdown.style.display = '';
             return;
         }
-        const alreadySelected = new Set(selectedMembers.map(m => m.id));
+
+        const alreadySelectedMembers = new Set(selectedMembers.map(m => m.id));
+        const alreadySelectedGroups = new Set(selectedGroups.map(g => String(g.id)));
+
         let html = '';
-        for (const m of members) {
-            const meta = [m.party, m.member_type].filter(Boolean).join(' · ');
-            const dimmed = alreadySelected.has(String(m.id)) ? ' style="opacity:0.45;"' : '';
-            html += `<div class="member-autocomplete__item" data-id="${escapeHtml(String(m.id))}" data-name="${escapeHtml(m.name)}" data-meta="${escapeHtml(meta)}"${dimmed}>
-                <span class="member-autocomplete__item-name">${escapeHtml(m.name)}</span>
-                ${meta ? `<span class="member-autocomplete__item-meta">${escapeHtml(meta)}</span>` : ''}
-            </div>`;
+
+        // Groups first, with distinct styling
+        if (hasGroups) {
+            for (const g of matchingGroups) {
+                const dimmed = alreadySelectedGroups.has(String(g.id)) ? ' style="opacity:0.45;"' : '';
+                const count = (g.member_ids || []).length;
+                html += `<div class="member-autocomplete__item member-autocomplete__item--group"
+                    data-group-id="${escapeHtml(String(g.id))}"
+                    data-group-name="${escapeHtml(g.name)}"${dimmed}>
+                    <span class="member-autocomplete__item-badge">Group</span>
+                    <span class="member-autocomplete__item-name">${escapeHtml(g.name)}</span>
+                    <span class="member-autocomplete__item-meta">${count} member${count === 1 ? '' : 's'}</span>
+                </div>`;
+            }
+            if (hasMembers) {
+                html += `<div class="member-autocomplete__divider"></div>`;
+            }
         }
+
+        // Members below
+        if (hasMembers) {
+            for (const m of members) {
+                const meta = [m.party, m.member_type].filter(Boolean).join(' · ');
+                const dimmed = alreadySelectedMembers.has(String(m.id)) ? ' style="opacity:0.45;"' : '';
+                html += `<div class="member-autocomplete__item" data-id="${escapeHtml(String(m.id))}" data-name="${escapeHtml(m.name)}" data-meta="${escapeHtml(meta)}"${dimmed}>
+                    <span class="member-autocomplete__item-name">${escapeHtml(m.name)}</span>
+                    ${meta ? `<span class="member-autocomplete__item-meta">${escapeHtml(meta)}</span>` : ''}
+                </div>`;
+            }
+        }
+
         dropdown.innerHTML = html;
         dropdown.style.display = '';
 
-        dropdown.querySelectorAll('.member-autocomplete__item').forEach(item => {
+        // Group click handlers
+        dropdown.querySelectorAll('.member-autocomplete__item--group').forEach(item => {
+            item.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                const group = state.groups.find(g => String(g.id) === item.dataset.groupId);
+                if (group) addGroup(group);
+            });
+        });
+
+        // Member click handlers
+        dropdown.querySelectorAll('.member-autocomplete__item:not(.member-autocomplete__item--group)').forEach(item => {
             item.addEventListener('mousedown', (e) => {
                 e.preventDefault();
                 addMember(item.dataset.id, item.dataset.name, item.dataset.meta);
@@ -597,9 +710,13 @@ window.selectedMembers = []; // [{id, name, meta}, ...]
 
     async function doSearch(q) {
         try {
+            const qLower = q.toLowerCase();
+            const matchingGroups = (state.groups || []).filter(g =>
+                g.name.toLowerCase().includes(qLower)
+            );
             const url = `/api/scans/members/search?q=${encodeURIComponent(q)}`;
             const members = await API.get(url);
-            renderDropdown(members);
+            renderDropdown(matchingGroups, members);
         } catch (e) {
             dropdown.style.display = 'none';
         }
