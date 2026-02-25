@@ -5,10 +5,11 @@ function setSummaryBadge(status) {
     if (!badge) return;
     if (!status) { badge.className = ''; badge.textContent = ''; return; }
     badge.className = `history-status ${status}`;
-    badge.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+    const labels = { paused: 'Paused' };
+    badge.textContent = labels[status] || (status.charAt(0).toUpperCase() + status.slice(1));
     const killBtn = document.getElementById('summaryCancelBtn');
     if (killBtn) {
-        const isActive = status === 'running' || status === 'queued';
+        const isActive = status === 'running' || status === 'queued' || status === 'paused';
         killBtn.style.display = isActive ? '' : 'none';
         killBtn.disabled = false;
         killBtn.textContent = 'Cancel Scan';
@@ -163,6 +164,11 @@ function connectSSE(scanId) {
 
         progressLabel.textContent = phaseText;
 
+        // Update badge to reflect paused/running state
+        if (data.status === 'running') {
+            setSummaryBadge(statsObj && statsObj.api_paused ? 'paused' : 'running');
+        }
+
         // Update stage indicator and progress panels
         if (statsObj) {
             updateStageIndicator(statsObj);
@@ -280,13 +286,21 @@ function updateStageIndicator(stats) {
     const phase = (stats.phase || '').toLowerCase();
 
     if (phase.includes('storing') || phase.includes('scan complete')) {
+        document.querySelectorAll('.stage').forEach(s => s.classList.remove('paused'));
         setStageCompleted(2);
         setStageActive(3);
-    } else if (phase.includes('classifying') || phase.includes('classification')) {
+    } else if (stats.api_paused) {
+        // API paused — stay on classification stage with paused visual
+        setStageCompleted(1);
+        setStageActive(2);
+        const stage2 = document.querySelector('.stage[data-stage="2"]');
+        if (stage2) stage2.classList.add('paused');
+    } else if (phase.includes('classifying') || phase.includes('classification') || phase.includes('retrying')) {
+        document.querySelectorAll('.stage').forEach(s => s.classList.remove('paused'));
         setStageCompleted(1);
         setStageActive(2);
     } else {
-        // Keyword search phase (searching, dedup, pre-filter)
+        document.querySelectorAll('.stage').forEach(s => s.classList.remove('paused'));
         setStageActive(1);
     }
 }
@@ -389,6 +403,20 @@ window.renderMemberFilterDisplay = function renderMemberFilterDisplay(entries) {
 
 /* ---- Pipeline Stat Boxes (horizontal row) ---- */
 
+function buildDiscardTooltip(stats) {
+    const cats = stats.discard_category_counts || {};
+    const LABELS = { procedural: 'Procedural', no_position: 'No Position', off_topic: 'Off-Topic', generic: 'Generic' };
+    const COLORS = { procedural: '#d97706', no_position: '#3b82f6', off_topic: '#ef4444', generic: '#8b5cf6' };
+    const rows = [];
+    for (const [key, label] of Object.entries(LABELS)) {
+        if (cats[key]) {
+            rows.push(`<span class="pipe-tooltip-row"><span class="pipe-tooltip-num" style="color:${COLORS[key]}">${cats[key]}</span> ${label}</span>`);
+        }
+    }
+    if (rows.length === 0) return '';
+    return `<div class="pipe-box-tooltip pipe-box-tooltip--right">${rows.join('')}</div>`;
+}
+
 function renderPipelineBoxes(stats) {
     if (!pipelineStatsRow) return;
 
@@ -416,48 +444,59 @@ function renderPipelineBoxes(stats) {
     const removedByDedup = Math.max(0, totalApiResults - uniqueAfterDedup);
     const removedByPrefilter = stats.removed_by_prefilter || 0;
 
+    const apiErrors = stats.classifier_api_errors || 0;
+
     const kwTooltipRows = [
         removedByDedup > 0      ? `<span class="pipe-tooltip-row"><span class="pipe-tooltip-num">${removedByDedup}</span> Duplicate${removedByDedup !== 1 ? 's' : ''} removed</span>` : '',
         removedByPrefilter > 0  ? `<span class="pipe-tooltip-row"><span class="pipe-tooltip-num">${removedByPrefilter}</span> Procedural statement${removedByPrefilter !== 1 ? 's' : ''} removed</span>` : '',
         sentToClassifier > 0    ? `<span class="pipe-tooltip-row pipe-tooltip-row--sent"><span class="pipe-tooltip-num">${sentToClassifier}</span> Passed to classifier</span>` : '',
     ].filter(Boolean).join('');
 
+    // Left-aligned tooltip for keyword results (first box) to prevent left-edge clipping
     const kwTooltip = kwTooltipRows
-        ? `<div class="pipe-box-tooltip">${kwTooltipRows}</div>`
+        ? `<div class="pipe-box-tooltip pipe-box-tooltip--left">${kwTooltipRows}</div>`
         : '';
+
+    // Classified box: incorporate API error info when errors exist
+    let classifiedCls = '';
+    let classifiedTooltip = '';
+    let classifiedBadge = '';
+    if (apiErrors > 0) {
+        const errorReason = stats.api_error_reason || 'API error';
+        const isPaused = stats.api_paused;
+        const retryRow = isPaused
+            ? `<span class="pipe-tooltip-row pipe-tooltip-row--sent"><span class="pipe-tooltip-num">${apiErrors}</span> item${apiErrors !== 1 ? 's' : ''} queued for retry</span>`
+            : `<span class="pipe-tooltip-row pipe-tooltip-row--sent"><span class="pipe-tooltip-num">${apiErrors}</span> item${apiErrors !== 1 ? 's' : ''} retried</span>`;
+        classifiedCls = 'pipe-box-has-tooltip';
+        classifiedBadge = isPaused ? `<span class="pipe-box-badge" title="Classifier API errors">!</span>` : '';
+        classifiedTooltip = `<div class="pipe-box-tooltip">
+            <span class="pipe-tooltip-row pipe-tooltip-row--reason">${escapeHtml(errorReason)}</span>
+            ${retryRow}
+            <span class="pipe-tooltip-row">${isPaused ? 'Retrying automatically...' : 'Retried after reconnect'}</span>
+        </div>`;
+    }
 
     const boxes = [
         { label: 'Keyword Results', value: totalApiResults, cls: 'pipe-box-has-tooltip', tooltip: kwTooltip },
-        { label: 'Classified', value: `${totalClassified}/${sentToClassifier}`, cls: '' },
+        { label: 'Classified', value: `${totalClassified}/${sentToClassifier}`, cls: classifiedCls, tooltip: classifiedTooltip, badge: classifiedBadge },
         { label: 'Relevant', value: stats.classified_relevant || 0, cls: 'pipe-box-relevant', target: 'results-section' },
-        { label: 'Discarded', value: stats.classified_discarded || 0, cls: 'pipe-box-discarded', target: 'audit-section' },
+        { label: 'Discarded', value: stats.classified_discarded || 0, cls: `pipe-box-discarded${buildDiscardTooltip(stats) ? ' pipe-box-has-tooltip' : ''}`, target: 'audit-section', tooltip: buildDiscardTooltip(stats) },
     ];
 
     let html = '';
     for (const box of boxes) {
         const clickable = box.target ? `data-scroll-target="${box.target}" style="cursor:pointer;"` : '';
         html += `<div class="pipe-box ${box.cls}" ${clickable}>
+            ${box.badge || ''}
             <div class="pipe-box-value">${box.value}</div>
             <div class="pipe-box-label">${box.label}</div>
             ${box.tooltip || ''}
         </div>`;
     }
 
-    const apiErrors = stats.classifier_api_errors || 0;
-    if (apiErrors > 0) {
-        html += `<div class="pipe-box pipe-box-error">
-            <div class="pipe-box-value">${apiErrors}</div>
-            <div class="pipe-box-label">API Errors</div>
-        </div>`;
-        // Show warning below the boxes
-        const existing = pipelineStatsRow.parentElement.querySelector('.api-error-warning');
-        if (!existing) {
-            const warn = document.createElement('p');
-            warn.className = 'api-error-warning';
-            warn.textContent = '⚠ Classifier API errors detected. Check that ANTHROPIC_API_KEY is set on the server and the model name is correct.';
-            pipelineStatsRow.parentElement.appendChild(warn);
-        }
-    }
+    // Remove any legacy warning banner or error box
+    const existing = pipelineStatsRow.parentElement.querySelector('.api-error-warning');
+    if (existing) existing.remove();
 
     pipelineStatsRow.innerHTML = html;
 
@@ -480,10 +519,10 @@ function renderSourceCircles(stats) {
         'written_statements': 'Written Stmts', 'edms': 'EDMs',
         'bills': 'Bills', 'divisions': 'Divisions',
     };
-    const sourceCircleClass = {
-        'hansard': 'source-hansard', 'written_questions': 'source-written-qs',
-        'written_statements': 'source-written-stmts', 'edms': 'source-edms',
-        'bills': 'source-bills', 'divisions': 'source-divisions',
+    const sourceBadgeClass = {
+        'hansard': 'source-badge--hansard', 'written_questions': 'source-badge--written-qs',
+        'written_statements': 'source-badge--written-stmts', 'edms': 'source-badge--edms',
+        'bills': 'source-badge--bills', 'divisions': 'source-badge--divisions',
     };
     const keyToType = {
         'hansard': 'hansard', 'written_questions': 'written_question',
@@ -510,11 +549,12 @@ function renderSourceCircles(stats) {
     for (const srcKey of enabledSources) {
         const srcType = keyToType[srcKey] || srcKey;
         const count = perSourceRelevant[srcType] || 0;
+        if (count === 0) continue;
         const label = sourceLabels[srcKey] || srcKey;
-        const circleCls = sourceCircleClass[srcKey] || '';
-        html += `<div class="stat-circle ${circleCls}">
-            <div class="stat-value">${count}</div>
-            <div class="stat-label">${label}</div>
+        const badgeCls = sourceBadgeClass[srcKey] || '';
+        html += `<div class="audit-count">
+            <span class="count-badge ${badgeCls}">${count}</span>
+            <span>${label}</span>
         </div>`;
     }
 
@@ -542,12 +582,90 @@ function resetScanUI() {
     _stopLiveResults();
 }
 
+/* ---- Scan Size Warning ---- */
+
+// Relative classifier load per source, derived from observed audit log proportions
+// (written_questions ~69%, hansard ~23%, written_statements ~5%, edms ~3%, bills/divisions ~0%)
+const SOURCE_CLASSIFIER_WEIGHTS = {
+    written_questions:  0.69,
+    hansard:            0.23,
+    written_statements: 0.05,
+    edms:               0.03,
+    bills:              0.00,
+    divisions:          0.00,
+};
+
+window.updateScanWarning = function updateScanWarning() {
+    const warning = document.getElementById('scanWarning');
+    if (!warning) return;
+
+    const startVal = document.getElementById('startDate').value;
+    const endVal = document.getElementById('endDate').value;
+
+    const selectedTopics = state.topics.filter(t => checkedTopicIds.has(t.id));
+    const totalKeywords = selectedTopics.reduce((sum, t) => sum + t.keywords.length, 0);
+
+    // Member-only scan (Case 2) has no LLM; no topics or dates → nothing to warn about
+    if (totalKeywords === 0 || !startVal || !endVal) {
+        warning.style.display = 'none';
+        const card = warning.closest('section.control-group-card');
+        if (card) card.classList.remove('scan-card--amber', 'scan-card--red');
+        return;
+    }
+
+    const days = Math.round((new Date(endVal) - new Date(startVal)) / 86400000) + 1;
+
+    // Scale estimate by which sources are active — written questions alone drives ~69% of
+    // classifier calls, so deselecting it should substantially reduce the warning score.
+    const activeSources = Array.from(document.querySelectorAll('#source-toggles .ps-chip--active'))
+        .map(btn => btn.dataset.source);
+    const sourceMultiplier = activeSources.reduce(
+        (sum, src) => sum + (SOURCE_CLASSIFIER_WEIGHTS[src] ?? 0), 0
+    );
+
+    // Each member adds 0.05 to the multiplier (1 member → ×0.05, 20 members → ×1.0, etc.)
+    // Falls back to 1.0 when no members selected (keyword-only scan).
+    const memberCount = (window.selectedMembers || []).length
+        + (window.selectedGroups || []).reduce((sum, g) => sum + (g.member_ids?.length || 1), 0);
+    const memberMultiplier = memberCount > 0 ? memberCount * 0.05 : 1;
+
+    const estimated = totalKeywords * days * Math.max(sourceMultiplier, 0.01) * memberMultiplier;
+
+    const card = warning.closest('section.control-group-card');
+
+    if (estimated > 1000) {
+        warning.className = 'scan-warning scan-warning--red';
+        warning.textContent = 'Very large scan likely to deplete API credits. Consider fewer keywords or shorter date range.';
+        warning.style.display = '';
+        if (card) { card.classList.remove('scan-card--amber'); card.classList.add('scan-card--red'); }
+    } else if (estimated > 500) {
+        warning.className = 'scan-warning scan-warning--amber';
+        warning.textContent = 'Large scan likely to consume significant API credits. Consider fewer keywords or shorter date range.';
+        warning.style.display = '';
+        if (card) { card.classList.remove('scan-card--red'); card.classList.add('scan-card--amber'); }
+    } else {
+        warning.className = 'scan-warning';
+        warning.style.display = 'none';
+        if (card) { card.classList.remove('scan-card--amber', 'scan-card--red'); }
+    }
+};
+
+document.getElementById('startDate').addEventListener('change', window.updateScanWarning);
+document.getElementById('endDate').addEventListener('change', window.updateScanWarning);
 // Source chip toggles
 document.querySelectorAll('#source-toggles .ps-chip').forEach(btn => {
     btn.addEventListener('click', () => {
         btn.classList.toggle('ps-chip--active');
+        window.updateScanWarning();
     });
 });
+
+function toggleAllSourceChips() {
+    const chips = document.querySelectorAll('#source-toggles .ps-chip');
+    const allActive = Array.from(chips).every(c => c.classList.contains('ps-chip--active'));
+    chips.forEach(c => c.classList.toggle('ps-chip--active', !allActive));
+    window.updateScanWarning();
+}
 
 // ---- Topic Add Expander ----
 
@@ -624,6 +742,7 @@ window.selectedGroups = [];  // [{id, name, member_ids, member_names}, ...]
                 }
             });
         });
+        window.updateScanWarning?.();
     }
 
     function addMember(id, name, meta) {

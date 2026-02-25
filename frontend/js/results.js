@@ -567,11 +567,17 @@ async function loadAudit(scanId) {
             off_topic:   'Off-Topic',
             generic:     'Generic',
         };
+        const CATEGORY_DESCRIPTIONS = {
+            procedural:  'Administrative or boilerplate mention — e.g. referring to a previous answer, a bill title read by the Speaker, or a procedural header.',
+            no_position: 'The topic was raised but no substantive stance or meaningful position was expressed.',
+            off_topic:   'A keyword matched but the content does not actually relate to the monitored topics.',
+            generic:     'The reference is too vague or superficial to extract a clear position — the keyword appeared but nothing meaningful was said about it.',
+        };
         let summaryHtml = '';
         for (const [cat, label] of Object.entries(CATEGORY_LABELS)) {
             if (summary[cat]) {
                 summaryHtml += `<div class="audit-count">
-                    <span class="count-badge discard-pill--${cat}">${summary[cat]}</span>
+                    <span class="count-badge discard-pill--${cat}" data-tooltip="${CATEGORY_DESCRIPTIONS[cat]}">${summary[cat]}</span>
                     <span>${label}</span>
                 </div>`;
             }
@@ -595,8 +601,15 @@ async function loadAudit(scanId) {
                 : snippetHtml;
             const cat = isProcedural ? 'procedural' : (e.discard_category || 'generic');
             const CATEGORY_LABELS = { procedural: 'Procedural', no_position: 'No Position', off_topic: 'Off-Topic', generic: 'Generic' };
+            const CATEGORY_DESCRIPTIONS = {
+                procedural:  'Administrative or boilerplate mention — e.g. referring to a previous answer, a bill title read by the Speaker, or a procedural header.',
+                no_position: 'The topic was raised but no substantive stance or meaningful position was expressed.',
+                off_topic:   'A keyword matched but the content does not actually relate to the monitored topics.',
+                generic:     'The reference is too vague or superficial to extract a clear position — the keyword appeared but nothing meaningful was said about it.',
+            };
             const pillLabel = CATEGORY_LABELS[cat] || cat;
-            const pill = `<span class="discard-pill discard-pill--${cat}">${pillLabel}</span>`;
+            const pillTooltip = CATEGORY_DESCRIPTIONS[cat] ? ` data-tooltip="${CATEGORY_DESCRIPTIONS[cat]}"` : '';
+            const pill = `<span class="discard-pill discard-pill--${cat} discard-pill--list"${pillTooltip}>${pillLabel}</span>`;
             const reasonText = e.discard_reason ? ` ${escapeHtml(e.discard_reason)}` : '';
             const reasonHtml = `<span class="audit-reason">${pill}${reasonText}</span>`;
             listHtml += `<div class="audit-item">

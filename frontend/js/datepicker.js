@@ -116,9 +116,9 @@ function rangeOverlapsRecess(start, end) {
         hoverDate = null;
 
         // Update hidden inputs
-        if (start) startInput.value = fmt(start);
+        if (start) { startInput.value = fmt(start); startInput.dispatchEvent(new Event('change')); }
         else startInput.value = '';
-        if (end) endInput.value = fmt(end);
+        if (end) { endInput.value = fmt(end); endInput.dispatchEvent(new Event('change')); }
         else endInput.value = '';
 
         updateDisplay();

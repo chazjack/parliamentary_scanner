@@ -23,17 +23,17 @@
 
         <!-- Nav items — .tab-btn kept so existing switchTab() JS still works -->
         <nav class="ps-sidebar__nav">
-            <button class="ps-sidebar__nav-item tab-btn active" data-tab="calendar" onclick="switchTab('calendar')" title="Calendar">
-                <span class="ps-sidebar__nav-icon">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                </span>
-                <span class="ps-sidebar__nav-label">Calendar</span>
-            </button>
-            <button class="ps-sidebar__nav-item tab-btn" data-tab="scanner" onclick="switchTab('scanner')" title="Scanner">
+            <button class="ps-sidebar__nav-item tab-btn active" data-tab="scanner" onclick="switchTab('scanner')" title="Scanner">
                 <span class="ps-sidebar__nav-icon">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="15" r="1.5" fill="currentColor" stroke="none"/><path d="M7 10 A6 6 0 0 1 17 10"/><path d="M4 7 A10 10 0 0 1 20 7"/></svg>
                 </span>
                 <span class="ps-sidebar__nav-label">Scanner</span>
+            </button>
+            <button class="ps-sidebar__nav-item tab-btn" data-tab="calendar" onclick="switchTab('calendar')" title="Calendar">
+                <span class="ps-sidebar__nav-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                </span>
+                <span class="ps-sidebar__nav-label">Calendar</span>
             </button>
             <button class="ps-sidebar__nav-item tab-btn" data-tab="record" onclick="switchTab('record')" title="Record">
                 <span class="ps-sidebar__nav-icon">
@@ -98,13 +98,20 @@
                     </div>
                     <button id="scanBtn" class="ps-btn ps-btn--primary">Scan</button>
                     <button id="cancelBtn" class="ps-btn ps-btn--ghost" style="display:none;">Cancel</button>
+                    <div id="scanWarning" class="scan-warning" style="display:none;"></div>
                 </div>
             </div>
 
             <!-- Filter Bar: Sources + Member + Topics -->
             <div class="ps-filter-bar">
                 <div class="ps-chip-group" id="source-toggles">
-                    <span class="ps-chip-group__label">SOURCES</span>
+                    <div class="ps-chip-group__header">
+                        <span class="ps-chip-group__label">SOURCES</span>
+                        <div style="display:flex;align-items:center;">
+                            <span style="font-size:var(--ps-text-sm);visibility:hidden;margin-right:39px;">Undo</span>
+                            <span style="font-size:var(--ps-text-sm);color:var(--ps-text-muted);cursor:pointer;" onclick="toggleAllSourceChips()">All / None</span>
+                        </div>
+                    </div>
                     <div class="ps-chip-group__items">
                         <button class="ps-chip ps-chip--active" data-source="hansard" title="Records of debates in Commons and Lords">Hansard</button>
                         <button class="ps-chip ps-chip--active" data-source="written_questions" title="Questions tabled by MPs to government ministers">Written Qs</button>
@@ -119,8 +126,8 @@
                     <div class="ps-chip-group__header">
                         <span class="ps-chip-group__label">TOPICS</span>
                          <span id="topicSelectionIndicator" style="font-size:var(--ps-text-md);color:var(--ps-text-secondary);margin-left:6px;flex:1;"></span>
-                        <div style="display:flex;gap:4px;align-items:center;" onclick="event.stopPropagation()">
-                            <button class="ps-btn ps-btn--ghost ps-btn--sm btn-undo disabled" id="undoBtn" onclick="undoLastAction()" title="Undo">&#8617;</button>
+                        <div style="display:flex;align-items:center;" onclick="event.stopPropagation()">
+                            <span class="btn-undo disabled" id="undoBtn" onclick="undoLastAction()" style="font-size:var(--ps-text-sm);color:var(--ps-text-muted);cursor:pointer;margin-right:39px;">Undo</span>
                             <span style="font-size:var(--ps-text-sm);color:var(--ps-text-muted);cursor:pointer;" id="topicToggleAllBtn" onclick="toggleAllTopicsBtn()">All / None</span>
                         </div>
                     </div>

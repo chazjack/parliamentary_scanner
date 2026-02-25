@@ -191,6 +191,7 @@ function toggleTopicChip(topicId, btn) {
         wrap && wrap.classList.add('ps-chip-topic-wrap--active');
     }
     _syncToggleAllBtn();
+    window.updateScanWarning?.();
 }
 
 function toggleAllTopics(checked) {
@@ -205,6 +206,7 @@ function toggleAllTopics(checked) {
         wrap && wrap.classList.toggle('ps-chip-topic-wrap--active', checked);
     });
     _syncToggleAllBtn();
+    window.updateScanWarning?.();
 }
 
 function toggleAllTopicsBtn() {
@@ -227,6 +229,7 @@ function updateTopicSelectionIndicator() {
     } else {
         el.textContent = `${count} selected (${kwCount} keyword${kwCount !== 1 ? 's' : ''})`;
     }
+    window.updateScanWarning?.();
 }
 
 // ── Keyword actions ───────────────────────────────────────────────────────────

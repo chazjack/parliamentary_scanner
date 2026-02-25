@@ -151,6 +151,48 @@ header h1 {
     flex-wrap: wrap;
 }
 
+.scan-warning {
+    font-size: 0.8rem;
+    padding: 5px 10px;
+    border-radius: 6px;
+    line-height: 1.4;
+    width: fit-content;
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.scan-warning--amber::before,
+.scan-warning--red::before {
+    content: '!';
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 1.5px solid currentColor;
+    font-size: 0.7rem;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+.scan-warning--amber {
+    background: var(--ps-warning-soft);
+    border: 1px solid var(--ps-warning-border);
+    color: var(--ps-warning);
+}
+.scan-warning--red {
+    background: var(--ps-danger-soft);
+    border: 1px solid var(--ps-danger-border);
+    color: var(--ps-danger);
+}
+section.control-group-card.scan-card--amber {
+    border-color: var(--ps-warning);
+}
+section.control-group-card.scan-card--red {
+    border-color: var(--ps-danger);
+}
+
 /* Date Range Picker */
 .date-picker-wrapper {
     position: relative;
@@ -528,6 +570,7 @@ header h1 {
 .ps-filter-bar {
     flex-direction: column;
     gap: var(--ps-space-3);
+    align-items: stretch;
 u    padding: 0;
     border-bottom: none;
 }
@@ -1092,6 +1135,17 @@ u    padding: 0;
     animation: stagePulse 1.5s ease-in-out infinite;
 }
 
+.stage.paused .stage-circle {
+    border-color: var(--ps-warning);
+    background: var(--ps-warning-soft);
+    color: var(--ps-warning);
+    animation: none;
+}
+
+.stage.paused .stage-label {
+    color: var(--ps-warning);
+}
+
 .stage.completed .stage-circle {
     border-color: var(--green);
     background: var(--green);
@@ -1294,6 +1348,25 @@ u    padding: 0;
     cursor: default;
 }
 
+/* Alert badge (!) in top-right corner of a pipe-box */
+.pipe-box-badge {
+    position: absolute;
+    top: 5px;
+    right: 7px;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    border: 1px solid var(--ps-warning);
+    color: var(--ps-warning);
+    font-size: 0.6rem;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    pointer-events: none;
+}
+
 .pipe-box-tooltip {
     display: none;
     position: absolute;
@@ -1309,6 +1382,13 @@ u    padding: 0;
     min-width: 210px;
     text-align: left;
     pointer-events: none;
+}
+
+/* Left-aligned variant — tooltip left edge aligns with box left edge.
+   Used for the first box (Keyword Results) so it doesn't clip off the left side. */
+.pipe-box-tooltip--left {
+    left: 0;
+    transform: none;
 }
 
 .pipe-box-has-tooltip:hover .pipe-box-tooltip {
@@ -1340,6 +1420,40 @@ u    padding: 0;
     border-bottom: 6px solid var(--ps-bg-raised);
 }
 
+/* Arrow repositioned for left-aligned tooltip: point toward the box center.
+   Using a fixed offset (~40% of min-width) as a reasonable approximation. */
+.pipe-box-tooltip--left::before {
+    left: 40px;
+    transform: none;
+}
+
+.pipe-box-tooltip--left::after {
+    left: 40px;
+    transform: none;
+}
+
+/* Right-aligned variant — tooltip right edge aligns with box right edge.
+   Used for the last box (Discarded) so it doesn't clip off the right side. */
+.pipe-box-tooltip--right {
+    left: auto;
+    right: 0;
+    transform: none;
+    min-width: 0;
+    width: max-content;
+}
+
+.pipe-box-tooltip--right::before {
+    left: auto;
+    right: 40px;
+    transform: none;
+}
+
+.pipe-box-tooltip--right::after {
+    left: auto;
+    right: 40px;
+    transform: none;
+}
+
 .pipe-tooltip-row {
     display: flex;
     align-items: center;
@@ -1355,6 +1469,11 @@ u    padding: 0;
     border-top: 1px solid var(--ps-border-default);
     padding-top: 6px;
     margin-top: 2px;
+}
+
+.pipe-tooltip-row--reason {
+    color: var(--ps-warning);
+    font-weight: var(--ps-weight-semi);
 }
 
 .pipe-tooltip-num {
@@ -1404,16 +1523,6 @@ u    padding: 0;
     color: var(--ps-warning);
 }
 
-.api-error-warning {
-    width: 100%;
-    margin-top: 8px;
-    padding: 8px 12px;
-    background: var(--ps-warning-soft);
-    border: 1px solid var(--ps-warning-border);
-    border-radius: 6px;
-    color: var(--ps-warning);
-    font-size: 0.82rem;
-}
 
 /* History */
 #history-section {
@@ -1532,6 +1641,11 @@ u    padding: 0;
 .history-status.queued {
     background: var(--ps-accent-soft);
     color: var(--ps-accent);
+}
+
+.history-status.paused {
+    background: var(--ps-warning-soft);
+    color: var(--ps-warning);
 }
 
 #summaryScanDate {
@@ -1711,51 +1825,10 @@ u    padding: 0;
 .source-circles-row {
     display: flex;
     justify-content: flex-start;
-    gap: 12px;
+    gap: 16px;
     margin-top: 10px;
     flex-wrap: wrap;
 }
-
-.stat-circle {
-    width: 72px;
-    height: 72px;
-    border-radius: 50%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    background: var(--ps-bg-emphasis);
-    text-align: center;
-}
-
-.stat-circle .stat-value {
-    font-size: 1.1rem;
-    font-weight: 700;
-    line-height: 1.2;
-}
-
-.stat-circle .stat-label {
-    font-size: 0.55rem;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-    color: var(--text-light);
-    line-height: 1.2;
-    text-align: center;
-}
-
-/* Source-specific circle tints */
-.stat-circle.source-hansard { background: rgba(192,86,33,0.12); }
-.stat-circle.source-hansard .stat-value { color: var(--source-hansard); }
-.stat-circle.source-written-qs { background: rgba(43,108,176,0.12); }
-.stat-circle.source-written-qs .stat-value { color: var(--source-written-qs); }
-.stat-circle.source-written-stmts { background: rgba(44,122,123,0.12); }
-.stat-circle.source-written-stmts .stat-value { color: var(--source-written-stmts); }
-.stat-circle.source-edms { background: rgba(107,70,193,0.12); }
-.stat-circle.source-edms .stat-value { color: var(--source-edms); }
-.stat-circle.source-bills { background: rgba(155,44,44,0.12); }
-.stat-circle.source-bills .stat-value { color: var(--source-bills); }
-.stat-circle.source-divisions { background: rgba(39,103,73,0.12); }
-.stat-circle.source-divisions .stat-value { color: var(--source-divisions); }
 
 /* Audit panel */
 #audit-section {
@@ -1765,7 +1838,7 @@ u    padding: 0;
     border: 1px solid var(--border);
     margin-top: 16px;
     max-width: 100%;
-    overflow-x: hidden;
+    overflow-x: clip; /* clip (not hidden) so tooltip popouts on audit badges aren't clipped */
 }
 
 #audit-section .section-header {
@@ -1805,6 +1878,14 @@ u    padding: 0;
     background: var(--ps-warning-soft);
     color: var(--ps-warning);
 }
+
+/* Source-type count badges — colour-coded to match source type buttons */
+.audit-count .count-badge.source-badge--hansard      { background: transparent; color: var(--source-hansard);       border: 1px solid rgba(192,86,33,0.45); }
+.audit-count .count-badge.source-badge--written-qs   { background: transparent; color: var(--source-written-qs);    border: 1px solid rgba(43,108,176,0.45); }
+.audit-count .count-badge.source-badge--written-stmts{ background: transparent; color: var(--source-written-stmts); border: 1px solid rgba(44,122,123,0.45); }
+.audit-count .count-badge.source-badge--edms         { background: transparent; color: var(--source-edms);          border: 1px solid rgba(107,70,193,0.45); }
+.audit-count .count-badge.source-badge--bills        { background: transparent; color: var(--source-bills);         border: 1px solid rgba(155,44,44,0.45); }
+.audit-count .count-badge.source-badge--divisions    { background: transparent; color: var(--source-divisions);     border: 1px solid rgba(39,103,73,0.45); }
 
 .audit-container {
     max-height: 400px;
@@ -1892,6 +1973,75 @@ u    padding: 0;
     background: transparent;
     border: 1px solid;
     line-height: 1.6;
+    position: relative;
+    cursor: default;
+}
+
+.discard-pill[data-tooltip],
+.count-badge[data-tooltip] {
+    position: relative;
+    cursor: default;
+}
+
+.discard-pill[data-tooltip]::after,
+.count-badge[data-tooltip]::after {
+    content: attr(data-tooltip);
+    display: none;
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--ps-bg-raised);
+    border: 1px solid var(--ps-border-strong);
+    border-radius: var(--ps-radius-xl);
+    padding: 8px 12px;
+    box-shadow: var(--ps-shadow-lg);
+    font-size: var(--ps-text-base);
+    font-weight: var(--ps-weight-normal);
+    color: var(--ps-text-secondary);
+    letter-spacing: 0;
+    text-transform: none;
+    white-space: normal;
+    width: 240px;
+    line-height: var(--ps-leading-normal);
+    z-index: 600;
+    pointer-events: none;
+    text-align: left;
+}
+
+/* Arrow — downward */
+.discard-pill[data-tooltip]::before,
+.count-badge[data-tooltip]::before {
+    content: '';
+    display: none;
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 50%;
+    transform: translateX(-50%);
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-bottom: 6px solid var(--ps-border-strong);
+    z-index: 601;
+    pointer-events: none;
+}
+
+/* Trigger on the element itself or its parent .audit-count (so hovering the label text also works) */
+.discard-pill[data-tooltip]:hover::after,
+.count-badge[data-tooltip]:hover::after,
+.audit-count:hover .count-badge[data-tooltip]::after {
+    display: block;
+}
+
+.discard-pill[data-tooltip]:hover::before,
+.count-badge[data-tooltip]:hover::before,
+.audit-count:hover .count-badge[data-tooltip]::before {
+    display: block;
+}
+
+/* Left-align tooltip for the first badge in a row to prevent left-edge clipping */
+.audit-summary .audit-count:first-child .count-badge[data-tooltip]::after {
+    left: 0;
+    transform: none;
 }
 
 .discard-pill--procedural  { color: #d97706; border-color: rgba(217,119,6,0.45); }

@@ -224,7 +224,7 @@
   display: flex;
   align-items: center;
   gap: var(--ps-space-3);
-  padding: 7px 10px;
+  padding: 7px 10px 7px 8px;
   height: 34px;
   border-radius: var(--ps-radius-lg);
   background: transparent;

@@ -99,7 +99,10 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
         "sent_to_classifier": 0,
         "classified_relevant": 0,
         "classified_discarded": 0,
+        "discard_category_counts": {},
         "classifier_api_errors": 0,
+        "api_paused": False,
+        "api_error_reason": "",
         "kw_status": {},           # {keyword: "active"|"done"} — absent = pending
         "kw_counts": {},           # {keyword: api_result_count}
         "total_keywords": 0,
@@ -306,14 +309,37 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
         async with classify_sem:
             if cancel_event.is_set():
                 return
+            # If API is known to be down, skip the call and queue for retry
+            if stats["api_paused"]:
+                async with progress_lock:
+                    api_failed.append(contribution)
+                    stats["classifier_api_errors"] = len(api_failed)
+                return
             if CLASSIFIER_STAGGER > 0:
                 await asyncio.sleep(CLASSIFIER_STAGGER)
             try:
                 classification, discard_reason, discard_category = await classifier.classify(contribution)
-            except ClassifierAPIError:
+            except ClassifierAPIError as e:
                 async with progress_lock:
                     api_failed.append(contribution)
                     stats["classifier_api_errors"] = classifier.api_errors
+                    err_str = str(e).lower()
+                    if "rate" in err_str:
+                        stats["api_error_reason"] = "Rate limit reached"
+                    elif "timeout" in err_str:
+                        stats["api_error_reason"] = "API timeout"
+                    elif "auth" in err_str or "key" in err_str:
+                        stats["api_error_reason"] = "Authentication error — check API key"
+                    else:
+                        stats["api_error_reason"] = "API unavailable"
+                    stats["api_paused"] = True
+                    prog = (
+                        60 + (classified_count / max(queued_for_classify, 1)) * 35
+                        if search_done
+                        else (completed_keywords / total_keywords) * 60
+                    )
+                    stats["phase"] = "Classification paused whilst API reconnects..."
+                    await _update_with_stats(min(prog, 95), total_relevant=total_relevant)
                 return
 
             if classification:
@@ -359,6 +385,10 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
                     )
                 else:
                     stats["classified_discarded"] += 1
+                    cat_key = discard_category or "generic"
+                    stats["discard_category_counts"][cat_key] = (
+                        stats["discard_category_counts"].get(cat_key, 0) + 1
+                    )
                     stats["classifier_api_errors"] = classifier.api_errors
                     audit_row = (
                         scan_id, contribution.member_name, contribution.source_type,
@@ -435,12 +465,16 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
             "Scan %d: %d items failed due to API errors — retrying (up to %d rounds)",
             scan_id, len(api_failed), max_retry_rounds,
         )
-        for retry_round in range(max_retry_rounds):
+        # The original client is already closed — open a fresh one for member lookups during retry
+        retry_client = ParliamentAPIClient()
+        try:
+          for retry_round in range(max_retry_rounds):
             if cancel_event.is_set():
                 break
+            stats["api_paused"] = True
             stats["phase"] = (
-                f"Retrying {len(api_failed)} rate-limited items "
-                f"(round {retry_round + 1}/{max_retry_rounds})..."
+                f"Classification paused whilst API reconnects "
+                f"(retrying {len(api_failed)} items, round {retry_round + 1}/{max_retry_rounds})..."
             )
             await _update_with_stats(97, total_relevant=total_relevant)
             await asyncio.sleep(retry_wait)
@@ -452,11 +486,11 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
                     still_failed.extend(api_failed)
                     break
                 try:
-                    classification, discard_reason = await classifier.classify(c)
+                    classification, discard_reason, discard_category = await classifier.classify(c)
                     if classification:
                         member_info = {"name": "", "party": "", "member_type": "", "constituency": ""}
                         if c.member_id:
-                            member_info = await client.lookup_member(c.member_id)
+                            member_info = await retry_client.lookup_member(c.member_id)
                         await insert_result(
                             db, scan_id,
                             dedup_key=f"{c.source_type}:{c.id}",
@@ -482,7 +516,7 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
                             scan_id, c.member_name, c.source_type, c.text[:200], "not_relevant",
                             c.date.strftime("%Y-%m-%d") if c.date else "",
                             c.context or "", c.text[:2000],
-                            json.dumps(c.matched_keywords), c.url, discard_reason,
+                            json.dumps(c.matched_keywords), c.url, discard_reason, discard_category,
                         )])
                 except ClassifierAPIError:
                     still_failed.append(c)
@@ -494,7 +528,10 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
             )
             api_failed = still_failed
             if not api_failed:
+                stats["api_paused"] = False
                 break
+        finally:
+            await retry_client.close()
 
         # Write any permanently failed items to audit
         if api_failed:
@@ -507,7 +544,7 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
                  c.date.strftime("%Y-%m-%d") if c.date else "",
                  c.context or "", c.text[:2000],
                  json.dumps(c.matched_keywords), c.url,
-                 "Rate limited — classification failed after all retries")
+                 "Rate limited — classification failed after all retries", None)
                 for c in api_failed
             ])
 
@@ -519,6 +556,7 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
 
     # Mark complete (results already stored inline during classification)
     stats["phase"] = "Scan complete"
+    stats["api_paused"] = False
     stats["classifier_api_errors"] = classifier.api_errors
     await update_scan_progress(
         db, scan_id,
@@ -595,7 +633,7 @@ async def _run_member_topic_scan(
         audit_rows = [
             (scan_id, c.member_name, c.source_type, c.text[:200],
              "procedural_filter", c.date.strftime("%Y-%m-%d") if c.date else "",
-             c.context or "", c.text[:2000], json.dumps(c.matched_keywords), c.url, None)
+             c.context or "", c.text[:2000], json.dumps(c.matched_keywords), c.url, None, None)
             for c in procedural_items
         ]
         await insert_audit_log_batch(db, audit_rows)
@@ -618,10 +656,30 @@ async def _run_member_topic_scan(
         if cancel_event.is_set():
             break
 
-        try:
-            classification, discard_reason = await classifier.classify(c)
-        except ClassifierAPIError:
+        # If API is known to be down, queue item for retry without attempting API call
+        if stats["api_paused"]:
             api_failed.append(c)
+            stats["classifier_api_errors"] = len(api_failed)
+            continue
+
+        try:
+            classification, discard_reason, discard_category = await classifier.classify(c)
+        except ClassifierAPIError as e:
+            api_failed.append(c)
+            err_str = str(e).lower()
+            if "rate" in err_str:
+                stats["api_error_reason"] = "Rate limit reached"
+            elif "timeout" in err_str:
+                stats["api_error_reason"] = "API timeout"
+            elif "auth" in err_str or "key" in err_str:
+                stats["api_error_reason"] = "Authentication error — check API key"
+            else:
+                stats["api_error_reason"] = "API unavailable"
+            stats["api_paused"] = True
+            stats["classifier_api_errors"] = len(api_failed)
+            progress = 25 + (classified_count / max(len(to_classify), 1)) * 70
+            stats["phase"] = "Classification paused whilst API reconnects..."
+            await _update_with_stats(min(progress, 95), total_relevant=total_relevant)
             continue
 
         classified_count += 1
@@ -653,9 +711,14 @@ async def _run_member_topic_scan(
                 scan_id, c.member_name, c.source_type, c.text[:200], "not_relevant",
                 c.date.strftime("%Y-%m-%d") if c.date else "",
                 c.context or "", c.text[:2000], json.dumps(c.matched_keywords), c.url,
-                discard_reason,
+                discard_reason, discard_category,
             )])
 
+        if not classification:
+            cat_key = discard_category or "generic"
+            stats["discard_category_counts"][cat_key] = (
+                stats["discard_category_counts"].get(cat_key, 0) + 1
+            )
         stats["classified_relevant"] = total_relevant
         stats["classified_discarded"] = classified_count - total_relevant
         progress = 25 + (classified_count / max(len(to_classify), 1)) * 70
@@ -677,9 +740,10 @@ async def _run_member_topic_scan(
         for retry_round in range(max_retry_rounds):
             if cancel_event.is_set():
                 break
+            stats["api_paused"] = True
             stats["phase"] = (
-                f"Retrying {len(api_failed)} rate-limited items "
-                f"(round {retry_round + 1}/{max_retry_rounds})..."
+                f"Classification paused whilst API reconnects "
+                f"(retrying {len(api_failed)} items, round {retry_round + 1}/{max_retry_rounds})..."
             )
             await _update_with_stats(97, total_relevant=total_relevant)
             await asyncio.sleep(retry_wait)
@@ -691,7 +755,7 @@ async def _run_member_topic_scan(
                     still_failed.extend(api_failed)
                     break
                 try:
-                    classification, discard_reason = await classifier.classify(c)
+                    classification, discard_reason, discard_category = await classifier.classify(c)
                     if classification:
                         info = member_info_map.get(c.member_id) or member_info_map.get(target_member_ids[0], {})
                         await insert_result(
@@ -719,7 +783,7 @@ async def _run_member_topic_scan(
                             scan_id, c.member_name, c.source_type, c.text[:200], "not_relevant",
                             c.date.strftime("%Y-%m-%d") if c.date else "",
                             c.context or "", c.text[:2000],
-                            json.dumps(c.matched_keywords), c.url, discard_reason,
+                            json.dumps(c.matched_keywords), c.url, discard_reason, discard_category,
                         )])
                 except ClassifierAPIError:
                     still_failed.append(c)
@@ -731,6 +795,7 @@ async def _run_member_topic_scan(
             )
             api_failed = still_failed
             if not api_failed:
+                stats["api_paused"] = False
                 break
 
         if api_failed:
@@ -739,11 +804,12 @@ async def _run_member_topic_scan(
                  c.date.strftime("%Y-%m-%d") if c.date else "",
                  c.context or "", c.text[:2000],
                  json.dumps(c.matched_keywords), c.url,
-                 "Rate limited — classification failed after all retries")
+                 "Rate limited — classification failed after all retries", None)
                 for c in api_failed
             ])
 
     stats["phase"] = "Scan complete"
+    stats["api_paused"] = False
     stats["classifier_api_errors"] = classifier.api_errors
     await update_scan_progress(
         db, scan_id,
