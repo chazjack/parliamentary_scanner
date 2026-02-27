@@ -3,6 +3,7 @@
 let allResults = [];
 let currentSort = { col: null, dir: null }; // dir: 'asc' | 'desc' | null
 let masterResultIds = new Set(); // Track which result IDs are in the master list
+let currentScanTopicNames = null; // Set of topic names selected for the current scan
 
 // SVG icons for master list buttons (clean, consistent rendering)
 const SVG_PLUS = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="6" y1="2" x2="6" y2="10"/><line x1="2" y1="6" x2="10" y2="6"/></svg>';
@@ -11,6 +12,14 @@ const SVG_CROSS = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" s
 
 let historyPage = 1;
 const HISTORY_PER_PAGE = 5;
+
+function calcCost(scan) {
+    const M = 1_000_000;
+    return (scan.llm_input_tokens || 0) / M * 0.80
+         + (scan.llm_output_tokens || 0) / M * 4.00
+         + (scan.llm_cache_read_tokens || 0) / M * 0.08
+         + (scan.llm_cache_write_tokens || 0) / M * 1.00;
+}
 
 let resultsPage = 1;
 const RESULTS_PER_PAGE = 10;
@@ -88,12 +97,31 @@ async function refreshMasterResultIds() {
 }
 
 async function loadResults(scanId) {
+    expandSection('progress-section');
     await refreshMasterResultIds();
     const data = await API.get(`/api/scans/${scanId}/results`);
     allResults = data.results || [];
+
+    // Determine which topic names were selected for this scan (for display filtering)
+    if (data.scan && data.scan.topic_ids) {
+        try {
+            const topicIds = JSON.parse(data.scan.topic_ids);
+            currentScanTopicNames = new Set(
+                (state.topics || [])
+                    .filter(t => topicIds.includes(t.id))
+                    .map(t => t.name)
+            );
+        } catch (e) {
+            currentScanTopicNames = null;
+        }
+    } else {
+        currentScanTopicNames = null;
+    }
+
     renderResults(allResults);
     document.getElementById('results-section').style.display = '';
     if (data.scan) loadStatus(data.scan);
+    _idxGenerateForScan(scanId);
 }
 
 function loadStatus(scan) {
@@ -151,12 +179,15 @@ function loadStatus(scan) {
         if (scan.status === 'completed') {
             pLabel.textContent = 'Scan complete!';
             setStageCompleted(3);
+        } else if (scan.status === 'cancelled') {
+            pLabel.textContent = 'Scan cancelled.';
+            updateStageIndicator(statsObj);
         } else {
             pLabel.textContent = statsObj.phase || scan.status || '';
             updateStageIndicator(statsObj);
         }
         pPanels.style.display = '';
-        renderKeywordChips(statsObj);
+        renderKeywordChips(statsObj, scan.status);
         renderPipelineBoxes(statsObj);
         renderSourceCircles(statsObj);
     } else {
@@ -268,10 +299,16 @@ function renderResultsPage() {
     for (const r of pageResults) {
         const tr = document.createElement('tr');
 
-        // Parse topics JSON
+        // Parse topics JSON, filtered to only topics selected for this scan
         let topics = r.topics;
         try { topics = JSON.parse(r.topics); } catch (e) {}
-        const topicNames = Array.isArray(topics) ? topics : [];
+        let topicNames = Array.isArray(topics) ? topics : [];
+        if (currentScanTopicNames) {
+            const lowerMap = new Map([...currentScanTopicNames].map(t => [t.toLowerCase(), t]));
+            topicNames = topicNames
+                .map(t => lowerMap.get(t.toLowerCase()))
+                .filter(Boolean);
+        }
         const topicsStr = topicNames.join(', ');
 
         // Format date as dd/mm/yy
@@ -543,8 +580,6 @@ document.getElementById('exportBtn').addEventListener('click', () => {
 
 // Audit panel
 async function loadAudit(scanId) {
-    const auditSection = document.getElementById('audit-section');
-    auditSection.style.display = '';
     try {
         const data = await API.get(`/api/scans/${scanId}/audit`);
         const summary = data.summary || {};
@@ -708,6 +743,17 @@ async function loadHistory() {
     const start = (historyPage - 1) * HISTORY_PER_PAGE;
     const pageScans = scans.slice(start, start + HISTORY_PER_PAGE);
 
+    const header = document.createElement('div');
+    header.className = 'history-header';
+    header.innerHTML = `
+        <span>Date Initiated</span>
+        <span>Date Range</span>
+        <span>Results</span>
+        <span>API Cost</span>
+        <span>Status</span>
+    `;
+    container.appendChild(header);
+
     for (const s of pageScans) {
         const div = document.createElement('div');
         div.className = 'history-item';
@@ -732,10 +778,13 @@ async function loadHistory() {
         const errorMsg = s.error_message || '';
         const errorTitle = errorMsg ? ` title="${errorMsg.replace(/"/g, '&quot;')}"` : '';
         const errorClass = errorMsg ? ' history-status--clickable' : '';
+        const cost = calcCost(s);
+        const costStr = cost > 0 ? `~$${cost.toFixed(2)}` : '—';
         div.innerHTML = `
-            <span class="history-date">${formatDate(s.start_date)} to ${formatDate(s.end_date)}</span>
             <span class="history-conducted">${automatedDot}${conductedStr}</span>
+            <span class="history-date">${formatDate(s.start_date)} to ${formatDate(s.end_date)}</span>
             <span>${s.total_relevant || 0} results</span>
+            <span class="history-cost">${costStr}</span>
             <span class="history-status-col"><span class="history-status ${s.status}${errorClass}"${errorTitle}>${s.status}</span></span>
         `;
         if (errorMsg) {

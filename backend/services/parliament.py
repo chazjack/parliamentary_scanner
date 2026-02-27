@@ -219,7 +219,7 @@ class ParliamentAPIClient:
     # ---- Hansard API ----
 
     async def search_hansard(
-        self, keyword: str, start_date: str, end_date: str
+        self, keyword: str, start_date: str, end_date: str, on_page=None
     ) -> list[Contribution]:
         """Search Hansard for oral/debate contributions."""
         contributions = []
@@ -247,6 +247,7 @@ class ParliamentAPIClient:
             total = data.get("TotalContributions", 0)
             logger.debug("Hansard '%s': %d/%d (skip=%d)", keyword, len(items), total, skip)
 
+            before = len(contributions)
             for item in items:
                 member_name = item.get("MemberName") or item.get("AttributedTo", "")
                 if not member_name:
@@ -283,6 +284,9 @@ class ParliamentAPIClient:
                     matched_keywords=[keyword],
                 ))
 
+            if on_page and len(contributions) > before:
+                await on_page(contributions[before:])
+
             page += 1
             skip += len(items)
             if skip >= total:
@@ -293,7 +297,7 @@ class ParliamentAPIClient:
     # ---- Written Questions API ----
 
     async def search_written_questions(
-        self, keyword: str, start_date: str, end_date: str
+        self, keyword: str, start_date: str, end_date: str, on_page=None
     ) -> list[Contribution]:
         """Search Written Questions API. Returns question + answer as separate contributions."""
         contributions = []
@@ -320,6 +324,7 @@ class ParliamentAPIClient:
                 break
             total = data.get("totalResults", 0)
 
+            before = len(contributions)
             for item in results:
                 val = item.get("value", {})
                 question_id = str(val.get("id", ""))
@@ -389,6 +394,9 @@ class ParliamentAPIClient:
                             matched_keywords=[keyword],
                         ))
 
+            if on_page and len(contributions) > before:
+                await on_page(contributions[before:])
+
             skip += 20
             page += 1
             if skip >= total:
@@ -399,7 +407,7 @@ class ParliamentAPIClient:
     # ---- Written Statements API ----
 
     async def search_written_statements(
-        self, keyword: str, start_date: str, end_date: str
+        self, keyword: str, start_date: str, end_date: str, on_page=None
     ) -> list[Contribution]:
         """Search Written Statements API."""
         contributions = []
@@ -426,6 +434,7 @@ class ParliamentAPIClient:
                 break
             total = data.get("totalResults", 0)
 
+            before = len(contributions)
             for item in results:
                 val = item.get("value", {})
                 statement_id = str(val.get("id", ""))
@@ -473,6 +482,9 @@ class ParliamentAPIClient:
                     matched_keywords=[keyword],
                 ))
 
+            if on_page and len(contributions) > before:
+                await on_page(contributions[before:])
+
             skip += 20
             page += 1
             if skip >= total:
@@ -483,7 +495,7 @@ class ParliamentAPIClient:
     # ---- Early Day Motions API (NEW) ----
 
     async def search_edms(
-        self, keyword: str, start_date: str, end_date: str
+        self, keyword: str, start_date: str, end_date: str, on_page=None
     ) -> list[Contribution]:
         """Search Early Day Motions API."""
         contributions = []
@@ -512,6 +524,7 @@ class ParliamentAPIClient:
             paging = data.get("PagingInfo", {})
             total = paging.get("Total", len(response))
 
+            before = len(contributions)
             for edm in response:
                 edm_id = str(edm.get("Id", ""))
                 title = edm.get("Title", "")
@@ -544,6 +557,9 @@ class ParliamentAPIClient:
                         matched_keywords=[keyword],
                     ))
 
+            if on_page and len(contributions) > before:
+                await on_page(contributions[before:])
+
             skip += 100
             if skip >= total:
                 break
@@ -553,7 +569,7 @@ class ParliamentAPIClient:
     # ---- Bills API (NEW) ----
 
     async def search_bills(
-        self, keyword: str, start_date: str, end_date: str
+        self, keyword: str, start_date: str, end_date: str, on_page=None
     ) -> list[Contribution]:
         """Search Bills API for relevant bills and their sponsors.
 
@@ -579,6 +595,7 @@ class ParliamentAPIClient:
                 break
             total = data.get("totalResults", len(items))
 
+            before = len(contributions)
             for bill in items:
                 bill_id = str(bill.get("billId", ""))
                 title = bill.get("shortTitle", "") or bill.get("longTitle", "")
@@ -623,6 +640,9 @@ class ParliamentAPIClient:
                             matched_keywords=[keyword],
                         ))
 
+            if on_page and len(contributions) > before:
+                await on_page(contributions[before:])
+
             skip += 20
             if skip >= total:
                 break
@@ -632,7 +652,7 @@ class ParliamentAPIClient:
     # ---- Commons Divisions API (NEW) ----
 
     async def search_divisions(
-        self, keyword: str, start_date: str, end_date: str
+        self, keyword: str, start_date: str, end_date: str, on_page=None
     ) -> list[Contribution]:
         """Search Commons Divisions for relevant votes."""
         contributions = []
@@ -673,6 +693,7 @@ class ParliamentAPIClient:
             ayes = detail.get("Ayes", []) or []
             noes = detail.get("Noes", []) or []
 
+            before = len(contributions)
             for voter in ayes[:50]:  # Cap to avoid huge lists
                 name = voter.get("Name", "")
                 mid = str(voter.get("MemberId", ""))
@@ -708,6 +729,9 @@ class ParliamentAPIClient:
                         matched_keywords=[keyword],
                     ))
 
+            if on_page and len(contributions) > before:
+                await on_page(contributions[before:])
+
         return contributions
 
     # ---- Unified search ----
@@ -728,6 +752,7 @@ class ParliamentAPIClient:
         end_date: str,
         cancel_event: asyncio.Event | None = None,
         on_source_start=None,
+        on_page=None,
         enabled_sources: list[str] | None = None,
     ) -> list[Contribution]:
         """Search all 6 API sources for a keyword in parallel.
@@ -735,6 +760,8 @@ class ParliamentAPIClient:
         Args:
             on_source_start: Optional async callback(source_name, source_index, total_sources)
                 called before each source is searched.
+            on_page: Optional async callback(count) called after each page of results is
+                fetched from any source, with the number of contributions added on that page.
             enabled_sources: Optional list of source keys to search. If None, all sources are searched.
         """
         all_sources = [
@@ -760,7 +787,7 @@ class ParliamentAPIClient:
                 return []
             try:
                 logger.info("Searching %s for '%s'", name, keyword)
-                found = await method(keyword, start_date, end_date)
+                found = await method(keyword, start_date, end_date, on_page=on_page)
                 logger.info("  -> %d results from %s", len(found), name)
                 return found
             except Exception as e:

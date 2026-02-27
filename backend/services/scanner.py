@@ -142,6 +142,8 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
         for t in all_topics
         if t["id"] in topic_ids
     }
+    # Case-insensitive lookup: lowercase name → canonical name
+    _selected_lower = {k.lower(): k for k in selected_topics}
 
     # Three-way branch based on topics + member selection
     if not selected_topics and not target_member_ids:
@@ -211,6 +213,7 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
     classified_count = 0
     search_done = False
     api_failed: list[Contribution] = []  # items to retry after pipeline
+    token_totals = {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0}
 
     # ---- Producer: keyword search with incremental dedup + pre-filter ----
 
@@ -236,63 +239,70 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
                     )
                     await _update_with_stats(progress)
 
+            async def on_page(batch: list[Contribution]):
+                nonlocal queued_for_classify, total_api_results
+                raw_count = len(batch)
+                # Apply member filter inline so classification only sees relevant items
+                if target_member_ids:
+                    batch = [c for c in batch if c.member_id in target_member_ids]
+
+                new_procedural_batch: list[Contribution] = []
+                async with progress_lock:
+                    total_api_results += raw_count
+                    stats["total_api_results"] = total_api_results
+                    if not batch:
+                        return
+
+                    for c in batch:
+                        src = c.source_type
+                        stats["per_source"][src] = stats["per_source"].get(src, 0) + 1
+                        stats["kw_counts"][kw] = stats["kw_counts"].get(kw, 0) + 1
+
+                        key = f"{c.source_type}:{c.id}"
+                        if key in seen:
+                            # Merge keywords onto existing entry (already queued)
+                            existing = seen[key]
+                            for mk in c.matched_keywords:
+                                if mk not in existing.matched_keywords:
+                                    existing.matched_keywords.append(mk)
+                        else:
+                            seen[key] = c
+                            if is_procedural(c.text, c.source_type):
+                                procedural_items.append(c)
+                                new_procedural_batch.append(c)
+                                stats["removed_by_prefilter"] = len(procedural_items)
+                            else:
+                                queued_for_classify += 1
+                                stats["sent_to_classifier"] = queued_for_classify
+                                await classify_queue.put(c)
+
+                    stats["unique_after_dedup"] = len(seen)
+                    progress = (completed_keywords / total_keywords) * 60
+                    await _update_with_stats(progress)
+
+                # Audit procedural items outside lock
+                if new_procedural_batch:
+                    audit_rows = [
+                        (scan_id, c.member_name, c.source_type, c.text[:200],
+                         "procedural_filter", c.date.strftime("%Y-%m-%d") if c.date else "",
+                         c.context or "", c.text[:2000], json.dumps(c.matched_keywords), c.url, None, None)
+                        for c in new_procedural_batch
+                    ]
+                    await insert_audit_log_batch(db, audit_rows)
+
             results = await client.search_all(
                 kw, start_date, end_date, cancel_event, on_source_start,
+                on_page=on_page,
                 enabled_sources=enabled_sources,
             )
 
-            # Post-filter to target members if specified
-            if target_member_ids:
-                results = [c for c in results if c.member_id in target_member_ids]
-
-            # Incremental dedup + pre-filter under lock, then enqueue
-            new_procedural: list[Contribution] = []
+            # Finalise keyword-level stats now all pages are in
             async with progress_lock:
                 completed_keywords += 1
-                total_api_results += len(results)
-                stats["total_api_results"] = total_api_results
-
-                # Mark keyword as done with result count
                 stats["kw_status"][kw] = "done"
-                stats["kw_counts"][kw] = len(results)
                 stats["completed_keywords"] = completed_keywords
-
-                for c in results:
-                    src = c.source_type
-                    stats["per_source"][src] = stats["per_source"].get(src, 0) + 1
-
-                    key = f"{c.source_type}:{c.id}"
-                    if key in seen:
-                        # Merge keywords onto existing entry (already queued)
-                        existing = seen[key]
-                        for mk in c.matched_keywords:
-                            if mk not in existing.matched_keywords:
-                                existing.matched_keywords.append(mk)
-                    else:
-                        seen[key] = c
-                        if is_procedural(c.text, c.source_type):
-                            procedural_items.append(c)
-                            new_procedural.append(c)
-                            stats["removed_by_prefilter"] = len(procedural_items)
-                        else:
-                            queued_for_classify += 1
-                            stats["sent_to_classifier"] = queued_for_classify
-                            await classify_queue.put(c)
-
-                # Update dedup count incrementally and force progress write
-                stats["unique_after_dedup"] = len(seen)
                 progress = (completed_keywords / total_keywords) * 60
                 await _update_with_stats(min(progress, 59))
-
-            # Insert procedural audit entries immediately (outside lock)
-            if new_procedural:
-                audit_rows = [
-                    (scan_id, c.member_name, c.source_type, c.text[:200],
-                     "procedural_filter", c.date.strftime("%Y-%m-%d") if c.date else "",
-                     c.context or "", c.text[:2000], json.dumps(c.matched_keywords), c.url, None, None)
-                    for c in new_procedural
-                ]
-                await insert_audit_log_batch(db, audit_rows)
 
     async def _run_all_searches():
         nonlocal search_done
@@ -318,7 +328,7 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
             if CLASSIFIER_STAGGER > 0:
                 await asyncio.sleep(CLASSIFIER_STAGGER)
             try:
-                classification, discard_reason, discard_category = await classifier.classify(contribution)
+                classification, discard_reason, discard_category, usage = await classifier.classify(contribution)
             except ClassifierAPIError as e:
                 async with progress_lock:
                     api_failed.append(contribution)
@@ -349,7 +359,11 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
                     member_info = await client.lookup_member(contribution.member_id)
 
                 dedup_key = f"{contribution.source_type}:{contribution.id}"
-                topics_json = json.dumps(classification["topics"])
+                topics_json = json.dumps([
+                    _selected_lower[t.lower()]
+                    for t in classification["topics"]
+                    if t.lower() in _selected_lower
+                ])
 
                 await insert_result(
                     db,
@@ -375,6 +389,10 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
             audit_row = None
             async with progress_lock:
                 classified_count += 1
+                token_totals["input"] += usage.get("input_tokens", 0)
+                token_totals["output"] += usage.get("output_tokens", 0)
+                token_totals["cache_read"] += usage.get("cache_read_tokens", 0)
+                token_totals["cache_write"] += usage.get("cache_write_tokens", 0)
 
                 if classification:
                     total_relevant += 1
@@ -413,9 +431,17 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
                             f"Searching ({completed_keywords}/{total_keywords} done)"
                             f" | Classifying {classified_count}/{queued_for_classify}..."
                         )
+                    stats["llm_input_tokens"] = token_totals["input"]
+                    stats["llm_output_tokens"] = token_totals["output"]
+                    stats["llm_cache_read_tokens"] = token_totals["cache_read"]
+                    stats["llm_cache_write_tokens"] = token_totals["cache_write"]
                     await _update_with_stats(
                         min(progress, 95),
                         total_relevant=total_relevant,
+                        llm_input_tokens=token_totals["input"],
+                        llm_output_tokens=token_totals["output"],
+                        llm_cache_read_tokens=token_totals["cache_read"],
+                        llm_cache_write_tokens=token_totals["cache_write"],
                     )
 
             # Insert not-relevant audit entry immediately (outside lock)
@@ -486,7 +512,11 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
                     still_failed.extend(api_failed)
                     break
                 try:
-                    classification, discard_reason, discard_category = await classifier.classify(c)
+                    classification, discard_reason, discard_category, usage = await classifier.classify(c)
+                    token_totals["input"] += usage.get("input_tokens", 0)
+                    token_totals["output"] += usage.get("output_tokens", 0)
+                    token_totals["cache_read"] += usage.get("cache_read_tokens", 0)
+                    token_totals["cache_write"] += usage.get("cache_write_tokens", 0)
                     if classification:
                         member_info = {"name": "", "party": "", "member_type": "", "constituency": ""}
                         if c.member_id:
@@ -499,7 +529,11 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
                             party=member_info.get("party", ""),
                             member_type=member_info.get("member_type", ""),
                             constituency=member_info.get("constituency", ""),
-                            topics=json.dumps(classification["topics"]),
+                            topics=json.dumps([
+                                _selected_lower[t.lower()]
+                                for t in classification["topics"]
+                                if t.lower() in _selected_lower
+                            ]),
                             summary=classification["summary"],
                             activity_date=c.date.strftime("%Y-%m-%d"),
                             forum=_forum_label(c),
@@ -558,12 +592,20 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
     stats["phase"] = "Scan complete"
     stats["api_paused"] = False
     stats["classifier_api_errors"] = classifier.api_errors
+    stats["llm_input_tokens"] = token_totals["input"]
+    stats["llm_output_tokens"] = token_totals["output"]
+    stats["llm_cache_read_tokens"] = token_totals["cache_read"]
+    stats["llm_cache_write_tokens"] = token_totals["cache_write"]
     await update_scan_progress(
         db, scan_id,
         status="completed",
         progress=100,
         current_phase=json.dumps(stats),
         total_relevant=total_relevant,
+        llm_input_tokens=token_totals["input"],
+        llm_output_tokens=token_totals["output"],
+        llm_cache_read_tokens=token_totals["cache_read"],
+        llm_cache_write_tokens=token_totals["cache_write"],
     )
     logger.info("Scan %d completed: %d relevant results stored", scan_id, total_relevant)
 
@@ -626,8 +668,6 @@ async def _run_member_topic_scan(
             to_classify.append(c)
 
     stats["removed_by_prefilter"] = len(procedural_items)
-    stats["sent_to_classifier"] = len(to_classify)
-    await _update_with_stats(25)
 
     if procedural_items:
         audit_rows = [
@@ -635,6 +675,37 @@ async def _run_member_topic_scan(
              "procedural_filter", c.date.strftime("%Y-%m-%d") if c.date else "",
              c.context or "", c.text[:2000], json.dumps(c.matched_keywords), c.url, None, None)
             for c in procedural_items
+        ]
+        await insert_audit_log_batch(db, audit_rows)
+
+    # Keyword pre-filter: only classify contributions containing at least one topic keyword
+    all_keywords_lower = {
+        kw.lower(): kw
+        for kws in selected_topics.values()
+        for kw in kws
+    }
+    keyword_passed = []
+    keyword_filtered = []
+    for c in to_classify:
+        text_lower = c.text.lower()
+        matched = [kw for kw_lower, kw in all_keywords_lower.items() if kw_lower in text_lower]
+        if matched:
+            c.matched_keywords = matched
+            keyword_passed.append(c)
+        else:
+            keyword_filtered.append(c)
+
+    stats["removed_by_keyword_filter"] = len(keyword_filtered)
+    stats["sent_to_classifier"] = len(keyword_passed)
+    to_classify = keyword_passed
+    await _update_with_stats(25)
+
+    if keyword_filtered:
+        audit_rows = [
+            (scan_id, c.member_name, c.source_type, c.text[:200],
+             "keyword_filter", c.date.strftime("%Y-%m-%d") if c.date else "",
+             c.context or "", c.text[:2000], json.dumps([]), c.url, "No topic keywords found in text", "off_topic")
+            for c in keyword_filtered
         ]
         await insert_audit_log_batch(db, audit_rows)
 
@@ -646,11 +717,15 @@ async def _run_member_topic_scan(
         await client2.close()
     member_info_map = {mid: info for mid, info in zip(target_member_ids, member_infos)}
 
+    # Case-insensitive lookup: lowercase name → canonical name
+    _selected_lower = {k.lower(): k for k in selected_topics}
+
     # Classify against selected topics
     classifier = TopicClassifier(selected_topics)
     total_relevant = 0
     classified_count = 0
     api_failed: list[Contribution] = []
+    token_totals = {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0}
 
     for c in to_classify:
         if cancel_event.is_set():
@@ -663,7 +738,11 @@ async def _run_member_topic_scan(
             continue
 
         try:
-            classification, discard_reason, discard_category = await classifier.classify(c)
+            classification, discard_reason, discard_category, usage = await classifier.classify(c)
+            token_totals["input"] += usage.get("input_tokens", 0)
+            token_totals["output"] += usage.get("output_tokens", 0)
+            token_totals["cache_read"] += usage.get("cache_read_tokens", 0)
+            token_totals["cache_write"] += usage.get("cache_write_tokens", 0)
         except ClassifierAPIError as e:
             api_failed.append(c)
             err_str = str(e).lower()
@@ -694,7 +773,11 @@ async def _run_member_topic_scan(
                 party=info.get("party", ""),
                 member_type=info.get("member_type", ""),
                 constituency=info.get("constituency", ""),
-                topics=json.dumps(classification["topics"]),
+                topics=json.dumps([
+                    _selected_lower[t.lower()]
+                    for t in classification["topics"]
+                    if t.lower() in _selected_lower
+                ]),
                 summary=classification["summary"],
                 activity_date=c.date.strftime("%Y-%m-%d"),
                 forum=_forum_label(c),
@@ -721,9 +804,20 @@ async def _run_member_topic_scan(
             )
         stats["classified_relevant"] = total_relevant
         stats["classified_discarded"] = classified_count - total_relevant
+        stats["llm_input_tokens"] = token_totals["input"]
+        stats["llm_output_tokens"] = token_totals["output"]
+        stats["llm_cache_read_tokens"] = token_totals["cache_read"]
+        stats["llm_cache_write_tokens"] = token_totals["cache_write"]
         progress = 25 + (classified_count / max(len(to_classify), 1)) * 70
         stats["phase"] = f"Classifying {classified_count}/{len(to_classify)}..."
-        await _update_with_stats(min(progress, 95), total_relevant=total_relevant)
+        await _update_with_stats(
+            min(progress, 95),
+            total_relevant=total_relevant,
+            llm_input_tokens=token_totals["input"],
+            llm_output_tokens=token_totals["output"],
+            llm_cache_read_tokens=token_totals["cache_read"],
+            llm_cache_write_tokens=token_totals["cache_write"],
+        )
 
     if cancel_event.is_set():
         await update_scan_progress(db, scan_id, status="cancelled")
@@ -755,7 +849,11 @@ async def _run_member_topic_scan(
                     still_failed.extend(api_failed)
                     break
                 try:
-                    classification, discard_reason, discard_category = await classifier.classify(c)
+                    classification, discard_reason, discard_category, usage = await classifier.classify(c)
+                    token_totals["input"] += usage.get("input_tokens", 0)
+                    token_totals["output"] += usage.get("output_tokens", 0)
+                    token_totals["cache_read"] += usage.get("cache_read_tokens", 0)
+                    token_totals["cache_write"] += usage.get("cache_write_tokens", 0)
                     if classification:
                         info = member_info_map.get(c.member_id) or member_info_map.get(target_member_ids[0], {})
                         await insert_result(
@@ -766,7 +864,11 @@ async def _run_member_topic_scan(
                             party=info.get("party", ""),
                             member_type=info.get("member_type", ""),
                             constituency=info.get("constituency", ""),
-                            topics=json.dumps(classification["topics"]),
+                            topics=json.dumps([
+                                _selected_lower[t.lower()]
+                                for t in classification["topics"]
+                                if t.lower() in _selected_lower
+                            ]),
                             summary=classification["summary"],
                             activity_date=c.date.strftime("%Y-%m-%d"),
                             forum=_forum_label(c),
@@ -811,12 +913,20 @@ async def _run_member_topic_scan(
     stats["phase"] = "Scan complete"
     stats["api_paused"] = False
     stats["classifier_api_errors"] = classifier.api_errors
+    stats["llm_input_tokens"] = token_totals["input"]
+    stats["llm_output_tokens"] = token_totals["output"]
+    stats["llm_cache_read_tokens"] = token_totals["cache_read"]
+    stats["llm_cache_write_tokens"] = token_totals["cache_write"]
     await update_scan_progress(
         db, scan_id,
         status="completed",
         progress=100,
         current_phase=json.dumps(stats),
         total_relevant=total_relevant,
+        llm_input_tokens=token_totals["input"],
+        llm_output_tokens=token_totals["output"],
+        llm_cache_read_tokens=token_totals["cache_read"],
+        llm_cache_write_tokens=token_totals["cache_write"],
     )
     logger.info("Scan %d (member+topic) completed: %d/%d relevant", scan_id, total_relevant, classified_count)
 
@@ -882,11 +992,16 @@ async def _run_member_only_scan(
     # Use classifier to generate summaries (summarise-only mode — no topic filtering)
     classifier = TopicClassifier({})
     stored = 0
+    token_totals = {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0}
     for c in contributions:
         if cancel_event.is_set():
             break
         dedup_key = f"{c.source_type}:{c.id}"
-        summary = await classifier.summarise(c)
+        summary, usage = await classifier.summarise(c)
+        token_totals["input"] += usage.get("input_tokens", 0)
+        token_totals["output"] += usage.get("output_tokens", 0)
+        token_totals["cache_read"] += usage.get("cache_read_tokens", 0)
+        token_totals["cache_write"] += usage.get("cache_write_tokens", 0)
         info = member_info_map.get(c.member_id) or member_info_map.get(target_member_ids[0], {})
         await insert_result(
             db,
@@ -912,14 +1027,32 @@ async def _run_member_only_scan(
         if stored % 5 == 0 or stored == total_to_store:
             progress = 60 + (stored / max(total_to_store, 1)) * 35
             stats["phase"] = f"Summarising {stored}/{total_to_store}..."
-            await _update_with_stats(min(progress, 95))
+            stats["llm_input_tokens"] = token_totals["input"]
+            stats["llm_output_tokens"] = token_totals["output"]
+            stats["llm_cache_read_tokens"] = token_totals["cache_read"]
+            stats["llm_cache_write_tokens"] = token_totals["cache_write"]
+            await _update_with_stats(
+                min(progress, 95),
+                llm_input_tokens=token_totals["input"],
+                llm_output_tokens=token_totals["output"],
+                llm_cache_read_tokens=token_totals["cache_read"],
+                llm_cache_write_tokens=token_totals["cache_write"],
+            )
 
     stats["phase"] = "Scan complete"
+    stats["llm_input_tokens"] = token_totals["input"]
+    stats["llm_output_tokens"] = token_totals["output"]
+    stats["llm_cache_read_tokens"] = token_totals["cache_read"]
+    stats["llm_cache_write_tokens"] = token_totals["cache_write"]
     await update_scan_progress(
         db, scan_id,
         status="completed",
         progress=100,
         current_phase=json.dumps(stats),
         total_relevant=stored,
+        llm_input_tokens=token_totals["input"],
+        llm_output_tokens=token_totals["output"],
+        llm_cache_read_tokens=token_totals["cache_read"],
+        llm_cache_write_tokens=token_totals["cache_write"],
     )
     logger.info("Scan %d (member-only) completed: %d items stored", scan_id, stored)

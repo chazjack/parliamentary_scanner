@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
 from backend.database import init_db, get_db, cleanup_stuck_scans, get_session_user
-from backend.routers import topics, scans, results, master, lookahead, alerts, auth, groups
+from backend.routers import topics, scans, results, master, lookahead, alerts, auth, groups, index
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,7 @@ app.include_router(master.router)
 app.include_router(lookahead.router)
 app.include_router(alerts.router)
 app.include_router(groups.router)
+app.include_router(index.router)
 
 
 @app.on_event("startup")

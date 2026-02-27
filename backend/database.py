@@ -43,7 +43,11 @@ CREATE TABLE IF NOT EXISTS scans (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     completed_at TIMESTAMP,
     target_member_id TEXT,
-    target_member_name TEXT
+    target_member_name TEXT,
+    llm_input_tokens INTEGER DEFAULT 0,
+    llm_output_tokens INTEGER DEFAULT 0,
+    llm_cache_read_tokens INTEGER DEFAULT 0,
+    llm_cache_write_tokens INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS results (
@@ -224,6 +228,13 @@ CREATE TABLE IF NOT EXISTS member_groups (
     member_names TEXT NOT NULL DEFAULT '[]',
     created_at TEXT DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS index_configs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    scan_ids TEXT NOT NULL DEFAULT '[]',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 # Default topics and keywords seeded on first run (from v1 config)
@@ -374,6 +385,16 @@ async def init_db():
             await db.execute("ALTER TABLE scans ADD COLUMN target_member_name TEXT")
             await db.commit()
             logger.info("Migrated scans: added target_member_name column")
+        for col, defn in [
+            ("llm_input_tokens", "INTEGER DEFAULT 0"),
+            ("llm_output_tokens", "INTEGER DEFAULT 0"),
+            ("llm_cache_read_tokens", "INTEGER DEFAULT 0"),
+            ("llm_cache_write_tokens", "INTEGER DEFAULT 0"),
+        ]:
+            if col not in scan_columns:
+                await db.execute(f"ALTER TABLE scans ADD COLUMN {col} {defn}")
+                await db.commit()
+                logger.info("Migrated scans: added %s column", col)
 
         cursor = await db.execute("PRAGMA table_info(email_alerts)")
         alert_columns = [row[1] for row in await cursor.fetchall()]
@@ -385,6 +406,22 @@ async def init_db():
             await db.execute("ALTER TABLE email_alerts ADD COLUMN member_names TEXT")
             await db.commit()
             logger.info("Migrated email_alerts: added member_names column")
+
+        # Migration: create index_configs table if not present
+        cursor = await db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='index_configs'"
+        )
+        if not await cursor.fetchone():
+            await db.execute(
+                """CREATE TABLE index_configs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    scan_ids TEXT NOT NULL DEFAULT '[]',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )"""
+            )
+            await db.commit()
+            logger.info("Migrated: created index_configs table")
 
         # Sync admin user from environment on every startup
         from backend.config import ADMIN_USERNAME, ADMIN_PASSWORD
@@ -532,6 +569,10 @@ async def update_scan_progress(
     total_sent_to_llm: int | None = None,
     total_relevant: int | None = None,
     error_message: str | None = None,
+    llm_input_tokens: int | None = None,
+    llm_output_tokens: int | None = None,
+    llm_cache_read_tokens: int | None = None,
+    llm_cache_write_tokens: int | None = None,
 ):
     """Update scan progress fields (only non-None values are updated)."""
     updates = []
@@ -559,6 +600,18 @@ async def update_scan_progress(
     if error_message is not None:
         updates.append("error_message = ?")
         params.append(error_message)
+    if llm_input_tokens is not None:
+        updates.append("llm_input_tokens = ?")
+        params.append(llm_input_tokens)
+    if llm_output_tokens is not None:
+        updates.append("llm_output_tokens = ?")
+        params.append(llm_output_tokens)
+    if llm_cache_read_tokens is not None:
+        updates.append("llm_cache_read_tokens = ?")
+        params.append(llm_cache_read_tokens)
+    if llm_cache_write_tokens is not None:
+        updates.append("llm_cache_write_tokens = ?")
+        params.append(llm_cache_write_tokens)
 
     if not updates:
         return
@@ -579,7 +632,8 @@ async def get_scan(db: aiosqlite.Connection, scan_id: int) -> dict | None:
 async def get_scan_list(db: aiosqlite.Connection) -> list[dict]:
     """Get all scans ordered by most recent first."""
     cursor = await db.execute(
-        'SELECT id, start_date, end_date, status, total_relevant, created_at, "trigger", error_message '
+        'SELECT id, start_date, end_date, status, total_relevant, created_at, "trigger", error_message, '
+        "llm_input_tokens, llm_output_tokens, llm_cache_read_tokens, llm_cache_write_tokens "
         "FROM scans ORDER BY created_at DESC"
     )
     return [dict(row) for row in await cursor.fetchall()]
@@ -1324,5 +1378,80 @@ async def update_group(
 async def delete_group(db: aiosqlite.Connection, group_id: int) -> bool:
     """Delete a member group. Returns True if found."""
     cursor = await db.execute("DELETE FROM member_groups WHERE id = ?", (group_id,))
+    await db.commit()
+    return cursor.rowcount > 0
+
+
+# --- Index query helpers ---
+
+
+async def get_completed_scans_summary(db: aiosqlite.Connection) -> list[dict]:
+    """Return completed scans with topic names and result counts for the Index selector."""
+    cursor = await db.execute(
+        """SELECT s.id, s.start_date, s.end_date, s.topic_ids, s.completed_at,
+                  s.total_relevant, COUNT(r.id) as result_count
+           FROM scans s
+           LEFT JOIN results r ON r.scan_id = s.id
+           WHERE s.status = 'completed'
+           GROUP BY s.id
+           ORDER BY s.completed_at DESC"""
+    )
+    rows = await cursor.fetchall()
+    result = []
+    for row in rows:
+        s = dict(row)
+        topic_ids = json.loads(s.get("topic_ids") or "[]")
+        # Fetch topic names
+        topic_names = []
+        if topic_ids:
+            placeholders = ",".join("?" for _ in topic_ids)
+            t_cursor = await db.execute(
+                f"SELECT name FROM topics WHERE id IN ({placeholders}) ORDER BY name",
+                topic_ids,
+            )
+            topic_names = [r["name"] for r in await t_cursor.fetchall()]
+        s["topic_names"] = topic_names
+        result.append(s)
+    return result
+
+
+async def get_results_for_scans(db: aiosqlite.Connection, scan_ids: list[int]) -> list[dict]:
+    """Return all results for the given scan IDs."""
+    if not scan_ids:
+        return []
+    placeholders = ",".join("?" for _ in scan_ids)
+    cursor = await db.execute(
+        f"SELECT * FROM results WHERE scan_id IN ({placeholders}) ORDER BY activity_date DESC",
+        scan_ids,
+    )
+    return [dict(row) for row in await cursor.fetchall()]
+
+
+async def save_index_config(db: aiosqlite.Connection, name: str, scan_ids: list[int]) -> dict:
+    """Save a named index configuration. Returns the new config dict."""
+    cursor = await db.execute(
+        "INSERT INTO index_configs (name, scan_ids) VALUES (?, ?)",
+        (name, json.dumps(scan_ids)),
+    )
+    config_id = cursor.lastrowid
+    await db.commit()
+    return {"id": config_id, "name": name, "scan_ids": scan_ids}
+
+
+async def get_index_configs(db: aiosqlite.Connection) -> list[dict]:
+    """Return all saved index configs."""
+    cursor = await db.execute("SELECT * FROM index_configs ORDER BY created_at DESC")
+    rows = await cursor.fetchall()
+    result = []
+    for row in rows:
+        c = dict(row)
+        c["scan_ids"] = json.loads(c["scan_ids"])
+        result.append(c)
+    return result
+
+
+async def delete_index_config(db: aiosqlite.Connection, config_id: int) -> bool:
+    """Delete a saved index config. Returns True if found."""
+    cursor = await db.execute("DELETE FROM index_configs WHERE id = ?", (config_id,))
     await db.commit()
     return cursor.rowcount > 0

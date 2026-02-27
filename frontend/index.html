@@ -108,7 +108,7 @@
                     <div class="ps-chip-group__header">
                         <span class="ps-chip-group__label">SOURCES</span>
                         <div style="display:flex;align-items:center;">
-                            <span style="font-size:var(--ps-text-sm);visibility:hidden;margin-right:39px;">Undo</span>
+                            <span style="font-size:var(--ps-text-sm);visibility:hidden;margin-right:26px;">Undo</span>
                             <span style="font-size:var(--ps-text-sm);color:var(--ps-text-muted);cursor:pointer;" onclick="toggleAllSourceChips()">All / None</span>
                         </div>
                     </div>
@@ -127,7 +127,7 @@
                         <span class="ps-chip-group__label">TOPICS</span>
                          <span id="topicSelectionIndicator" style="font-size:var(--ps-text-md);color:var(--ps-text-secondary);margin-left:6px;flex:1;"></span>
                         <div style="display:flex;align-items:center;" onclick="event.stopPropagation()">
-                            <span class="btn-undo disabled" id="undoBtn" onclick="undoLastAction()" style="font-size:var(--ps-text-sm);color:var(--ps-text-muted);cursor:pointer;margin-right:39px;">Undo</span>
+                            <span class="btn-undo disabled" id="undoBtn" onclick="undoLastAction()" style="font-size:var(--ps-text-sm);color:var(--ps-text-muted);cursor:pointer;margin-right:26px;">Undo</span>
                             <span style="font-size:var(--ps-text-sm);color:var(--ps-text-muted);cursor:pointer;" id="topicToggleAllBtn" onclick="toggleAllTopicsBtn()">All / None</span>
                         </div>
                     </div>
@@ -160,8 +160,8 @@
 
             <!-- Progress -->
             <section id="progress-section">
-                <h2 style="color:#ffffff;font-size:1.25rem;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:10px;">Summary <span id="summaryStatusBadge"></span><span id="summaryScanDate" style="display:none;"></span><button id="summaryCancelBtn" class="ps-btn ps-btn--ghost ps-btn--sm" style="display:none;margin-left:auto;">Cancel Scan</button></h2>
-                <div id="progressContent">
+                <h2 style="color:#ffffff;font-size:1.25rem;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:10px;"><span onclick="expandSection('progress-section')" style="cursor:pointer;">Summary</span> <span id="summaryStatusBadge"></span><span id="summaryScanDate" style="display:none;"></span><span style="flex:1;"></span><button id="summaryCancelBtn" class="ps-btn ps-btn--ghost ps-btn--sm" style="display:none;">Cancel Scan</button><button class="section-collapse-btn" onclick="toggleSection('progress-section')" title="Collapse"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button></h2>
+                <div class="section-body" id="progressSectionBody"><div id="progressContent">
                     <p id="progressLabel">No scan selected or currently active.</p>
                     <div id="progressPanels" style="display:none;">
                         <div id="keywordProgress" class="keyword-progress-panel"></div>
@@ -169,52 +169,106 @@
                         <div id="pipelineStats" class="pipeline-stats-row"></div>
                         <div id="sourceCirclesRow" class="source-circles-row" style="display:none;"></div>
                     </div>
-                </div>
+                </div></div><!-- /section-body progressSectionBody -->
             </section>
 
             <!-- Scan History -->
             <section id="history-section">
-                <h2>Scan History</h2>
-                <div id="historyList"></div>
-            </section>
-
-            <!-- Results -->
-            <section id="results-section">
-                <div class="results-header">
-                    <h2>Results</h2>
-                    <button id="exportBtn" class="ps-btn ps-btn--ghost ps-btn--sm" title="Export to Excel" style="display:inline-flex;align-items:center;border:none;">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-                        </svg>
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                    <h2 style="margin:0;cursor:pointer;" onclick="expandSection('history-section')">Scan History</h2>
+                    <button class="section-collapse-btn" onclick="toggleSection('history-section')" title="Collapse">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
                     </button>
                 </div>
-                <div class="table-container ps-table-wrapper">
-                    <table id="resultsTable" class="ps-table">
-                        <thead>
-                            <tr>
-                                <th data-col="member_name">Name</th>
-                                <th data-col="party">Party</th>
-                                <th data-col="topics">Topic(s)</th>
-                                <th data-col="summary">Summary</th>
-                                <th data-col="verbatim_quote">QUOTE</th>
-                                <th data-col="forum">Source</th>
-                                <th></th>
-                            </tr>
-                        </thead>
-                        <tbody id="resultsBody"><tr><td colspan="7" class="empty-state-preview">No scan selected or active.</td></tr></tbody>
-                    </table>
+                <div class="section-body" id="historySectionBody">
+                    <div id="historyList"></div>
                 </div>
-                <div id="resultsPagination" class="history-pagination"></div>
             </section>
 
-            <!-- Audit Panel -->
-            <section id="audit-section">
-                <div class="section-header" id="auditToggle">
-                    <h2>Discarded Items</h2>
-                    <span class="toggle-icon">&#9660;</span>
+            <!-- Results / Discarded Items -->
+            <section id="results-section">
+                <div class="results-header">
+                    <div class="results-tab-group">
+                        <h2 id="resultsTabBtn" class="results-tab-btn results-tab-active" onclick="switchResultsTab('results')">Results</h2>
+                        <span class="results-tab-sep">|</span>
+                        <h2 id="auditTabBtn" class="results-tab-btn" onclick="switchResultsTab('audit')">Discarded Items</h2>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:6px;">
+                        <button id="exportBtn" class="ps-btn ps-btn--ghost ps-btn--sm" title="Export to Excel" style="display:inline-flex;align-items:center;border:none;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                        </button>
+                        <button id="indexExportBtn" class="ps-btn ps-btn--ghost ps-btn--sm" onclick="exportIndexExcel()" title="Export Members to Excel" style="display:none;align-items:center;border:none;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                        </button>
+                        <button class="section-collapse-btn" onclick="toggleSection('results-section')" title="Collapse">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                        </button>
+                    </div>
                 </div>
-                <div id="auditSummary" class="audit-summary"></div>
-                <div id="auditList" class="audit-container"><p class="empty-state-preview">No scan selected or active.</p></div>
+                <div class="section-body" id="resultsSectionBody">
+                    <!-- Sub-view selector: Mentions / Members (shown on Results tab only) -->
+                    <div id="resultsViewSelector" style="margin-bottom:12px;">
+                        <div class="results-view-group">
+                            <span id="mentionsViewBtn" class="results-view-btn results-view-active" onclick="switchResultsView('mentions')">Mentions</span>
+                            <span class="results-view-sep">|</span>
+                            <span id="membersViewBtn" class="results-view-btn" onclick="switchResultsView('members')">Members</span>
+                        </div>
+                    </div>
+                    <!-- Mentions view -->
+                    <div id="mentionsContent">
+                        <div class="table-container ps-table-wrapper">
+                            <table id="resultsTable" class="ps-table">
+                                <thead>
+                                    <tr>
+                                        <th data-col="member_name">Name</th>
+                                        <th data-col="party">Party</th>
+                                        <th data-col="topics">Topic(s)</th>
+                                        <th data-col="summary">Summary</th>
+                                        <th data-col="verbatim_quote">QUOTE</th>
+                                        <th data-col="forum">Source</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="resultsBody"><tr><td colspan="7" class="empty-state-preview">No scan selected or active.</td></tr></tbody>
+                            </table>
+                        </div>
+                        <div id="resultsPagination" class="history-pagination"></div>
+                    </div>
+                    <!-- Members view (index) -->
+                    <div id="membersContent" style="display:none;">
+                        <div id="indexTopicChips" style="display:none;margin-bottom:12px;">
+                            <div class="ps-chip-group">
+                                <div class="ps-chip-group__header">
+                                    <span class="ps-chip-group__label">TOPIC</span>
+                                </div>
+                                <div class="ps-chip-group__items" id="indexTopicChipItems"></div>
+                            </div>
+                        </div>
+                        <div class="table-container ps-table-wrapper">
+                            <table class="ps-table" id="indexStandingsTable">
+                                <thead>
+                                    <tr>
+                                        <th style="width:40px;text-align:center;">#</th>
+                                        <th>Member</th>
+                                        <th>Party / Type</th>
+                                        <th>Mentions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="indexStandingsBody"><tr><td colspan="4" class="empty-state-preview">No scan selected or active.</td></tr></tbody>
+                            </table>
+                        </div>
+                        <div id="indexStandingsPagination" class="history-pagination" style="margin-top:8px;"></div>
+                    </div>
+                    <!-- Discarded Items tab content -->
+                    <div id="auditTabContent" style="display:none;">
+                        <div id="auditSummary" class="audit-summary"></div>
+                        <div id="auditList" class="audit-container"><p class="empty-state-preview">No scan selected or active.</p></div>
+                    </div>
+                </div><!-- /section-body resultsSectionBody -->
             </section>
         </div>
 
@@ -578,6 +632,7 @@
     <script src="/js/lookahead.js"></script>
     <script src="/js/alerts.js"></script>
     <script src="/js/groups.js"></script>
+    <script src="/js/index.js"></script>
 
     <!-- Group members popover — lives at body level so it's never hidden by a tab's display:none -->
     <div id="groupMembersPopover" class="topic-popover" style="display:none;">

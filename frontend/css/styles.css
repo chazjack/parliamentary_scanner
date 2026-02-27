@@ -657,6 +657,12 @@ u    padding: 0;
     color: var(--ps-accent);
 }
 
+/* View-only topic wrap (no arrow button) — restore full chip padding */
+.ps-chip-topic-wrap--view-only .ps-chip {
+    padding-right: 10px;
+    border-radius: 20px;
+}
+
 .topic-add-input-legacy {
     flex: 1;
     padding: 4px 10px;
@@ -1268,6 +1274,9 @@ u    padding: 0;
 }
 
 .kw-topic-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: 0.75rem;
     font-weight: 700;
     color: var(--text-light);
@@ -1276,6 +1285,21 @@ u    padding: 0;
     margin-bottom: 6px;
     padding-bottom: 3px;
     border-bottom: 1px solid var(--border);
+}
+
+.kw-topic-tick {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 0.8rem;
+    height: 0.8rem;
+    border-radius: 50%;
+    border: 1px solid var(--ps-success);
+    background: transparent;
+    color: var(--ps-success);
+    font-size: 0.55rem;
+    line-height: 1;
+    flex-shrink: 0;
 }
 
 .kw-chip-list {
@@ -1538,22 +1562,38 @@ u    padding: 0;
 #history-section h2 {
     font-size: 1.25rem;
     color: #fff;
-    margin-bottom: 10px;
+    margin-bottom: 0;
 }
 
 #historyList {
     overflow-x: auto;
 }
 
+.history-header {
+    display: grid;
+    grid-template-columns: 115fr 150fr 90fr 60fr 85fr;
+    gap: 0 20px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--ps-border-default);
+    min-width: 580px;
+    font-size: var(--ps-text-sm);
+    font-weight: var(--ps-weight-semi);
+    color: var(--ps-text-muted);
+    text-transform: uppercase;
+    letter-spacing: var(--ps-tracking-wide);
+    white-space: nowrap;
+}
+
 .history-item {
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: 115fr 150fr 90fr 60fr 85fr;
+    gap: 0 20px;
     align-items: center;
     padding: 8px 0;
     border-bottom: 1px solid var(--border);
     cursor: pointer;
     font-size: 0.85rem;
-    min-width: 500px;
+    min-width: 580px;
 }
 
 .history-item:hover {
@@ -1564,27 +1604,26 @@ u    padding: 0;
     border-bottom: none;
 }
 
-.history-item span:nth-child(2) {
-    min-width: 70px;
-    text-align: right;
-}
 
 .history-date {
-    font-weight: 600;
     white-space: nowrap;
 }
 
 .history-conducted {
-    font-size: 0.75rem;
+    font-weight: 600;
     color: var(--text-light);
-    min-width: 90px;
     white-space: nowrap;
     display: inline-flex;
     align-items: center;
 }
 
+.history-cost {
+    font-size: 0.75rem;
+    color: var(--text-light);
+    white-space: nowrap;
+}
+
 .history-status-col {
-    flex: 0 0 90px;
     display: flex;
     align-items: center;
     gap: 6px;
@@ -1690,7 +1729,8 @@ u    padding: 0;
     border-radius: var(--radius);
     border: 1px solid var(--border);
     max-width: 100%;
-    overflow-x: hidden;
+    overflow-x: clip; /* clip so audit badge tooltips aren't cut off */
+    margin-bottom: 16px;
 }
 
 .results-header {
@@ -1708,7 +1748,93 @@ u    padding: 0;
     margin: 0;
 }
 
+/* Results sub-view selector (Mentions / Members) */
+.results-view-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.results-view-btn {
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    color: rgba(255, 255, 255, 0.35);
+    transition: color 0.15s;
+    user-select: none;
+}
+
+.results-view-btn.results-view-active {
+    color: #fff;
+}
+
+.results-view-sep {
+    color: rgba(255, 255, 255, 0.15);
+    font-size: 0.75rem;
+    user-select: none;
+}
+
+/* Results / Discarded tab switcher */
+.results-tab-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.results-header .results-tab-btn {
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin: 0;
+    cursor: pointer;
+    color: rgba(255, 255, 255, 0.35);
+    transition: color 0.15s;
+    user-select: none;
+}
+
+.results-header .results-tab-btn.results-tab-active {
+    color: #fff;
+}
+
+.results-tab-sep {
+    color: rgba(255, 255, 255, 0.2);
+    font-size: 1.1rem;
+    font-weight: 300;
+    line-height: 1;
+    user-select: none;
+}
+
 /* Top-level page/tab title — white, larger, consistent across all tabs */
+/* Section collapse toggle button */
+.section-collapse-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255, 255, 255, 0.45);
+    flex-shrink: 0;
+    transition: color 0.15s;
+    line-height: 0;
+}
+
+.section-collapse-btn:hover {
+    color: #fff;
+}
+
+.section-collapse-btn svg {
+    transition: transform 0.2s ease;
+    transform: rotate(0deg);
+}
+
+.section-collapse-btn.is-collapsed svg {
+    transform: rotate(90deg);
+}
+
 .tab-page-title {
     font-size: 1.5rem;
     font-weight: 700;
@@ -1830,26 +1956,7 @@ u    padding: 0;
     flex-wrap: wrap;
 }
 
-/* Audit panel */
-#audit-section {
-    background: var(--card-bg);
-    padding: 16px 20px;
-    border-radius: var(--radius);
-    border: 1px solid var(--border);
-    margin-top: 16px;
-    max-width: 100%;
-    overflow-x: clip; /* clip (not hidden) so tooltip popouts on audit badges aren't clipped */
-}
-
-#audit-section .section-header {
-    cursor: pointer;
-    user-select: none;
-}
-
-#audit-section h2 {
-    font-size: 1.25rem;
-    color: #fff;
-}
+/* Audit panel — now embedded inside #results-section as a tab */
 
 .audit-summary {
     display: flex;
@@ -3981,8 +4088,8 @@ u    padding: 0;
 .member-autocomplete {
     position: relative;
     flex: 1;
-    min-width: 260px;
-    max-width: 540px;
+    min-width: 130px;
+    max-width: 270px;
 }
 
 .member-autocomplete__dropdown {
@@ -4220,4 +4327,205 @@ u    padding: 0;
 
 .import-modal__cancel:hover {
     color: var(--ps-text-secondary);
+}
+
+/* ── Index tab ───────────────────────────────────────────────────────────── */
+
+#index-history-section {
+    background: var(--card-bg);
+    padding: 16px 20px;
+    border-radius: var(--radius);
+    margin-bottom: 16px;
+    overflow-x: hidden;
+}
+
+#index-history-section h2 {
+    font-size: 1.25rem;
+    color: #fff;
+    margin-bottom: 10px;
+}
+
+#index-history-section .history-item {
+    overflow-x: auto;
+}
+
+/* Index history rows: 5-column layout, override scanner's nth-child rule */
+#index-history-section .index-history-row {
+    cursor: pointer;
+    gap: 12px;
+}
+
+#index-history-section .index-history-row span:nth-child(2) {
+    min-width: auto;
+    text-align: left;
+}
+
+.index-history-conducted {
+    flex-shrink: 0;
+    color: var(--ps-text-secondary);
+    font-size: 0.82rem;
+    white-space: nowrap;
+}
+
+.index-history-topics {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--ps-text-secondary);
+    font-size: 0.82rem;
+    min-width: 0;
+}
+
+/* Selected scan highlight in index history */
+.history-item.index-selected {
+    background: color-mix(in srgb, var(--ps-accent) 12%, var(--ps-bg-subtle));
+    border-left: 3px solid var(--ps-accent);
+}
+
+/* Standings rows — clickable */
+.index-standings-row {
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.index-standings-row:hover {
+    background: var(--ps-bg-subtle) !important;
+}
+
+.index-standings-row.index-row-open {
+    background: color-mix(in srgb, var(--ps-accent) 6%, var(--ps-bg-raised));
+}
+
+/* Activity expansion row */
+.index-act-row > td {
+    padding: 0 !important;
+    background: var(--ps-bg-subtle);
+}
+
+/* Fix layout of activity items inside the index expansion */
+.index-act-row .master-act-item {
+    align-items: flex-start;
+}
+
+.index-act-row .master-act-meta {
+    min-width: 0;
+    width: auto;
+}
+
+.index-act-row .master-act-body {
+    align-items: flex-start;
+}
+
+/* Summary with 3-line clamp */
+.index-act-summary {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: var(--ps-text-primary);
+}
+
+.index-act-summary--link {
+    color: var(--ps-accent);
+    text-decoration: none;
+}
+
+.index-act-summary--link:hover {
+    text-decoration: underline;
+}
+
+/* ── Index tab — scan selector grid (legacy, kept for compatibility) ──────── */
+
+.index-scan-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 8px;
+    max-height: 320px;
+    overflow-y: auto;
+    padding: 2px;
+}
+
+.index-scan-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1.5px solid var(--ps-border-default);
+    border-radius: var(--ps-radius-md);
+    cursor: pointer;
+    background: var(--ps-bg-raised);
+    transition: border-color 0.15s, background 0.15s;
+}
+
+.index-scan-item:hover {
+    border-color: var(--ps-accent);
+}
+
+.index-scan-item.checked {
+    border-color: var(--ps-accent);
+    background: color-mix(in srgb, var(--ps-accent) 8%, var(--ps-bg-raised));
+}
+
+.index-scan-item input[type="checkbox"] {
+    margin-top: 2px;
+    flex-shrink: 0;
+    accent-color: var(--ps-accent);
+}
+
+.index-scan-item__body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.index-scan-item__dates {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--ps-text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.index-scan-item__topics {
+    font-size: 0.75rem;
+    color: var(--ps-text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.index-scan-item__count {
+    font-size: 0.7rem;
+    color: var(--ps-text-muted);
+}
+
+/* Topic pills for Index tab */
+.ps-pill {
+    padding: 4px 12px;
+    border-radius: 999px;
+    border: 1.5px solid var(--ps-border-default);
+    background: var(--ps-bg-raised);
+    color: var(--ps-text-secondary);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s, color 0.15s;
+    white-space: nowrap;
+}
+
+.ps-pill:hover {
+    border-color: var(--ps-accent);
+    color: var(--ps-accent);
+}
+
+.ps-pill.active {
+    border-color: var(--ps-accent);
+    background: var(--ps-accent);
+    color: #fff;
 }

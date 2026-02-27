@@ -77,6 +77,17 @@ a clear position). Set to null if relevant.",
   "verbatim_quote": "Up to 3 sentences verbatim from the text, or a description of the action."
 }}
 
+Confidence levels:
+- "High": The member is directly and substantively engaging with the topic — \
+leading or speaking in a debate, sponsoring a bill, tabling an EDM, asking a \
+detailed policy question, or making a clear statement of position.
+- "Medium": The member engages with the topic but less directly — asking a \
+supplementary question, speaking briefly in a broader debate, co-signing an \
+EDM, or making a clear but passing reference to the topic.
+- "Low": The member's contribution is relevant but peripheral — voting in a \
+related division, a brief mention without elaboration, or a contribution where \
+the connection to the topic requires inference.
+
 Rules:
 - Only mark relevant if the contribution reveals a substantive position or interest \
 area, asks a meaningful policy question, or takes a notable action (signing an EDM, \
@@ -163,10 +174,10 @@ class TopicClassifier:
             topics_with_keywords=topics_str
         )
 
-    async def classify(self, contribution: Contribution) -> tuple[dict | None, str | None, str | None]:
+    async def classify(self, contribution: Contribution) -> tuple[dict | None, str | None, str | None, dict]:
         """Classify a single contribution.
 
-        Returns (dict, None, None) if relevant, or (None, reason, category) if discarded.
+        Returns (dict, None, None, usage) if relevant, or (None, reason, category, usage) if discarded.
         Uses prompt caching on the system prompt for cost efficiency.
         """
         text = truncate_text(contribution.text)
@@ -197,6 +208,13 @@ class TopicClassifier:
                     messages=[{"role": "user", "content": user_message}],
                 )
 
+                usage = {
+                    "input_tokens": response.usage.input_tokens,
+                    "output_tokens": response.usage.output_tokens,
+                    "cache_read_tokens": getattr(response.usage, "cache_read_input_tokens", 0) or 0,
+                    "cache_write_tokens": getattr(response.usage, "cache_creation_input_tokens", 0) or 0,
+                }
+
                 result_text = response.content[0].text.strip()
 
                 # Handle markdown code fences
@@ -211,7 +229,7 @@ class TopicClassifier:
                     category = parsed.get("discard_category") or "generic"
                     if category not in DISCARD_CATEGORIES:
                         category = "generic"
-                    return None, reason, category
+                    return None, reason, category, usage
 
                 return {
                     "confidence": parsed.get("confidence", "Medium"),
@@ -219,7 +237,7 @@ class TopicClassifier:
                     "summary": parsed.get("summary", ""),
                     "position_signal": parsed.get("position_signal", ""),
                     "verbatim_quote": parsed.get("verbatim_quote", ""),
-                }, None, None
+                }, None, None, usage
 
             except json.JSONDecodeError:
                 logger.warning(
@@ -230,7 +248,7 @@ class TopicClassifier:
                     await asyncio.sleep(1)
                     continue
                 self.api_errors += 1
-                return None, "Invalid JSON response from classifier", "generic"
+                return None, "Invalid JSON response from classifier", "generic", {}
 
             except anthropic.RateLimitError:
                 wait = 2 ** (attempt + 2)
@@ -257,11 +275,12 @@ class TopicClassifier:
         self.api_errors += 1
         raise ClassifierAPIError("Rate limited — all retries exhausted")
 
-    async def summarise(self, contribution: Contribution) -> str:
+    async def summarise(self, contribution: Contribution) -> tuple[str, dict]:
         """Generate a one-sentence summary for a contribution without topic filtering.
 
         Used for member-only scans where we want an AI summary but no relevance judgement.
         Falls back to a truncated raw text if the API call fails.
+        Returns (summary, usage).
         """
         text = truncate_text(contribution.text)
         source_label = SOURCE_TYPE_LABELS.get(
@@ -291,6 +310,13 @@ class TopicClassifier:
                     messages=[{"role": "user", "content": user_message}],
                 )
 
+                usage = {
+                    "input_tokens": response.usage.input_tokens,
+                    "output_tokens": response.usage.output_tokens,
+                    "cache_read_tokens": getattr(response.usage, "cache_read_input_tokens", 0) or 0,
+                    "cache_write_tokens": getattr(response.usage, "cache_creation_input_tokens", 0) or 0,
+                }
+
                 result_text = response.content[0].text.strip()
 
                 if result_text.startswith("```"):
@@ -298,7 +324,7 @@ class TopicClassifier:
                     result_text = result_text.rsplit("```", 1)[0]
 
                 parsed = json.loads(result_text)
-                return parsed.get("summary") or contribution.context or contribution.text[:120]
+                return parsed.get("summary") or contribution.context or contribution.text[:120], usage
 
             except (json.JSONDecodeError, KeyError):
                 logger.warning(
@@ -331,4 +357,4 @@ class TopicClassifier:
                 break
 
         # Fallback: raw truncation
-        return contribution.context or contribution.text[:120]
+        return contribution.context or contribution.text[:120], {}

@@ -1,5 +1,65 @@
 /* Parliamentary Scanner — Scan control and SSE progress */
 
+function toggleSection(sectionId) {
+    const section = document.getElementById(sectionId);
+    if (!section) return;
+    const body = section.querySelector('.section-body');
+    const btn = section.querySelector('.section-collapse-btn');
+    const nowCollapsed = !section.classList.contains('is-collapsed');
+    section.classList.toggle('is-collapsed', nowCollapsed);
+    if (body) body.style.display = nowCollapsed ? 'none' : '';
+    if (btn) btn.classList.toggle('is-collapsed', nowCollapsed);
+}
+
+function expandSection(sectionId) {
+    const section = document.getElementById(sectionId);
+    if (!section || !section.classList.contains('is-collapsed')) return;
+    toggleSection(sectionId);
+}
+
+let _resultsTab = 'results';   // 'results' | 'audit'
+let _resultsView = 'mentions'; // 'mentions' | 'members'
+
+function _applyResultsState() {
+    const onResults = _resultsTab === 'results';
+    const onMentions = onResults && _resultsView === 'mentions';
+    const onMembers  = onResults && _resultsView === 'members';
+
+    const el = id => document.getElementById(id);
+
+    // Sub-view selector visibility
+    el('resultsViewSelector').style.display = onResults ? '' : 'none';
+
+    // Content panels
+    el('mentionsContent').style.display = onMentions ? '' : 'none';
+    el('membersContent').style.display  = onMembers  ? '' : 'none';
+    el('auditTabContent').style.display = onResults  ? 'none' : '';
+
+    // Export buttons
+    el('exportBtn').style.display = onMentions ? '' : 'none';
+    const hasIndexData = typeof _idx !== 'undefined' && _idx.data !== null;
+    el('indexExportBtn').style.display = (onMembers && hasIndexData) ? '' : 'none';
+
+    // Tab button states
+    el('resultsTabBtn').classList.toggle('results-tab-active', onResults);
+    el('auditTabBtn').classList.toggle('results-tab-active', !onResults);
+
+    // View button states
+    el('mentionsViewBtn').classList.toggle('results-view-active', _resultsView === 'mentions');
+    el('membersViewBtn').classList.toggle('results-view-active', _resultsView === 'members');
+}
+
+function switchResultsTab(tab) {
+    expandSection('results-section');
+    _resultsTab = tab;
+    _applyResultsState();
+}
+
+function switchResultsView(view) {
+    _resultsView = view;
+    _applyResultsState();
+}
+
 function setSummaryBadge(status) {
     const badge = document.getElementById('summaryStatusBadge');
     if (!badge) return;
@@ -340,7 +400,7 @@ function setStageCompleted(upToStage) {
 
 /* ---- Keyword Chips (full width panel) ---- */
 
-function renderKeywordChips(stats) {
+function renderKeywordChips(stats, scanStatus) {
     if (!state.scanTopicGroups || !keywordProgressPanel) return;
 
     const kwStatus = stats.kw_status || {};
@@ -351,8 +411,10 @@ function renderKeywordChips(stats) {
     let html = ``;
 
     for (const group of state.scanTopicGroups) {
+        const allDone = group.keywords.length > 0 && group.keywords.every(kw => (kwStatus[kw] || 'pending') === 'done');
+        const tick = allDone ? '<span class="kw-topic-tick" aria-label="Complete">&#10003;</span>' : '';
         html += '<div class="kw-topic-group">';
-        html += `<div class="kw-topic-header">${escapeHtml(group.name)}</div>`;
+        html += `<div class="kw-topic-header">${escapeHtml(group.name)}${tick}</div>`;
         html += '<div class="kw-chip-list">';
 
         for (const kw of group.keywords) {
@@ -366,6 +428,12 @@ function renderKeywordChips(stats) {
                 countBadge = `<span class="kw-count">${count}</span>`;
             } else if (status === 'active') {
                 chipClass += ' kw-active';
+                const count = kwCounts[kw] || 0;
+                if (count > 0) {
+                    countBadge = `<span class="kw-count">${count}</span>`;
+                }
+            } else if (scanStatus === 'cancelled') {
+                chipClass += ' kw-cancelled';
             }
 
             html += `<span class="${chipClass}">${escapeHtml(kw)}${countBadge}</span>`;
@@ -443,13 +511,15 @@ function renderPipelineBoxes(stats) {
     const uniqueAfterDedup = stats.unique_after_dedup || 0;
     const removedByDedup = Math.max(0, totalApiResults - uniqueAfterDedup);
     const removedByPrefilter = stats.removed_by_prefilter || 0;
+    const removedByKeywordFilter = stats.removed_by_keyword_filter || 0;
 
     const apiErrors = stats.classifier_api_errors || 0;
 
     const kwTooltipRows = [
-        removedByDedup > 0      ? `<span class="pipe-tooltip-row"><span class="pipe-tooltip-num">${removedByDedup}</span> Duplicate${removedByDedup !== 1 ? 's' : ''} removed</span>` : '',
-        removedByPrefilter > 0  ? `<span class="pipe-tooltip-row"><span class="pipe-tooltip-num">${removedByPrefilter}</span> Procedural statement${removedByPrefilter !== 1 ? 's' : ''} removed</span>` : '',
-        sentToClassifier > 0    ? `<span class="pipe-tooltip-row pipe-tooltip-row--sent"><span class="pipe-tooltip-num">${sentToClassifier}</span> Passed to classifier</span>` : '',
+        removedByDedup > 0           ? `<span class="pipe-tooltip-row"><span class="pipe-tooltip-num">${removedByDedup}</span> Duplicate${removedByDedup !== 1 ? 's' : ''} removed</span>` : '',
+        removedByPrefilter > 0       ? `<span class="pipe-tooltip-row"><span class="pipe-tooltip-num">${removedByPrefilter}</span> Procedural statement${removedByPrefilter !== 1 ? 's' : ''} removed</span>` : '',
+        removedByKeywordFilter > 0   ? `<span class="pipe-tooltip-row"><span class="pipe-tooltip-num">${removedByKeywordFilter}</span> No keyword match</span>` : '',
+        sentToClassifier > 0         ? `<span class="pipe-tooltip-row pipe-tooltip-row--sent"><span class="pipe-tooltip-num">${sentToClassifier}</span> Passed to classifier</span>` : '',
     ].filter(Boolean).join('');
 
     // Left-aligned tooltip for keyword results (first box) to prevent left-edge clipping
@@ -480,12 +550,14 @@ function renderPipelineBoxes(stats) {
         { label: 'Keyword Results', value: totalApiResults, cls: 'pipe-box-has-tooltip', tooltip: kwTooltip },
         { label: 'Classified', value: `${totalClassified}/${sentToClassifier}`, cls: classifiedCls, tooltip: classifiedTooltip, badge: classifiedBadge },
         { label: 'Relevant', value: stats.classified_relevant || 0, cls: 'pipe-box-relevant', target: 'results-section' },
-        { label: 'Discarded', value: stats.classified_discarded || 0, cls: `pipe-box-discarded${buildDiscardTooltip(stats) ? ' pipe-box-has-tooltip' : ''}`, target: 'audit-section', tooltip: buildDiscardTooltip(stats) },
+        { label: 'Discarded', value: stats.classified_discarded || 0, cls: `pipe-box-discarded${buildDiscardTooltip(stats) ? ' pipe-box-has-tooltip' : ''}`, target: 'results-section', resultsTab: 'audit', tooltip: buildDiscardTooltip(stats) },
     ];
 
     let html = '';
     for (const box of boxes) {
-        const clickable = box.target ? `data-scroll-target="${box.target}" style="cursor:pointer;"` : '';
+        const clickable = box.target
+            ? `data-scroll-target="${box.target}"${box.resultsTab ? ` data-results-tab="${box.resultsTab}"` : ''} style="cursor:pointer;"`
+            : '';
         html += `<div class="pipe-box ${box.cls}" ${clickable}>
             ${box.badge || ''}
             <div class="pipe-box-value">${box.value}</div>
@@ -502,6 +574,8 @@ function renderPipelineBoxes(stats) {
 
     pipelineStatsRow.querySelectorAll('[data-scroll-target]').forEach(el => {
         el.addEventListener('click', () => {
+            if (el.dataset.resultsTab) switchResultsTab(el.dataset.resultsTab);
+            else expandSection(el.dataset.scrollTarget);
             const target = document.getElementById(el.dataset.scrollTarget);
             if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
