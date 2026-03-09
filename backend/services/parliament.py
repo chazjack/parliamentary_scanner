@@ -80,7 +80,7 @@ class Contribution:
     text: str
     date: datetime
     house: str  # "Commons" or "Lords"
-    source_type: str  # "hansard", "written_question", "written_statement", "edm", "bill", "division"
+    source_type: str  # "hansard", "written_question", "written_answer", "written_statement", "edm", "bill", "division"
     context: str  # debate title / question heading
     url: str
     matched_keywords: list[str] = field(default_factory=list)
@@ -419,7 +419,7 @@ class ParliamentAPIClient:
                             text=_strip_html(answer_text),
                             date=ans_dt,
                             house=house,
-                            source_type="written_question",
+                            source_type="written_answer",
                             context=heading,
                             url=url,
                             matched_keywords=[keyword],
@@ -776,6 +776,41 @@ class ParliamentAPIClient:
         return re.sub(r"\s+", " ", text).strip()
 
     @staticmethod
+    def _extract_quote_near(text: str, keyword: str, window: int = 500) -> str:
+        """Return a snippet of transcript text centred on the first occurrence of keyword."""
+        idx = text.lower().find(keyword.lower())
+        if idx == -1:
+            return text[:window]
+        start = max(0, idx - window // 2)
+        end = min(len(text), idx + window // 2)
+        snippet = text[start:end].strip()
+        if start > 0:
+            snippet = "..." + snippet
+        if end < len(text):
+            snippet += "..."
+        return snippet
+
+    @staticmethod
+    def _find_speaker_at_keyword(text: str, keyword: str) -> str | None:
+        """Attempt to identify the speaker at the point where keyword appears.
+
+        Looks backwards from the keyword for patterns like 'Name:' or 'Q123 Name:'
+        typical of Hansard/committee transcript formatting.
+        """
+        idx = text.lower().find(keyword.lower())
+        if idx == -1:
+            return None
+        preceding = text[:idx]
+        # Speaker patterns: optional Q-number, then title-case name words, then colon
+        matches = list(re.finditer(
+            r'(?:Q\s*\d+\s+)?([A-Z][a-zA-Z\-\']+(?:\s+[A-Z][a-zA-Z\-\']+){0,4}):',
+            preceding
+        ))
+        if matches:
+            return matches[-1].group(1).strip()
+        return None
+
+    @staticmethod
     def _extract_present_members(plain_text: str) -> list[str]:
         """Parse 'Members present' and 'Also present' sections from transcript plain text.
 
@@ -926,7 +961,13 @@ class ParliamentAPIClient:
                 logger.debug("Skipping oral evidence session %s — no participants found", s["id"])
                 continue
 
-            member_name = "; ".join(all_names)
+            # Try to identify the specific speaker at the point the keyword appears;
+            # fall back to all session participants if detection fails.
+            speaker = self._find_speaker_at_keyword(s["text"], keyword)
+            if speaker:
+                member_name = speaker
+            else:
+                member_name = "; ".join(all_names)
             context = s["inquiry_name"] or s["committee_name"] or "Select Committee Oral Evidence"
             url = f"https://committees.parliament.uk/oralevidence/{s['id']}/html/"
 
@@ -934,7 +975,7 @@ class ParliamentAPIClient:
                 id=f"oe-{s['id']}",
                 member_name=member_name,
                 member_id="",
-                text=s["text"][:4000],
+                text=self._extract_quote_near(s["text"], keyword),
                 date=s["dt"],
                 house=s["house"],
                 source_type="oral_evidence",
@@ -1025,7 +1066,7 @@ class ParliamentAPIClient:
     async def fetch_member_hansard(
         self, member_id: str, member_name: str, start_date: str, end_date: str
     ) -> list[Contribution]:
-        """Fetch all Hansard contributions by a specific member using memberId param."""
+        """Fetch all spoken Hansard contributions by a specific member."""
         contributions = []
         skip = 0
         page = 0
@@ -1037,18 +1078,17 @@ class ParliamentAPIClient:
                 "queryParameters.endDate": end_date,
                 "queryParameters.take": 20,
                 "queryParameters.skip": skip,
-                "queryParameters.orderBy": "SittingDateDesc",
             }
 
-            data = await self._get(f"{HANSARD_API_BASE}/search.json", params)
+            data = await self._get(f"{HANSARD_API_BASE}/search/contributions/Spoken.json", params)
             if not data:
                 break
 
-            items = data.get("Contributions", [])
+            items = data.get("Results", [])
             if not items:
                 break
 
-            total = data.get("TotalContributions", 0)
+            total = data.get("TotalResultCount", 0)
 
             for item in items:
                 name = item.get("MemberName") or item.get("AttributedTo", "")
@@ -1148,6 +1188,82 @@ class ParliamentAPIClient:
                         date=dt,
                         house=house,
                         source_type="written_question",
+                        context=heading,
+                        url=url,
+                        matched_keywords=[],
+                    ))
+
+            skip += 20
+            page += 1
+            if skip >= total:
+                break
+
+        return contributions
+
+    async def fetch_member_answered_written_questions(
+        self, member_id: str, member_name: str, start_date: str, end_date: str
+    ) -> list[Contribution]:
+        """Fetch written questions answered by a specific member (as a minister)."""
+        contributions = []
+        skip = 0
+        page = 0
+
+        while page < MAX_PAGES:
+            params = {
+                "answeringMemberId": member_id,
+                "answeredWhenFrom": start_date,
+                "answeredWhenTo": end_date,
+                "take": 20,
+                "skip": skip,
+            }
+
+            data = await self._get(
+                f"{WRITTEN_QS_API_BASE}/api/writtenquestions/questions", params
+            )
+            if not data:
+                break
+
+            results = data.get("results", [])
+            if not results:
+                break
+            total = data.get("totalResults", 0)
+
+            for item in results:
+                val = item.get("value", {})
+                question_id = str(val.get("id", ""))
+                answer_text = val.get("answerText", "")
+                heading = val.get("heading", "")
+                house = val.get("house", "")
+                date_tabled = val.get("dateTabled", "")
+                date_answered = val.get("dateAnswered", date_tabled)
+                uin = val.get("uin", "")
+
+                try:
+                    dt_tabled = datetime.fromisoformat(date_tabled.replace("Z", "+00:00"))
+                except (ValueError, AttributeError):
+                    dt_tabled = datetime.now()
+
+                try:
+                    ans_dt = datetime.fromisoformat(date_answered.replace("Z", "+00:00"))
+                except (ValueError, AttributeError):
+                    ans_dt = dt_tabled
+
+                url = ""
+                if uin:
+                    url = f"https://questions-statements.parliament.uk/written-questions/detail/{dt_tabled.strftime('%Y-%m-%d')}/{uin}"
+
+                answering_member = val.get("answeringMember")
+                name = answering_member.get("name", "") if answering_member else member_name
+
+                if answer_text and name:
+                    contributions.append(Contribution(
+                        id=f"wq-a-{question_id}",
+                        member_name=name.strip(),
+                        member_id=member_id,
+                        text=_strip_html(answer_text),
+                        date=ans_dt,
+                        house=house,
+                        source_type="written_answer",
                         context=heading,
                         url=url,
                         matched_keywords=[],
@@ -1278,6 +1394,12 @@ class ParliamentAPIClient:
             paging = data.get("PagingInfo", {})
             total = paging.get("Total", len(response))
 
+            # The EDM API's primarySponsorId uses MNIS IDs which may not match
+            # Parliament Members API IDs for newer MPs. Use sponsor name as a
+            # fallback guard so we only keep EDMs actually tabled by this member.
+            target_name_lower = member_name.lower().strip()
+            target_surname = target_name_lower.split()[-1] if target_name_lower else ""
+
             for edm in response:
                 edm_id = str(edm.get("Id", ""))
                 title = edm.get("Title", "")
@@ -1287,6 +1409,10 @@ class ParliamentAPIClient:
                 sponsor_name = sponsor.get("Name", "") or member_name
                 sponsor_id = str(sponsor.get("MnisId", member_id))
                 sponsors_count = edm.get("SponsorsCount", 0)
+
+                # Skip EDMs not actually sponsored by this member
+                if target_surname and target_surname not in sponsor_name.lower():
+                    continue
 
                 try:
                     dt = datetime.fromisoformat(date_tabled.replace("Z", "+00:00"))
@@ -1299,7 +1425,7 @@ class ParliamentAPIClient:
                 contributions.append(Contribution(
                     id=f"edm-{edm_id}",
                     member_name=sponsor_name.strip(),
-                    member_id=sponsor_id,
+                    member_id=member_id,
                     text=text,
                     date=dt,
                     house="Commons",
@@ -1345,15 +1471,16 @@ class ParliamentAPIClient:
             if not any(surname in n.lower() for n in all_names):
                 continue
 
-            member_name_display = "; ".join(all_names) if all_names else member_name
+            # Use the specific matched participant name rather than all participants
+            matched_name = next((n for n in all_names if surname in n.lower()), member_name)
             context = s["inquiry_name"] or s["committee_name"] or "Select Committee Oral Evidence"
             url = f"https://committees.parliament.uk/oralevidence/{s['id']}/html/"
 
             contributions.append(Contribution(
                 id=f"oe-{s['id']}",
-                member_name=member_name_display,
+                member_name=matched_name,
                 member_id=member_id,  # set so scanner's member_id filter passes
-                text=s["text"][:4000],
+                text=self._extract_quote_near(s["text"], surname),
                 date=s["dt"],
                 house=s["house"],
                 source_type="oral_evidence",
@@ -1372,15 +1499,22 @@ class ParliamentAPIClient:
         end_date: str,
         enabled_sources: list[str] | None = None,
         cancel_event: asyncio.Event | None = None,
+        on_source_complete=None,  # async callable(member_name, source_key, count)
+        on_results_batch=None,   # async callable(list[Contribution]) — called as each source completes
     ) -> list[Contribution]:
         """Fetch all activity for a specific member from applicable sources in parallel.
 
         Divisions and Bills are omitted — no per-member list endpoints exist.
         They are still covered in keyword+member mode via post-filtering.
         """
+        # EDMs are Commons-only — skip for Lords members
+        member_info = await self.lookup_member(member_id)
+        is_lord = member_info.get("member_type") == "Peer"
+
         all_sources = [
             ("hansard", self.fetch_member_hansard),
             ("written_questions", self.fetch_member_written_questions),
+            ("written_questions", self.fetch_member_answered_written_questions),
             ("written_statements", self.fetch_member_written_statements),
             ("edms", self.fetch_member_edms),
             ("oral_evidence", self.fetch_member_oral_evidence),
@@ -1391,6 +1525,9 @@ class ParliamentAPIClient:
         else:
             sources = all_sources
 
+        if is_lord:
+            sources = [(key, method) for key, method in sources if key != "edms"]
+
         async def _fetch_one(key, method):
             if cancel_event and cancel_event.is_set():
                 return []
@@ -1398,9 +1535,15 @@ class ParliamentAPIClient:
                 logger.info("Fetching member %s from %s", member_id, key)
                 found = await method(member_id, member_name, start_date, end_date)
                 logger.info("  -> %d results from %s", len(found), key)
+                if on_source_complete:
+                    await on_source_complete(member_name, key, len(found))
+                if on_results_batch and found:
+                    await on_results_batch(found)
                 return found
             except Exception as e:
                 logger.error("Error fetching member %s from %s: %s", member_id, key, e)
+                if on_source_complete:
+                    await on_source_complete(member_name, key, 0)
                 return []
 
         tasks = [_fetch_one(key, method) for key, method in sources]

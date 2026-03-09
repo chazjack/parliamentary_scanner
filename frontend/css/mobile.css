@@ -115,13 +115,13 @@
 
     .setup-subnav__sep {
         color: rgba(255, 255, 255, 0.2);
-        font-size: 1.75rem;
-        font-weight: 300;
+        font-size: 2.25rem;
+        font-weight: 700;
         line-height: 1;
-        vertical-align: middle;
+        vertical-align: baseline;
         user-select: none;
         position: relative;
-        top: -0.1em;
+        top: 0.05em;
     }
 
     .setup-subnav__btn {

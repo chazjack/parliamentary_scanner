@@ -74,7 +74,7 @@ a clear position). Set to null if relevant.",
   "topics": ["topic1", "topic2"],
   "summary": "One sentence summarising the MP's position or action. Use surname only (e.g. 'Sunak' not 'Rishi Sunak').",
   "position_signal": "What this reveals about the MP's stance on the topic.",
-  "verbatim_quote": "Up to 3 sentences verbatim from the text, or a description of the action."
+  "verbatim_quote": "Up to 3 sentences verbatim from the text that best capture the MP's substantive position, argument, or view — prioritise the most revealing or quotable passage. Avoid sentences that merely introduce the topic, state the speaker's name, or are procedural."
 }}
 
 Confidence levels:
@@ -98,7 +98,7 @@ explicit.
 - Generic mentions of a keyword without revealing a position are NOT relevant.
 - The summary must capture the MP's POSITION or VIEW, not just that they mentioned the topic.
 - The verbatim_quote must be copied exactly from the provided text — do not paraphrase.
-- For actions (EDM signatures, bill sponsorship, votes), describe the action in verbatim_quote.
+- The verbatim_quote must be the most substantive and revealing passage, not just any sentence containing the speaker's name.
 - If not relevant, set is_relevant to false and other fields to null.
 - If not relevant, set discard_reason to a brief explanation (e.g. \
 "Procedural mention only", "Generic keyword mention without substantive \
@@ -118,13 +118,41 @@ they asked, or what action they took.
 Respond ONLY with valid JSON (no markdown, no code fences):
 {{
   "summary": "One sentence summary using the speaker's surname only.",
-  "verbatim_quote": "Up to 2 sentences verbatim from the text, or a description of the action."
+  "verbatim_quote": "Up to 2 sentences verbatim from the text that best reveal the speaker's position, opinion, or substantive argument — not introductory or procedural sentences. Choose the most quotable passage that shows what they actually think or said."
 }}\
+"""
+
+CLASSIFY_AND_TAG_PROMPT_TEMPLATE = """\
+You are an expert parliamentary analyst supporting the Ada Lovelace Institute's \
+parliamentary engagement work. The Ada Lovelace Institute is an independent research \
+institute focused on ensuring data and AI work for people and society.
+
+For each UK parliamentary contribution you must:
+1. Write a one-sentence summary of what the MP or Peer said, asked, or did.
+2. Identify which of the following monitored topics (if any) this contribution \
+substantively relates to.
+
+Topics being monitored:
+{topics_with_keywords}
+
+A topic match requires genuine, substantive engagement — a clear position, a meaningful \
+policy question, or a notable action (sponsoring a bill, signing an EDM, voting in a \
+relevant division). Generic or incidental keyword mentions do not count.
+
+Respond ONLY with valid JSON (no markdown, no code fences):
+{{
+  "topics": ["topic1", "topic2"],
+  "summary": "One sentence summary using the speaker's surname only.",
+  "verbatim_quote": "Up to 2 sentences verbatim from the text that best reveal the speaker's position, opinion, or substantive argument — not introductory or procedural sentences. Choose the most quotable passage that shows what they actually think or said."
+}}
+
+Set "topics" to [] if no monitored topics apply. Use topic names exactly as listed above.\
 """
 
 SOURCE_TYPE_LABELS = {
     "hansard": "Oral contribution in debate",
-    "written_question": "Written parliamentary question",
+    "written_question": "Written parliamentary question (asked by the Speaker listed)",
+    "written_answer": "Written ministerial answer (given by the Speaker listed, in response to another member's question)",
     "written_statement": "Written ministerial statement",
     "edm": "Early Day Motion",
     "bill": "Bill sponsorship",
@@ -164,6 +192,7 @@ class TopicClassifier:
         self.client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY, timeout=30.0)
         self.model = ANTHROPIC_MODEL
         self.api_errors = 0  # tracks persistent API failures (not content-based rejections)
+        self._valid_topics = set(topics_with_keywords.keys())
 
         # Build system prompt with topics
         topics_str = ""
@@ -171,6 +200,9 @@ class TopicClassifier:
             topics_str += f"- {topic}: {', '.join(keywords)}\n"
 
         self.system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
+            topics_with_keywords=topics_str
+        )
+        self.tag_prompt = CLASSIFY_AND_TAG_PROMPT_TEMPLATE.format(
             topics_with_keywords=topics_str
         )
 
@@ -358,3 +390,100 @@ class TopicClassifier:
 
         # Fallback: raw truncation
         return contribution.context or contribution.text[:120], {}
+
+    async def classify_and_tag(
+        self, contribution: Contribution
+    ) -> tuple[list[str], str, str, dict]:
+        """Summarise a contribution and tag any matching topics from the full topic list.
+
+        Used for member-only scans: all results are stored, but topic badges are added
+        where the contribution substantively engages with a monitored topic.
+        Returns (topics, summary, verbatim_quote, usage).
+        """
+        text = truncate_text(contribution.text)
+        source_label = SOURCE_TYPE_LABELS.get(
+            contribution.source_type, contribution.source_type
+        )
+
+        user_message = (
+            f"Speaker: {contribution.member_name}\n"
+            f"Date: {contribution.date.strftime('%d/%m/%Y')}\n"
+            f"Type: {source_label}\n"
+            f"Context: {contribution.context}\n"
+            f"Text:\n{text}"
+        )
+
+        for attempt in range(3):
+            try:
+                response = await self.client.messages.create(
+                    model=self.model,
+                    max_tokens=300,
+                    system=[
+                        {
+                            "type": "text",
+                            "text": self.tag_prompt,
+                            "cache_control": {"type": "ephemeral"},
+                        }
+                    ],
+                    messages=[{"role": "user", "content": user_message}],
+                )
+
+                usage = {
+                    "input_tokens": response.usage.input_tokens,
+                    "output_tokens": response.usage.output_tokens,
+                    "cache_read_tokens": getattr(response.usage, "cache_read_input_tokens", 0) or 0,
+                    "cache_write_tokens": getattr(response.usage, "cache_creation_input_tokens", 0) or 0,
+                }
+
+                result_text = response.content[0].text.strip()
+                if result_text.startswith("```"):
+                    result_text = result_text.split("\n", 1)[-1]
+                    result_text = result_text.rsplit("```", 1)[0]
+
+                parsed = json.loads(result_text)
+                # Validate topic names against the known set (case-insensitive)
+                _lower_map = {t.lower(): t for t in self._valid_topics}
+                raw_topics = parsed.get("topics") or []
+                topics = [_lower_map[t.lower()] for t in raw_topics if t.lower() in _lower_map]
+                summary = parsed.get("summary") or contribution.context or contribution.text[:120]
+                verbatim_quote = parsed.get("verbatim_quote", "")
+                return topics, summary, verbatim_quote, usage
+
+            except (json.JSONDecodeError, KeyError):
+                logger.warning(
+                    "Invalid JSON from classify_and_tag LLM for %s (attempt %d)",
+                    contribution.id, attempt + 1,
+                )
+                if attempt < 2:
+                    await asyncio.sleep(1)
+                    continue
+                break
+
+            except anthropic.RateLimitError:
+                wait = 2 ** (attempt + 2)
+                logger.warning("Anthropic rate limited during classify_and_tag, waiting %ds", wait)
+                await asyncio.sleep(wait)
+                continue
+
+            except anthropic.APITimeoutError:
+                logger.warning(
+                    "Anthropic timeout during classify_and_tag for %s (attempt %d)",
+                    contribution.id, attempt + 1,
+                )
+                if attempt < 2:
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+                break
+
+            except anthropic.APIError as e:
+                logger.error(
+                    "Anthropic API error during classify_and_tag for %s: %s",
+                    contribution.id, e,
+                )
+                if attempt < 2:
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+                break
+
+        # Fallback: no topics, raw truncation as summary
+        return [], contribution.context or contribution.text[:120], "", {}

@@ -632,9 +632,12 @@ async def get_scan(db: aiosqlite.Connection, scan_id: int) -> dict | None:
 async def get_scan_list(db: aiosqlite.Connection) -> list[dict]:
     """Get all scans ordered by most recent first."""
     cursor = await db.execute(
-        'SELECT id, start_date, end_date, status, total_relevant, created_at, "trigger", error_message, '
-        "llm_input_tokens, llm_output_tokens, llm_cache_read_tokens, llm_cache_write_tokens "
-        "FROM scans ORDER BY created_at DESC"
+        'SELECT s.id, s.start_date, s.end_date, s.status, s.total_relevant, '
+        's.created_at, s."trigger", s.error_message, '
+        "s.llm_input_tokens, s.llm_output_tokens, s.llm_cache_read_tokens, s.llm_cache_write_tokens, "
+        "COUNT(r.id) AS live_result_count "
+        "FROM scans s LEFT JOIN results r ON r.scan_id = s.id "
+        "GROUP BY s.id ORDER BY s.created_at DESC"
     )
     return [dict(row) for row in await cursor.fetchall()]
 
@@ -682,12 +685,18 @@ async def insert_audit_log_batch(db: aiosqlite.Connection, rows: list[tuple]):
     await db.commit()
 
 
-async def get_audit_log(db: aiosqlite.Connection, scan_id: int) -> list[dict]:
+async def get_audit_log(db: aiosqlite.Connection, scan_id: int, include_duplicates: bool = False) -> list[dict]:
     """Get audit log entries for a scan."""
-    cursor = await db.execute(
-        "SELECT * FROM audit_log WHERE scan_id = ? ORDER BY classification, member_name",
-        (scan_id,),
-    )
+    if include_duplicates:
+        cursor = await db.execute(
+            "SELECT * FROM audit_log WHERE scan_id = ? ORDER BY classification, member_name",
+            (scan_id,),
+        )
+    else:
+        cursor = await db.execute(
+            "SELECT * FROM audit_log WHERE scan_id = ? AND classification != 'duplicate' ORDER BY classification, member_name",
+            (scan_id,),
+        )
     return [dict(row) for row in await cursor.fetchall()]
 
 
@@ -707,6 +716,7 @@ async def get_audit_summary(db: aiosqlite.Connection, scan_id: int) -> dict:
     cursor = await db.execute(
         """SELECT
                CASE
+                   WHEN classification = 'duplicate' THEN 'duplicate'
                    WHEN classification = 'procedural_filter' THEN 'procedural'
                    WHEN discard_category IS NOT NULL THEN discard_category
                    ELSE 'generic'

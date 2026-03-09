@@ -229,10 +229,24 @@ function rangeOverlapsRecess(start, end) {
 
         // Previous month padding
         const prevMonthDays = new Date(viewYear, viewMonth, 0).getDate();
+        const prevYear = viewMonth === 0 ? viewYear - 1 : viewYear;
+        const prevMonth = viewMonth === 0 ? 11 : viewMonth - 1;
         for (let i = dayOfWeek - 1; i >= 0; i--) {
+            const dayNum = prevMonthDays - i;
+            const date = new Date(prevYear, prevMonth, dayNum);
+            date.setHours(0, 0, 0, 0);
             const cell = document.createElement('div');
             cell.className = 'calendar-day other-month';
-            cell.textContent = prevMonthDays - i;
+            cell.textContent = dayNum;
+            // Prev month days are always in the past — make selectable
+            dayCells.push({ el: cell, date });
+            cell.addEventListener('click', (e) => {
+                e.stopPropagation();
+                onDayClick(date);
+            });
+            cell.addEventListener('mouseenter', () => {
+                onDayHover(date);
+            });
             grid.appendChild(cell);
         }
 
@@ -275,12 +289,29 @@ function rangeOverlapsRecess(start, end) {
         }
 
         // Next month padding
+        const nextYear = viewMonth === 11 ? viewYear + 1 : viewYear;
+        const nextMonth = viewMonth === 11 ? 0 : viewMonth + 1;
         const totalCells = dayOfWeek + daysInMonth;
         const remaining = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7);
         for (let i = 1; i <= remaining; i++) {
+            const date = new Date(nextYear, nextMonth, i);
+            date.setHours(0, 0, 0, 0);
             const cell = document.createElement('div');
-            cell.className = 'calendar-day other-month';
+            const isFuture = date > today;
             cell.textContent = i;
+            if (isFuture) {
+                cell.className = 'calendar-day other-month future';
+            } else {
+                cell.className = 'calendar-day other-month';
+                dayCells.push({ el: cell, date });
+                cell.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    onDayClick(date);
+                });
+                cell.addEventListener('mouseenter', () => {
+                    onDayHover(date);
+                });
+            }
             grid.appendChild(cell);
         }
 

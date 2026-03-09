@@ -10,6 +10,7 @@ CONFIDENCE_WEIGHTS = {"High": 3, "Medium": 2, "Low": 1}
 SOURCE_LABELS = {
     "hansard": "Hansard",
     "written_question": "Written Q",
+    "written_answer": "Written Ans",
     "written_statement": "Written Stmt",
     "edm": "EDM",
     "bill": "Bill",

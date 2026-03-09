@@ -86,11 +86,11 @@
         <!-- ===== Scanner Tab ===== -->
         <div id="tab-scanner" style="display:none;">
             <div class="la-cal-header">
-                <h2 class="la-cal-title">Scanner</h2>
-                <div style="display:flex;align-items:center;justify-content:space-between;">
-                    <p class="scanner-subtitle" style="margin:0;font-size:0.85rem;color:var(--ps-text-muted,#888);">Search parliamentary records by date, topic and parliamentarian.</p>
-                    <button id="tourTriggerBtn" onclick="startTour()" style="font-size:0.85rem;color:var(--ps-text-muted,#888);opacity:0.7;background:none;border:none;cursor:pointer;padding:0;font-family:inherit;" title="Take a guided walkthrough of the scanner">How does this work?</button>
+                <div style="display:flex;align-items:flex-end;justify-content:space-between;">
+                    <h2 class="la-cal-title" style="margin:0;">Scanner</h2>
+                    <button id="tourTriggerBtn" onclick="startTour()" class="tour-trigger-btn" title="Take a guided walkthrough of the scanner">How does this work?</button>
                 </div>
+                <p class="scanner-subtitle" style="margin:0;font-size:0.85rem;color:var(--ps-text-muted,#888);">Search parliamentary records by date, topic and parliamentarian.</p>
             </div>
             <!-- Grouped Control Card -->
             <section class="control-group-card">
@@ -103,7 +103,7 @@
                         <input type="hidden" id="startDate">
                         <input type="hidden" id="endDate">
                     </div>
-                    <button id="scanBtn" class="scan-btn">Scan Records</button>
+                    <button id="scanBtn" class="scan-btn">Scan</button>
                     <div id="scanWarning" class="scan-warning" style="display:none;"></div>
                 </div>
             </div>
@@ -189,6 +189,7 @@
                 </div>
                 <div class="section-body" id="historySectionBody">
                     <div id="historyList"></div>
+                     <div id="historyPagination"></div>
                 </div>
             </section>
 
@@ -278,6 +279,22 @@
                         <div id="auditList" class="audit-container"><p class="empty-state-preview">No scan selected or active.</p></div>
                     </div>
                 </div><!-- /section-body resultsSectionBody -->
+            </section>
+
+            <!-- Analysis Section -->
+            <section id="analysis-section" style="display:none;">
+                <div class="analysis-header">
+                    <div class="analysis-header-left">
+                        <span class="analysis-title">Analysis</span>
+                        <span class="analysis-member-chip" id="analysisMemberName"></span>
+                    </div>
+                    <button class="analysis-close-btn" onclick="closeAnalysis()" title="Close">
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="2" y1="2" x2="12" y2="12"/><line x1="12" y1="2" x2="2" y2="12"/></svg>
+                    </button>
+                </div>
+                <div class="analysis-body">
+                    <div id="analysisContent"></div>
+                </div>
             </section>
         </div>
 
@@ -654,6 +671,7 @@
     <script src="/js/alerts.js"></script>
     <script src="/js/groups.js"></script>
     <script src="/js/index.js"></script>
+    <script src="/js/member-profile.js"></script>
     <script src="/js/tour.js"></script>
 
     <!-- Group members popover — lives at body level so it's never hidden by a tab's display:none -->

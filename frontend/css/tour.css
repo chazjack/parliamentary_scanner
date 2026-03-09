@@ -31,11 +31,11 @@
 .tour-tooltip {
   position: fixed;
   z-index: 2002;
-  width: 360px;
+  width: 420px;
   background: #18181b;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 10px;
-  padding: 18px 20px 16px;
+  padding: 22px 24px 20px;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
   pointer-events: all;
   transition:
@@ -51,22 +51,22 @@
 }
 
 .tour-tooltip__title {
-  font-size: 0.9rem;
+  font-size: 1.05rem;
   font-weight: 700;
   color: #fff;
 }
 
 .tour-tooltip__counter {
-  font-size: 0.72rem;
+  font-size: 0.85rem;
   color: #52525b;
   font-variant-numeric: tabular-nums;
 }
 
 .tour-tooltip__body {
-  font-size: 0.84rem;
-  line-height: 1.58;
+  font-size: 1rem;
+  line-height: 1.62;
   color: #a1a1aa;
-  margin: 0 0 16px;
+  margin: 0 0 18px;
 }
 
 .tour-tooltip__body strong {
@@ -103,9 +103,9 @@
 
 /* Prev / Next buttons */
 .tour-btn {
-  font-size: 0.78rem;
+  font-size: 0.9rem;
   font-weight: 600;
-  padding: 6px 14px;
+  padding: 7px 16px;
   border-radius: 6px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: #27272a;
@@ -155,13 +155,13 @@
 .tour-body-warning {
   margin-top: 12px;
   margin-bottom: 4px;
-  padding: 9px 12px;
+  padding: 10px 14px;
   border-radius: 6px;
   background: rgba(239, 68, 68, 0.12);
   border: 1px solid rgba(239, 68, 68, 0.35);
   color: #fca5a5;
-  font-size: 0.80rem;
-  line-height: 1.5;
+  font-size: 0.95rem;
+  line-height: 1.55;
 }
 
 .tour-body-warning strong {
@@ -201,4 +201,36 @@
   animation: tour-pulse 1.4s ease-out infinite;
   position: relative;
   z-index: 2005;
+}
+
+/* Mobile: full-width card pinned to bottom of screen */
+@media (max-width: 520px) {
+  .tour-tooltip {
+    width: calc(100vw - 24px) !important;
+    left: 12px !important;
+    bottom: 16px !important;
+    top: auto !important;
+    padding: 20px 20px 18px;
+  }
+
+  .tour-tooltip__title {
+    font-size: 1.1rem;
+  }
+
+  .tour-tooltip__body {
+    font-size: 1.05rem;
+  }
+
+  .tour-tooltip__counter {
+    font-size: 0.88rem;
+  }
+
+  .tour-btn {
+    font-size: 0.95rem;
+    padding: 8px 18px;
+  }
+
+  .tour-body-warning {
+    font-size: 1rem;
+  }
 }

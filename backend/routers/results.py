@@ -92,7 +92,7 @@ async def export_excel(scan_id: int):
 
 
 @router.get("/scans/{scan_id}/audit")
-async def scan_audit(scan_id: int):
+async def scan_audit(scan_id: int, include_duplicates: bool = False):
     """Get audit log for a scan — shows discarded and filtered items."""
     db = await get_db()
     try:
@@ -100,7 +100,7 @@ async def scan_audit(scan_id: int):
         if not scan:
             raise HTTPException(404, "Scan not found")
         summary = await get_audit_summary(db, scan_id)
-        entries = await get_audit_log(db, scan_id)
+        entries = await get_audit_log(db, scan_id, include_duplicates=include_duplicates)
         return {"summary": summary, "entries": entries}
     finally:
         await db.close()

@@ -148,6 +148,16 @@ function _idxRenderStandings() {
         `;
 
         tr.addEventListener('click', () => _idxToggleRow(tr, m.activities || []));
+
+        // Name span → open member profile
+        const nameEl = tr.querySelector('.ps-member__name');
+        if (nameEl) {
+            nameEl.classList.add('mp-member-link');
+            nameEl.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openMemberProfile(m.member_name);
+            });
+        }
         tbody.appendChild(tr);
     }
 

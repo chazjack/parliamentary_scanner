@@ -442,7 +442,7 @@ function renderKeywordChips(stats, scanStatus) {
                 const count = kwCounts[kw] || 0;
                 countBadge = `<span class="kw-count">${count}</span>`;
             } else if (status === 'active') {
-                if (state.cancelling) {
+                if (state.cancelling || scanStatus === 'cancelled') {
                     chipClass += ' kw-cancelled';
                 } else {
                     chipClass += ' kw-active';
@@ -490,11 +490,15 @@ window.renderMemberFilterDisplay = function renderMemberFilterDisplay(entries) {
 
 /* ---- Pipeline Stat Boxes (horizontal row) ---- */
 
-function buildDiscardTooltip(stats) {
+function buildDiscardTooltip(stats, removedByPrefilter = 0, removedByDedup = 0) {
     const cats = stats.discard_category_counts || {};
     const LABELS = { procedural: 'Procedural', no_position: 'No Position', off_topic: 'Off-Topic', generic: 'Generic' };
     const COLORS = { procedural: '#d97706', no_position: '#3b82f6', off_topic: '#ef4444', generic: '#8b5cf6' };
     const rows = [];
+    if (removedByDedup > 0)
+        rows.push(`<span class="pipe-tooltip-row"><span class="pipe-tooltip-num" style="color:#6b7280">${removedByDedup}</span> Duplicate</span>`);
+    if (removedByPrefilter > 0)
+        rows.push(`<span class="pipe-tooltip-row"><span class="pipe-tooltip-num" style="color:#d97706">${removedByPrefilter}</span> Procedural</span>`);
     for (const [key, label] of Object.entries(LABELS)) {
         if (cats[key]) {
             rows.push(`<span class="pipe-tooltip-row"><span class="pipe-tooltip-num" style="color:${COLORS[key]}">${cats[key]}</span> ${label}</span>`);
@@ -504,25 +508,49 @@ function buildDiscardTooltip(stats) {
     return `<div class="pipe-box-tooltip pipe-box-tooltip--right">${rows.join('')}</div>`;
 }
 
+function _buildMemberResultsBox(stats) {
+    const perMember = stats.per_member_source_counts || {};
+    const total = stats.total_api_results || 0;
+    const SOURCE_LABELS = {
+        hansard: 'Hansard', written_questions: 'Written Qs',
+        written_statements: 'Written Stmts', edms: 'EDMs', oral_evidence: 'Oral Evidence',
+    };
+
+    const memberNames = Object.keys(perMember);
+    let tooltipRows = '';
+    for (const name of memberNames) {
+        const sources = perMember[name];
+        const memberTotal = Object.values(sources).reduce((a, b) => a + b, 0);
+        tooltipRows += `<span class="pipe-tooltip-member-header">${escapeHtml(name)} <span class="pipe-tooltip-member-total">${memberTotal}</span></span>`;
+        for (const [key, count] of Object.entries(sources)) {
+            const label = SOURCE_LABELS[key] || key;
+            tooltipRows += `<span class="pipe-tooltip-row"><span class="pipe-tooltip-num">${count}</span> ${label}</span>`;
+        }
+    }
+
+    const tooltip = tooltipRows
+        ? `<div class="pipe-box-tooltip pipe-box-tooltip--left">${tooltipRows}</div>`
+        : '';
+    const cls = tooltip ? 'pipe-box-has-tooltip' : '';
+
+    return `<div class="pipe-box ${cls}">
+        <div class="pipe-box-value">${total}</div>
+        <div class="pipe-box-label">Member Results</div>
+        ${tooltip}
+    </div>`;
+}
+
 function renderPipelineBoxes(stats) {
     if (!pipelineStatsRow) return;
 
     const totalApiResults = stats.total_api_results || 0;
     const sentToClassifier = stats.sent_to_classifier || 0;
+    const memberScan = stats.member_scan || null;
 
-    // Member-only scan: no LLM classification, just show fetched count
-    if (sentToClassifier === 0 && totalApiResults > 0) {
-        pipelineStatsRow.innerHTML = `<div class="pipe-box pipe-box-relevant" data-scroll-target="results-section" style="cursor:pointer;">
-            <div class="pipe-box-value">${totalApiResults}</div>
-            <div class="pipe-box-label">Items Fetched</div>
-        </div>`;
-        pipelineStatsRow.querySelectorAll('[data-scroll-target]').forEach(el => {
-            el.addEventListener('click', () => {
-                const target = document.getElementById(el.dataset.scrollTarget);
-                if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            });
-        });
-        return;
+    // Member scan: show Member Results box (always left-most)
+    if (memberScan) {
+        // Stash member box to prepend before the full pipeline
+        stats._memberBox = _buildMemberResultsBox(stats);
     }
 
     const totalClassified = (stats.classified_relevant || 0) + (stats.classified_discarded || 0);
@@ -574,11 +602,12 @@ function renderPipelineBoxes(stats) {
         else hideResultsPill();
     }
 
+    const totalKeywords = stats.total_keywords || 0;
     const boxes = [
-        { label: 'Keyword Results', value: totalApiResults, cls: 'pipe-box-has-tooltip', tooltip: kwTooltip },
+        ...( totalKeywords > 0 ? [{ label: 'Keyword Results', value: totalApiResults, cls: 'pipe-box-has-tooltip', tooltip: kwTooltip }] : []),
         { label: 'Classified', value: `${totalClassified}/${sentToClassifier}`, cls: classifiedCls, tooltip: classifiedTooltip, badge: classifiedBadge },
-        { label: 'Relevant', value: relevantCount, cls: 'pipe-box-relevant', target: 'results-section' },
-        { label: 'Discarded', value: stats.classified_discarded || 0, cls: `pipe-box-discarded${buildDiscardTooltip(stats) ? ' pipe-box-has-tooltip' : ''}`, target: 'results-section', resultsTab: 'audit', tooltip: buildDiscardTooltip(stats) },
+        { label: 'Relevant', value: relevantCount, cls: 'pipe-box-relevant', target: 'results-section', resultsTab: 'results' },
+        { label: 'Discarded', value: (stats.classified_discarded || 0) + removedByPrefilter + removedByDedup, cls: `pipe-box-discarded${buildDiscardTooltip(stats, removedByPrefilter, removedByDedup) ? ' pipe-box-has-tooltip' : ''}`, target: 'results-section', resultsTab: 'audit', tooltip: buildDiscardTooltip(stats, removedByPrefilter, removedByDedup) },
     ];
 
     let html = '';
@@ -598,7 +627,8 @@ function renderPipelineBoxes(stats) {
     const existing = pipelineStatsRow.parentElement.querySelector('.api-error-warning');
     if (existing) existing.remove();
 
-    pipelineStatsRow.innerHTML = html;
+    pipelineStatsRow.innerHTML = (stats._memberBox || '') + html;
+    delete stats._memberBox;
 
     pipelineStatsRow.querySelectorAll('[data-scroll-target]').forEach(el => {
         el.addEventListener('click', () => {
@@ -682,7 +712,7 @@ function friendlyError(msg) {
 function resetScanUI() {
     _scanBtnMode = 'scan';
     scanBtn.disabled = false;
-    scanBtn.textContent = 'Scan Records';
+    scanBtn.textContent = 'Scan';
     scanBtn.classList.remove('scan-btn--scanning');
     _stopLiveResults();
     hideResultsPill();

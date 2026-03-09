@@ -303,7 +303,7 @@ function renderResultsPage() {
         let topics = r.topics;
         try { topics = JSON.parse(r.topics); } catch (e) {}
         let topicNames = Array.isArray(topics) ? topics : [];
-        if (currentScanTopicNames) {
+        if (currentScanTopicNames && currentScanTopicNames.size > 0) {
             const lowerMap = new Map([...currentScanTopicNames].map(t => [t.toLowerCase(), t]));
             topicNames = topicNames
                 .map(t => lowerMap.get(t.toLowerCase()))
@@ -341,11 +341,11 @@ function renderResultsPage() {
 
         // One badge per topic
         const topicBadges = topicNames.length
-            ? topicNames.map(t => `<span class="ps-badge ps-badge--accent">${escapeHtml(t)}</span>`).join(' ')
+            ? topicNames.map(t => `<span class="ps-chip-topic-wrap ps-chip-topic-wrap--view-only"><span class="ps-chip">${escapeHtml(t)}</span></span>`).join(' ')
             : '—';
 
         tr.innerHTML = `
-            <td><div class="ps-member"><span class="ps-member__name">${escapeHtml(r.member_name)}</span></div></td>
+            <td><div class="ps-member"><span class="ps-member__name mp-member-link">${escapeHtml(r.member_name)}</span></div></td>
             <td>${partyPill(r.party || '—')}${typeSmall}</td>
             <td>${topicBadges}</td>
             <td>${escapeHtml(r.summary || '—')}</td>
@@ -359,6 +359,15 @@ function renderResultsPage() {
                 data-member-type="${escapedType}"
                 data-constituency="${escapedConstituency}">${btnIcon}</button></td>
         `;
+
+        // Member name → open profile
+        const nameEl = tr.querySelector('.mp-member-link');
+        if (nameEl) {
+            nameEl.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openMemberProfile(r.member_name);
+            });
+        }
 
         // Wire up button events
         const btn = tr.querySelector('.btn-add-master');
@@ -477,6 +486,7 @@ async function removeFromMasterByResult(resultId, btn) {
 const SOURCE_COLOURS = {
     'hansard':          { color: '#f87171', bg: 'rgba(248,113,113,0.15)', label: 'Hansard'      },
     'written_question': { color: '#fbbf24', bg: 'rgba(251,191,36,0.15)', label: 'Written Q'    },
+    'written_answer':   { color: '#fbbf24', bg: 'rgba(251,191,36,0.15)', label: 'Written Ans'  },
     'written_statement':{ color: '#4ade80', bg: 'rgba(74,222,128,0.15)', label: 'Written Stmt' },
     'edm':              { color: '#e879f9', bg: 'rgba(232,121,249,0.15)',label: 'EDM'          },
     'bill':             { color: '#fb923c', bg: 'rgba(251,146,60,0.15)', label: 'Bill'         },
@@ -581,8 +591,10 @@ document.getElementById('exportBtn').addEventListener('click', () => {
 
 // Audit panel
 async function loadAudit(scanId) {
+    const includeDups = document.getElementById('auditShowDupsToggle')?.dataset.showing === 'true';
     try {
-        const data = await API.get(`/api/scans/${scanId}/audit`);
+        const url = `/api/scans/${scanId}/audit${includeDups ? '?include_duplicates=true' : ''}`;
+        const data = await API.get(url);
         const summary = data.summary || {};
         const entries = data.entries || [];
 
@@ -602,23 +614,37 @@ async function loadAudit(scanId) {
             no_position: 'No Position',
             off_topic:   'Off-Topic',
             generic:     'Generic',
+            duplicate:   'Duplicates',
         };
         const CATEGORY_DESCRIPTIONS = {
             procedural:  'Administrative or boilerplate mention — e.g. referring to a previous answer, a bill title read by the Speaker, or a procedural header.',
             no_position: 'The topic was raised but no substantive stance or meaningful position was expressed.',
             off_topic:   'A keyword matched but the content does not actually relate to the monitored topics.',
             generic:     'The reference is too vague or superficial to extract a clear position — the keyword appeared but nothing meaningful was said about it.',
+            duplicate:   'The same contribution was returned by multiple keyword searches and counted only once.',
         };
+        const showingDups = document.getElementById('auditShowDupsToggle')?.dataset.showing === 'true';
         let summaryHtml = '';
         for (const [cat, label] of Object.entries(CATEGORY_LABELS)) {
             if (summary[cat]) {
+                const extra = cat === 'duplicate'
+                    ? ` <span id="auditShowDupsToggle" class="audit-dup-toggle" data-showing="${showingDups}" data-tooltip="${CATEGORY_DESCRIPTIONS[cat]}">${showingDups ? '(hide)' : '(show)'}</span>`
+                    : '';
                 summaryHtml += `<div class="audit-count">
-                    <span class="count-badge discard-pill--${cat}" data-tooltip="${CATEGORY_DESCRIPTIONS[cat]}">${summary[cat]}</span>
-                    <span>${label}</span>
+                    <span class="count-badge discard-pill--${cat}"${cat !== 'duplicate' ? ` data-tooltip="${CATEGORY_DESCRIPTIONS[cat]}"` : ''}>${summary[cat]}</span>
+                    <span>${label}</span>${extra}
                 </div>`;
             }
         }
         summaryDiv.innerHTML = summaryHtml;
+
+        document.getElementById('auditShowDupsToggle')?.addEventListener('click', () => {
+            const toggle = document.getElementById('auditShowDupsToggle');
+            const nowShowing = toggle.dataset.showing !== 'true';
+            toggle.dataset.showing = nowShowing;
+            toggle.textContent = nowShowing ? '(hide)' : '(show)';
+            if (state.currentScanId) loadAudit(state.currentScanId);
+        });
 
         // Render entries
         let listHtml = `<div class="audit-header">
@@ -628,6 +654,7 @@ async function loadAudit(scanId) {
             <span>Action</span>
         </div>`;
         for (const e of entries) {
+            const isDuplicate = e.classification === 'duplicate';
             const isProcedural = e.classification === 'procedural_filter';
             let keywords = [];
             try { keywords = JSON.parse(e.matched_keywords || '[]'); } catch {}
@@ -635,29 +662,38 @@ async function loadAudit(scanId) {
             const previewContent = e.source_url
                 ? `<a href="${escapeHtml(e.source_url)}" target="_blank" rel="noopener" class="audit-preview-link">${snippetHtml}</a>`
                 : snippetHtml;
-            const cat = isProcedural ? 'procedural' : (e.discard_category || 'generic');
-            const CATEGORY_LABELS = { procedural: 'Procedural', no_position: 'No Position', off_topic: 'Off-Topic', generic: 'Generic' };
-            const CATEGORY_DESCRIPTIONS = {
-                procedural:  'Administrative or boilerplate mention — e.g. referring to a previous answer, a bill title read by the Speaker, or a procedural header.',
-                no_position: 'The topic was raised but no substantive stance or meaningful position was expressed.',
-                off_topic:   'A keyword matched but the content does not actually relate to the monitored topics.',
-                generic:     'The reference is too vague or superficial to extract a clear position — the keyword appeared but nothing meaningful was said about it.',
-            };
-            const pillLabel = CATEGORY_LABELS[cat] || cat;
-            const pillTooltip = CATEGORY_DESCRIPTIONS[cat] ? ` data-tooltip="${CATEGORY_DESCRIPTIONS[cat]}"` : '';
-            const pill = `<span class="discard-pill discard-pill--${cat} discard-pill--list"${pillTooltip}>${pillLabel}</span>`;
-            const reasonText = e.discard_reason ? ` ${escapeHtml(e.discard_reason)}` : '';
-            const reasonHtml = `<span class="audit-reason">${pill}${reasonText}</span>`;
-            listHtml += `<div class="audit-item">
-                <span class="audit-member">${escapeHtml(e.member_name)}</span>
-                <span class="audit-preview">${previewContent}</span>
-                ${reasonHtml}
-                <div class="audit-actions-dropdown" id="audit-actions-${e.id}">
+
+            let reasonHtml;
+            if (isDuplicate) {
+                const kwList = keywords.length ? keywords.map(k => `<em>${escapeHtml(k)}</em>`).join(', ') : 'multiple keywords';
+                reasonHtml = `<span class="audit-reason"><span class="discard-pill discard-pill--duplicate discard-pill--list">Duplicate</span> Matched by ${kwList}</span>`;
+            } else {
+                const cat = isProcedural ? 'procedural' : (e.discard_category || 'generic');
+                const CATEGORY_LABELS = { procedural: 'Procedural', no_position: 'No Position', off_topic: 'Off-Topic', generic: 'Generic' };
+                const CATEGORY_DESCRIPTIONS = {
+                    procedural:  'Administrative or boilerplate mention — e.g. referring to a previous answer, a bill title read by the Speaker, or a procedural header.',
+                    no_position: 'The topic was raised but no substantive stance or meaningful position was expressed.',
+                    off_topic:   'A keyword matched but the content does not actually relate to the monitored topics.',
+                    generic:     'The reference is too vague or superficial to extract a clear position — the keyword appeared but nothing meaningful was said about it.',
+                };
+                const pillLabel = CATEGORY_LABELS[cat] || cat;
+                const pillTooltip = CATEGORY_DESCRIPTIONS[cat] ? ` data-tooltip="${CATEGORY_DESCRIPTIONS[cat]}"` : '';
+                const pill = `<span class="discard-pill discard-pill--${cat} discard-pill--list"${pillTooltip}>${pillLabel}</span>`;
+                const reasonText = e.discard_reason ? ` ${escapeHtml(e.discard_reason)}` : '';
+                reasonHtml = `<span class="audit-reason">${pill}${reasonText}</span>`;
+            }
+
+            const actions = isDuplicate ? '' : `<div class="audit-actions-dropdown" id="audit-actions-${e.id}">
                     <button class="ps-btn ps-btn--ghost ps-btn--sm audit-actions-trigger" onclick="toggleAuditMenu(event, ${e.id})" title="Actions">&#8942;</button>
                     <div class="audit-actions-menu" id="audit-menu-${e.id}" style="display:none;">
                         <button onclick="reclassifyAuditItem(${e.id}, ${scanId}); closeAuditMenu(${e.id})">Add to results</button>
                     </div>
-                </div>
+                </div>`;
+            listHtml += `<div class="audit-item${isDuplicate ? ' audit-item--duplicate' : ''}">
+                <span class="audit-member">${escapeHtml(e.member_name)}</span>
+                <span class="audit-preview">${previewContent}</span>
+                ${reasonHtml}
+                ${actions}
             </div>`;
         }
         listDiv.innerHTML = listHtml;
@@ -677,6 +713,7 @@ document.getElementById('auditToggle').addEventListener('click', () => {
     list.classList.toggle('collapsed');
     icon.classList.toggle('collapsed');
 });
+
 
 // Audit item three-dot menu
 function toggleAuditMenu(e, auditId) {
@@ -784,7 +821,7 @@ async function loadHistory() {
         div.innerHTML = `
             <span class="history-conducted">${automatedDot}${conductedStr}</span>
             <span class="history-date">${formatDate(s.start_date)} to ${formatDate(s.end_date)}</span>
-            <span>${s.total_relevant || 0} results</span>
+            <span>${s.live_result_count ?? s.total_relevant ?? 0} results</span>
             <span class="history-cost">${costStr}</span>
             <span class="history-status-col"><span class="history-status ${s.status}${errorClass}"${errorTitle}>${s.status}</span></span>
         `;
@@ -795,25 +832,39 @@ async function loadHistory() {
                 document.getElementById('scanErrorModal').style.display = '';
             });
         }
+        if (state.currentScanId === s.id) {
+            div.classList.add('selected');
+        }
         div.addEventListener('click', () => {
             state.currentScanId = s.id;
+            localStorage.setItem('lastScanId', s.id);
+            container.querySelectorAll('.history-item').forEach(el => el.classList.remove('selected'));
+            div.classList.add('selected');
             loadResults(s.id);
             loadAudit(s.id);
+            // Reconnect SSE if the scan is still in progress
+            if ((s.status === 'running' || s.status === 'queued') && typeof connectSSE === 'function') {
+                connectSSE(s.id);
+            }
         });
         container.appendChild(div);
     }
 
-    // Add pagination controls if more than one page
-    if (totalPages > 1) {
-        const nav = document.createElement('div');
-        nav.className = 'history-pagination';
-        nav.innerHTML = `
-            <button class="ps-btn ps-btn--ghost ps-btn--sm" ${historyPage <= 1 ? 'disabled' : ''}
-                    onclick="historyPage--; loadHistory()">&larr;</button>
-            <span class="page-info">Page ${historyPage} of ${totalPages}</span>
-            <button class="ps-btn ps-btn--ghost ps-btn--sm" ${historyPage >= totalPages ? 'disabled' : ''}
-                    onclick="historyPage++; loadHistory()">&rarr;</button>
-        `;
-        container.appendChild(nav);
+     // Add pagination controls if more than one page (outside scrollable container)
+    const paginationEl = document.getElementById('historyPagination');
+    if (paginationEl) {
+        paginationEl.innerHTML = '';
+        if (totalPages > 1) {
+            paginationEl.className = 'history-pagination';
+            paginationEl.innerHTML = `
+                <button class="ps-btn ps-btn--ghost ps-btn--sm" ${historyPage <= 1 ? 'disabled' : ''}
+                        onclick="historyPage--; loadHistory()">&larr;</button>
+                <span class="page-info">Page ${historyPage} of ${totalPages}</span>
+                <button class="ps-btn ps-btn--ghost ps-btn--sm" ${historyPage >= totalPages ? 'disabled' : ''}
+                        onclick="historyPage++; loadHistory()">&rarr;</button>
+            `;
+        } else {
+            paginationEl.className = '';
+        }
     }
 }

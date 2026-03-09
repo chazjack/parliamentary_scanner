@@ -175,6 +175,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadTopics();
     state.groups = await API.get('/api/groups');
     await loadHistory();
+
+    // Restore last selected scan
+    const savedScanId = localStorage.getItem('lastScanId');
+    if (savedScanId) {
+        const scanId = parseInt(savedScanId, 10);
+        state.currentScanId = scanId;
+        loadResults(scanId);
+        loadAudit(scanId);
+        // Reconnect SSE if the scan is still in progress
+        try {
+            const scans = await API.get('/api/scans');
+            const thisScan = scans.find(s => s.id === scanId);
+            if (thisScan && (thisScan.status === 'running' || thisScan.status === 'queued') && typeof connectSSE === 'function') {
+                connectSSE(scanId);
+            }
+        } catch (e) { /* ignore */ }
+    }
+
     checkApiHealth();
     setInterval(checkApiHealth, 60000); // recheck every 60 seconds
     setInterval(loadHistory, 30000);    // background history refresh every 30 seconds
