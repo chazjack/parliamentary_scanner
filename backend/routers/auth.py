@@ -64,4 +64,4 @@ async def me(session: str | None = Cookie(default=None)):
         await db.close()
     if not user:
         raise HTTPException(status_code=401, detail="Session expired.")
-    return {"username": user["username"]}
+    return {"username": user["username"], "is_admin": bool(user.get("is_admin", 0))}

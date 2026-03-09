@@ -1,6 +1,6 @@
 """Member Topic Index API endpoints."""
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -12,6 +12,7 @@ from backend.database import (
     get_results_for_scans,
     save_index_config,
 )
+from backend.deps import get_current_user
 from backend.services.indexer import create_index_excel, generate_index
 
 router = APIRouter(prefix="/api/index", tags=["index"])
@@ -27,24 +28,24 @@ class SaveConfigRequest(BaseModel):
 
 
 @router.get("/scans")
-async def list_completed_scans():
+async def list_completed_scans(user: dict = Depends(get_current_user)):
     """Return completed scans with topic names and result counts for the selector UI."""
     db = await get_db()
     try:
-        return await get_completed_scans_summary(db)
+        return await get_completed_scans_summary(db, user_id=user["id"])
     finally:
         await db.close()
 
 
 @router.post("/generate")
-async def generate_index_endpoint(body: GenerateRequest):
+async def generate_index_endpoint(body: GenerateRequest, user: dict = Depends(get_current_user)):
     """Generate an index from the selected scans."""
     if not body.scan_ids:
         raise HTTPException(400, "No scan IDs provided")
     db = await get_db()
     try:
-        results = await get_results_for_scans(db, body.scan_ids)
-        scans = await get_completed_scans_summary(db)
+        results = await get_results_for_scans(db, body.scan_ids, user_id=user["id"])
+        scans = await get_completed_scans_summary(db, user_id=user["id"])
         scan_summaries = [s for s in scans if s["id"] in body.scan_ids]
     finally:
         await db.close()
@@ -55,33 +56,33 @@ async def generate_index_endpoint(body: GenerateRequest):
 
 
 @router.post("/save", status_code=201)
-async def save_config(body: SaveConfigRequest):
+async def save_config(body: SaveConfigRequest, user: dict = Depends(get_current_user)):
     """Save a named index configuration."""
     if not body.name.strip():
         raise HTTPException(400, "Name cannot be empty")
     db = await get_db()
     try:
-        return await save_index_config(db, body.name.strip(), body.scan_ids)
+        return await save_index_config(db, body.name.strip(), body.scan_ids, user_id=user["id"])
     finally:
         await db.close()
 
 
 @router.get("/saved")
-async def list_saved_configs():
+async def list_saved_configs(user: dict = Depends(get_current_user)):
     """List all saved index configs."""
     db = await get_db()
     try:
-        return await get_index_configs(db)
+        return await get_index_configs(db, user_id=user["id"])
     finally:
         await db.close()
 
 
 @router.delete("/saved/{config_id}")
-async def delete_config(config_id: int):
+async def delete_config(config_id: int, user: dict = Depends(get_current_user)):
     """Delete a saved index config."""
     db = await get_db()
     try:
-        if not await delete_index_config(db, config_id):
+        if not await delete_index_config(db, config_id, user_id=user["id"]):
             raise HTTPException(404, "Config not found")
         return {"ok": True}
     finally:
@@ -89,7 +90,7 @@ async def delete_config(config_id: int):
 
 
 @router.get("/export")
-async def export_excel(scan_ids: str = Query(..., description="Comma-separated scan IDs")):
+async def export_excel(scan_ids: str = Query(..., description="Comma-separated scan IDs"), user: dict = Depends(get_current_user)):
     """Download an Excel file of the index for the given scan IDs."""
     try:
         ids = [int(x.strip()) for x in scan_ids.split(",") if x.strip()]
@@ -101,8 +102,8 @@ async def export_excel(scan_ids: str = Query(..., description="Comma-separated s
 
     db = await get_db()
     try:
-        results = await get_results_for_scans(db, ids)
-        scans = await get_completed_scans_summary(db)
+        results = await get_results_for_scans(db, ids, user_id=user["id"])
+        scans = await get_completed_scans_summary(db, user_id=user["id"])
         scan_summaries = [s for s in scans if s["id"] in ids]
     finally:
         await db.close()

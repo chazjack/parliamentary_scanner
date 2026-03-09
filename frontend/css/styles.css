@@ -207,6 +207,8 @@ header h1 {
     font-family: var(--ps-font-family);
     letter-spacing: 0.04em;
     cursor: pointer;
+    min-width: 120px;
+    justify-content: center;
     transition: background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease, transform 0.1s ease;
 }
 
@@ -535,6 +537,28 @@ section.control-group-card.scan-card--red {
 .btn-scan:disabled {
     background: var(--text-light);
     cursor: not-allowed;
+}
+
+/* Logged in as label */
+.logged-in-as {
+    font-size: 0.72rem;
+    color: #888;
+}
+
+/* Logout button */
+.logout-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    margin-bottom: 10px;
+    color: #c0392b;
+    text-decoration: underline;
+    font-size: 0.75rem;
+    cursor: pointer;
+    display: block;
+}
+.logout-btn:hover {
+    color: #96281b;
 }
 
 /* API Status Indicator */
@@ -1854,6 +1878,13 @@ u    padding: 0;
     opacity: 0.4;
 }
 
+/* Admin: extra USER column in scan history */
+.history-admin .history-header,
+.history-admin .history-item {
+    grid-template-columns: 80fr 115fr 150fr 90fr 60fr 85fr;
+    min-width: 660px;
+}
+
 /* Results */
 #results-section {
     background: var(--card-bg);
@@ -2681,6 +2712,21 @@ u    padding: 0;
 }
 
 
+/* ========== ADMIN DASHBOARD ========== */
+
+.admin-create-form {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto auto;
+    gap: 12px;
+    align-items: start;
+}
+
+@media (max-width: 700px) {
+    .admin-create-form {
+        grid-template-columns: 1fr;
+    }
+}
+
 /* ========== RESPONSIVE DESIGN ========== */
 
 @media (max-width: 1200px) {
@@ -3092,6 +3138,7 @@ u    padding: 0;
     font-family: inherit;
     text-decoration: underline;
     transition: color 0.15s, opacity 0.15s;
+    margin-bottom: 0.15em;
 }
 .tour-trigger-btn:hover {
     color: #fff;

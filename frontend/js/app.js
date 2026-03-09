@@ -38,6 +38,7 @@ const state = {
     currentScanId: null,
     eventSource: null,
     cancelling: false,
+    currentUser: null,
 };
 
 // Set default date range (past 2 days)
@@ -82,6 +83,8 @@ function switchTab(tabName) {
     document.getElementById('tab-alerts').style.display = (domTab === 'alerts') ? '' : 'none';
     document.getElementById('tab-topics').style.display = (domTab === 'topics') ? '' : 'none';
     document.getElementById('tab-groups').style.display = (domTab === 'groups') ? '' : 'none';
+    const adminTabEl = document.getElementById('tab-admin');
+    if (adminTabEl) adminTabEl.style.display = domTab === 'admin' ? '' : 'none';
 
     // Show/hide setup subnav
     const subnav = document.getElementById('setupSubnav');
@@ -110,6 +113,9 @@ function switchTab(tabName) {
     }
     if (domTab === 'groups') {
         loadGroups();
+    }
+    if (domTab === 'admin') {
+        if (typeof loadAdminDashboard === 'function') loadAdminDashboard();
     }
 }
 
@@ -171,6 +177,19 @@ async function checkApiHealth() {
 
 // Initialise app
 document.addEventListener('DOMContentLoaded', async () => {
+    // Get current user info
+    try {
+        const currentUser = await API.get('/api/auth/me');
+        state.currentUser = currentUser;
+        // Show admin tab if admin
+        const adminBtn = document.getElementById('adminTabBtn');
+        if (adminBtn) {
+            adminBtn.style.display = currentUser.is_admin ? '' : 'none';
+        }
+        const usernameEl = document.getElementById('loggedInUsername');
+        if (usernameEl) usernameEl.textContent = currentUser.username;
+    } catch (e) { /* will redirect to login */ }
+
     setDefaultDates();
     await loadTopics();
     state.groups = await API.get('/api/groups');
@@ -225,7 +244,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Switch to tab from URL path, defaulting to Scanner
-    const validTabs = ['calendar', 'scanner', 'record', 'alerts', 'topics', 'groups', 'setup'];
+    const validTabs = ['calendar', 'scanner', 'record', 'alerts', 'topics', 'groups', 'setup', 'admin'];
     const pathTab = window.location.pathname.slice(1).split('/')[0];
     switchTab(validTabs.includes(pathTab) ? pathTab : 'scanner');
 
@@ -239,6 +258,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         pl.textContent = 'No scan selected or currently active.';
     }
 });
+
+async function handleLogout() {
+    try {
+        await fetch('/api/auth/logout', { method: 'POST' });
+    } catch (e) { /* ignore */ }
+    window.location.href = '/login';
+}
 
 // Sidebar collapse toggle
 function toggleSidebar() {
@@ -259,7 +285,7 @@ function sidebarSearch(value) {
 
 // Handle browser back/forward navigation
 window.addEventListener('popstate', () => {
-    const validTabs = ['calendar', 'scanner', 'record', 'alerts', 'topics', 'groups', 'setup'];
+    const validTabs = ['calendar', 'scanner', 'record', 'alerts', 'topics', 'groups', 'setup', 'admin'];
     const pathTab = window.location.pathname.slice(1).split('/')[0];
     if (!validTabs.includes(pathTab)) return;
     const calendarVisible = document.getElementById('tab-lookahead').style.display !== 'none';

@@ -1,6 +1,6 @@
 """SQLite database initialisation, schema, and query helpers."""
 
-import hashlib
+import bcrypt
 import json
 import logging
 import secrets
@@ -14,10 +14,20 @@ from backend.config import DATABASE_PATH
 logger = logging.getLogger(__name__)
 
 SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    is_admin INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS topics (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT UNIQUE NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, name)
 );
 
 CREATE TABLE IF NOT EXISTS keywords (
@@ -29,6 +39,7 @@ CREATE TABLE IF NOT EXISTS keywords (
 
 CREATE TABLE IF NOT EXISTS scans (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     start_date TEXT NOT NULL,
     end_date TEXT NOT NULL,
     status TEXT DEFAULT 'pending',
@@ -100,6 +111,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
 
 CREATE TABLE IF NOT EXISTS master_list (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     member_name TEXT NOT NULL,
     member_id TEXT,
     party TEXT,
@@ -108,7 +120,7 @@ CREATE TABLE IF NOT EXISTS master_list (
     notes TEXT DEFAULT '',
     priority TEXT DEFAULT '',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(member_name)
+    UNIQUE(user_id, member_name)
 );
 
 CREATE TABLE IF NOT EXISTS master_activities (
@@ -143,9 +155,11 @@ CREATE TABLE IF NOT EXISTS lookahead_events (
 CREATE INDEX IF NOT EXISTS idx_la_start_date ON lookahead_events(start_date);
 
 CREATE TABLE IF NOT EXISTS lookahead_starred (
-    event_id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    event_id TEXT NOT NULL,
     note TEXT DEFAULT '',
-    starred_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    starred_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(user_id, event_id)
 );
 
 CREATE TABLE IF NOT EXISTS lookahead_cache_meta (
@@ -165,13 +179,6 @@ CREATE TABLE IF NOT EXISTS lookahead_recess (
 
 CREATE INDEX IF NOT EXISTS idx_recess_dates ON lookahead_recess(start_date, end_date);
 
-CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
 CREATE TABLE IF NOT EXISTS sessions (
     token TEXT PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -181,6 +188,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE TABLE IF NOT EXISTS email_alerts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     alert_type TEXT NOT NULL,
     enabled INTEGER DEFAULT 1,
@@ -223,14 +231,17 @@ CREATE TABLE IF NOT EXISTS alert_run_log (
 
 CREATE TABLE IF NOT EXISTS member_groups (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL UNIQUE,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
     member_ids TEXT NOT NULL DEFAULT '[]',
     member_names TEXT NOT NULL DEFAULT '[]',
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(user_id, name)
 );
 
 CREATE TABLE IF NOT EXISTS index_configs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     scan_ids TEXT NOT NULL DEFAULT '[]',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -366,7 +377,63 @@ async def init_db():
             await db.commit()
             logger.info("Migrated audit_log: added discard_category column")
 
-        # Migration: add trigger and alert_id columns to scans if not present
+        # Migration: create index_configs table if not present
+        cursor = await db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='index_configs'"
+        )
+        if not await cursor.fetchone():
+            await db.execute(
+                """CREATE TABLE index_configs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    scan_ids TEXT NOT NULL DEFAULT '[]',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )"""
+            )
+            await db.commit()
+            logger.info("Migrated: created index_configs table")
+
+        # Migration: add is_admin to users
+        cursor = await db.execute("PRAGMA table_info(users)")
+        user_cols = [row[1] for row in await cursor.fetchall()]
+        if "is_admin" not in user_cols:
+            await db.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0")
+            await db.commit()
+            logger.info("Migrated users: added is_admin column")
+        if "last_online_at" not in user_cols:
+            await db.execute("ALTER TABLE users ADD COLUMN last_online_at TIMESTAMP")
+            await db.commit()
+            logger.info("Migrated users: added last_online_at column")
+
+        # Helper to get the first (admin) user id for assigning existing data
+        async def _get_first_user_id():
+            cursor = await db.execute("SELECT id FROM users ORDER BY id LIMIT 1")
+            row = await cursor.fetchone()
+            return row[0] if row else 1
+
+        # Migration: topics table - recreate with user_id
+        cursor = await db.execute("PRAGMA table_info(topics)")
+        topic_cols = [row[1] for row in await cursor.fetchall()]
+        if "user_id" not in topic_cols:
+            first_uid = await _get_first_user_id()
+            await db.execute("PRAGMA foreign_keys = OFF")
+            await db.execute("ALTER TABLE topics RENAME TO _topics_old")
+            await db.execute("""
+                CREATE TABLE topics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL DEFAULT 1,
+                    name TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, name)
+                )
+            """)
+            await db.execute(f"INSERT INTO topics (id, user_id, name, created_at) SELECT id, {first_uid}, name, created_at FROM _topics_old")
+            await db.execute("DROP TABLE _topics_old")
+            await db.execute("PRAGMA foreign_keys = ON")
+            await db.commit()
+            logger.info("Migrated topics: added user_id column")
+
+        # Migration: scans - add user_id column
         cursor = await db.execute("PRAGMA table_info(scans)")
         scan_columns = [row[1] for row in await cursor.fetchall()]
         if "trigger" not in scan_columns:
@@ -395,7 +462,23 @@ async def init_db():
                 await db.execute(f"ALTER TABLE scans ADD COLUMN {col} {defn}")
                 await db.commit()
                 logger.info("Migrated scans: added %s column", col)
+        if "user_id" not in scan_columns:
+            first_uid = await _get_first_user_id()
+            await db.execute("ALTER TABLE scans ADD COLUMN user_id INTEGER")
+            await db.execute(f"UPDATE scans SET user_id = {first_uid} WHERE user_id IS NULL")
+            await db.commit()
+            logger.info("Migrated scans: added user_id column")
+        if "username" not in scan_columns:
+            await db.execute("ALTER TABLE scans ADD COLUMN username TEXT")
+            # Backfill username from users table for existing scans
+            await db.execute(
+                "UPDATE scans SET username = (SELECT u.username FROM users u WHERE u.id = scans.user_id)"
+                " WHERE username IS NULL AND user_id IS NOT NULL"
+            )
+            await db.commit()
+            logger.info("Migrated scans: added username column")
 
+        # Migration: email_alerts - add user_id
         cursor = await db.execute("PRAGMA table_info(email_alerts)")
         alert_columns = [row[1] for row in await cursor.fetchall()]
         if "member_ids" not in alert_columns:
@@ -406,22 +489,98 @@ async def init_db():
             await db.execute("ALTER TABLE email_alerts ADD COLUMN member_names TEXT")
             await db.commit()
             logger.info("Migrated email_alerts: added member_names column")
-
-        # Migration: create index_configs table if not present
-        cursor = await db.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='index_configs'"
-        )
-        if not await cursor.fetchone():
-            await db.execute(
-                """CREATE TABLE index_configs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL,
-                    scan_ids TEXT NOT NULL DEFAULT '[]',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )"""
-            )
+        if "user_id" not in alert_columns:
+            first_uid = await _get_first_user_id()
+            await db.execute("ALTER TABLE email_alerts ADD COLUMN user_id INTEGER")
+            await db.execute(f"UPDATE email_alerts SET user_id = {first_uid} WHERE user_id IS NULL")
             await db.commit()
-            logger.info("Migrated: created index_configs table")
+            logger.info("Migrated email_alerts: added user_id column")
+
+        # Migration: member_groups - recreate with user_id
+        cursor = await db.execute("PRAGMA table_info(member_groups)")
+        group_cols = [row[1] for row in await cursor.fetchall()]
+        if "user_id" not in group_cols:
+            first_uid = await _get_first_user_id()
+            await db.execute("PRAGMA foreign_keys = OFF")
+            await db.execute("ALTER TABLE member_groups RENAME TO _groups_old")
+            await db.execute("""
+                CREATE TABLE member_groups (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL DEFAULT 1,
+                    name TEXT NOT NULL,
+                    member_ids TEXT NOT NULL DEFAULT '[]',
+                    member_names TEXT NOT NULL DEFAULT '[]',
+                    created_at TEXT DEFAULT (datetime('now')),
+                    UNIQUE(user_id, name)
+                )
+            """)
+            await db.execute(f"INSERT INTO member_groups (id, user_id, name, member_ids, member_names, created_at) SELECT id, {first_uid}, name, member_ids, member_names, created_at FROM _groups_old")
+            await db.execute("DROP TABLE _groups_old")
+            await db.execute("PRAGMA foreign_keys = ON")
+            await db.commit()
+            logger.info("Migrated member_groups: added user_id column")
+
+        # Migration: index_configs - add user_id
+        cursor = await db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='index_configs'")
+        if await cursor.fetchone():
+            cursor = await db.execute("PRAGMA table_info(index_configs)")
+            ic_cols = [row[1] for row in await cursor.fetchall()]
+            if "user_id" not in ic_cols:
+                first_uid = await _get_first_user_id()
+                await db.execute("ALTER TABLE index_configs ADD COLUMN user_id INTEGER")
+                await db.execute(f"UPDATE index_configs SET user_id = {first_uid} WHERE user_id IS NULL")
+                await db.commit()
+                logger.info("Migrated index_configs: added user_id column")
+
+        # Migration: lookahead_starred - recreate with user_id PK
+        cursor = await db.execute("PRAGMA table_info(lookahead_starred)")
+        ls_cols = [row[1] for row in await cursor.fetchall()]
+        if "user_id" not in ls_cols:
+            first_uid = await _get_first_user_id()
+            await db.execute("PRAGMA foreign_keys = OFF")
+            await db.execute("ALTER TABLE lookahead_starred RENAME TO _starred_old")
+            await db.execute("""
+                CREATE TABLE lookahead_starred (
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    event_id TEXT NOT NULL,
+                    note TEXT DEFAULT '',
+                    starred_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY(user_id, event_id)
+                )
+            """)
+            await db.execute(f"INSERT INTO lookahead_starred (user_id, event_id, note, starred_at) SELECT {first_uid}, event_id, note, starred_at FROM _starred_old")
+            await db.execute("DROP TABLE _starred_old")
+            await db.execute("PRAGMA foreign_keys = ON")
+            await db.commit()
+            logger.info("Migrated lookahead_starred: added user_id")
+
+        # Migration: master_list - recreate with user_id
+        cursor = await db.execute("PRAGMA table_info(master_list)")
+        ml_cols = [row[1] for row in await cursor.fetchall()]
+        if "user_id" not in ml_cols:
+            first_uid = await _get_first_user_id()
+            await db.execute("PRAGMA foreign_keys = OFF")
+            await db.execute("ALTER TABLE master_list RENAME TO _master_old")
+            await db.execute("""
+                CREATE TABLE master_list (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL DEFAULT 1,
+                    member_name TEXT NOT NULL,
+                    member_id TEXT,
+                    party TEXT,
+                    member_type TEXT,
+                    constituency TEXT,
+                    notes TEXT DEFAULT '',
+                    priority TEXT DEFAULT '',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, member_name)
+                )
+            """)
+            await db.execute(f"INSERT INTO master_list (id, user_id, member_name, member_id, party, member_type, constituency, notes, priority, created_at) SELECT id, {first_uid}, member_name, member_id, party, member_type, constituency, notes, priority, created_at FROM _master_old")
+            await db.execute("DROP TABLE _master_old")
+            await db.execute("PRAGMA foreign_keys = ON")
+            await db.commit()
+            logger.info("Migrated master_list: added user_id column")
 
         # Sync admin user from environment on every startup
         from backend.config import ADMIN_USERNAME, ADMIN_PASSWORD
@@ -429,7 +588,7 @@ async def init_db():
             cursor = await db.execute("SELECT id FROM users WHERE username = ?", (ADMIN_USERNAME,))
             row = await cursor.fetchone()
             if row is None:
-                await create_user(db, ADMIN_USERNAME, ADMIN_PASSWORD)
+                await create_user(db, ADMIN_USERNAME, ADMIN_PASSWORD, is_admin=True)
                 logger.info("Seeded admin user: %s", ADMIN_USERNAME)
             else:
                 new_hash = hash_password(ADMIN_PASSWORD)
@@ -439,23 +598,31 @@ async def init_db():
         else:
             logger.warning("ADMIN_PASSWORD not set — login will be disabled until it is configured")
 
-        # Check if topics table is empty — seed defaults if so
-        cursor = await db.execute("SELECT COUNT(*) FROM topics")
-        row = await cursor.fetchone()
-        if row[0] == 0:
-            logger.info("Seeding default topics and keywords")
-            for topic_name, kws in DEFAULT_TOPICS.items():
-                cursor = await db.execute(
-                    "INSERT INTO topics (name) VALUES (?)", (topic_name,)
-                )
-                topic_id = cursor.lastrowid
-                for kw in kws:
-                    await db.execute(
-                        "INSERT INTO keywords (topic_id, keyword) VALUES (?, ?)",
-                        (topic_id, kw),
+        # Migration: mark admin user as is_admin
+        await db.execute("UPDATE users SET is_admin = 1 WHERE username = ?", (ADMIN_USERNAME,))
+        await db.commit()
+
+        # Check if topics table is empty for admin — seed defaults if so
+        cursor = await db.execute("SELECT id FROM users WHERE username = ?", (ADMIN_USERNAME,))
+        admin_row = await cursor.fetchone()
+        if admin_row:
+            admin_id = admin_row[0]
+            cursor = await db.execute("SELECT COUNT(*) FROM topics WHERE user_id = ?", (admin_id,))
+            row = await cursor.fetchone()
+            if row[0] == 0:
+                logger.info("Seeding default topics and keywords for admin")
+                for topic_name, kws in DEFAULT_TOPICS.items():
+                    cursor = await db.execute(
+                        "INSERT INTO topics (user_id, name) VALUES (?, ?)", (admin_id, topic_name)
                     )
-            await db.commit()
-            logger.info("Seeded %d default topics", len(DEFAULT_TOPICS))
+                    topic_id = cursor.lastrowid
+                    for kw in kws:
+                        await db.execute(
+                            "INSERT INTO keywords (topic_id, keyword) VALUES (?, ?)",
+                            (topic_id, kw),
+                        )
+                await db.commit()
+                logger.info("Seeded %d default topics", len(DEFAULT_TOPICS))
     finally:
         await db.close()
 
@@ -463,9 +630,12 @@ async def init_db():
 # --- Topic query helpers ---
 
 
-async def get_all_topics(db: aiosqlite.Connection) -> list[dict]:
-    """Return all topics with their keywords."""
-    cursor = await db.execute("SELECT id, name FROM topics ORDER BY name")
+async def get_all_topics(db: aiosqlite.Connection, user_id=None) -> list[dict]:
+    """Return all topics with their keywords. If user_id given, filter to that user."""
+    if user_id is not None:
+        cursor = await db.execute("SELECT id, name FROM topics WHERE user_id = ? ORDER BY name", (user_id,))
+    else:
+        cursor = await db.execute("SELECT id, name FROM topics ORDER BY name")
     topics = []
     for row in await cursor.fetchall():
         kw_cursor = await db.execute(
@@ -478,10 +648,10 @@ async def get_all_topics(db: aiosqlite.Connection) -> list[dict]:
 
 
 async def create_topic(
-    db: aiosqlite.Connection, name: str, keywords: list[str]
+    db: aiosqlite.Connection, name: str, keywords: list[str], user_id=None
 ) -> dict:
     """Create a topic with keywords. Returns the new topic dict."""
-    cursor = await db.execute("INSERT INTO topics (name) VALUES (?)", (name,))
+    cursor = await db.execute("INSERT INTO topics (user_id, name) VALUES (?, ?)", (user_id, name))
     topic_id = cursor.lastrowid
     for kw in keywords:
         await db.execute(
@@ -493,28 +663,39 @@ async def create_topic(
 
 
 async def update_topic_name(
-    db: aiosqlite.Connection, topic_id: int, name: str
+    db: aiosqlite.Connection, topic_id: int, name: str, user_id=None
 ) -> bool:
     """Update a topic's name. Returns True if found."""
-    cursor = await db.execute(
-        "UPDATE topics SET name = ? WHERE id = ?", (name, topic_id)
-    )
+    if user_id is not None:
+        cursor = await db.execute(
+            "UPDATE topics SET name = ? WHERE id = ? AND user_id = ?", (name, topic_id, user_id)
+        )
+    else:
+        cursor = await db.execute(
+            "UPDATE topics SET name = ? WHERE id = ?", (name, topic_id)
+        )
     await db.commit()
     return cursor.rowcount > 0
 
 
-async def delete_topic(db: aiosqlite.Connection, topic_id: int) -> bool:
+async def delete_topic(db: aiosqlite.Connection, topic_id: int, user_id=None) -> bool:
     """Delete a topic and its keywords. Returns True if found."""
-    cursor = await db.execute("DELETE FROM topics WHERE id = ?", (topic_id,))
+    if user_id is not None:
+        cursor = await db.execute("DELETE FROM topics WHERE id = ? AND user_id = ?", (topic_id, user_id))
+    else:
+        cursor = await db.execute("DELETE FROM topics WHERE id = ?", (topic_id,))
     await db.commit()
     return cursor.rowcount > 0
 
 
 async def replace_keywords(
-    db: aiosqlite.Connection, topic_id: int, keywords: list[str]
+    db: aiosqlite.Connection, topic_id: int, keywords: list[str], user_id=None
 ) -> bool:
     """Replace all keywords for a topic. Returns True if topic exists."""
-    cursor = await db.execute("SELECT id FROM topics WHERE id = ?", (topic_id,))
+    if user_id is not None:
+        cursor = await db.execute("SELECT id FROM topics WHERE id = ? AND user_id = ?", (topic_id, user_id))
+    else:
+        cursor = await db.execute("SELECT id FROM topics WHERE id = ?", (topic_id,))
     if not await cursor.fetchone():
         return False
     await db.execute("DELETE FROM keywords WHERE topic_id = ?", (topic_id,))
@@ -538,6 +719,8 @@ async def create_scan(
     sources: list[str] | None = None,
     target_member_ids: list[str] | None = None,
     target_member_names: list[str] | None = None,
+    user_id=None,
+    username: str | None = None,
 ) -> int:
     """Create a scan record. Returns scan ID."""
     default_sources = [
@@ -546,10 +729,10 @@ async def create_scan(
     ]
     sources_json = json.dumps(sources or default_sources)
     cursor = await db.execute(
-        "INSERT INTO scans (start_date, end_date, topic_ids, sources, target_member_id, target_member_name) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO scans (user_id, username, start_date, end_date, topic_ids, sources, target_member_id, target_member_name) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            start_date, end_date, json.dumps(topic_ids), sources_json,
+            user_id, username, start_date, end_date, json.dumps(topic_ids), sources_json,
             json.dumps(target_member_ids or []),
             json.dumps(target_member_names or []),
         ),
@@ -622,23 +805,39 @@ async def update_scan_progress(
     await db.commit()
 
 
-async def get_scan(db: aiosqlite.Connection, scan_id: int) -> dict | None:
-    """Get a scan by ID."""
-    cursor = await db.execute("SELECT * FROM scans WHERE id = ?", (scan_id,))
+async def get_scan(db: aiosqlite.Connection, scan_id: int, user_id=None) -> dict | None:
+    """Get a scan by ID. If user_id given, also verify ownership."""
+    if user_id is not None:
+        cursor = await db.execute("SELECT * FROM scans WHERE id = ? AND user_id = ?", (scan_id, user_id))
+    else:
+        cursor = await db.execute("SELECT * FROM scans WHERE id = ?", (scan_id,))
     row = await cursor.fetchone()
     return dict(row) if row else None
 
 
-async def get_scan_list(db: aiosqlite.Connection) -> list[dict]:
-    """Get all scans ordered by most recent first."""
-    cursor = await db.execute(
-        'SELECT s.id, s.start_date, s.end_date, s.status, s.total_relevant, '
-        's.created_at, s."trigger", s.error_message, '
-        "s.llm_input_tokens, s.llm_output_tokens, s.llm_cache_read_tokens, s.llm_cache_write_tokens, "
-        "COUNT(r.id) AS live_result_count "
-        "FROM scans s LEFT JOIN results r ON r.scan_id = s.id "
-        "GROUP BY s.id ORDER BY s.created_at DESC"
-    )
+async def get_scan_list(db: aiosqlite.Connection, user_id=None) -> list[dict]:
+    """Get all scans ordered by most recent first. If user_id given, filter to that user."""
+    if user_id is not None:
+        cursor = await db.execute(
+            'SELECT s.id, s.start_date, s.end_date, s.status, s.total_relevant, '
+            's.created_at, s."trigger", s.error_message, '
+            "s.llm_input_tokens, s.llm_output_tokens, s.llm_cache_read_tokens, s.llm_cache_write_tokens, "
+            "COUNT(r.id) AS live_result_count "
+            "FROM scans s LEFT JOIN results r ON r.scan_id = s.id "
+            "WHERE s.user_id = ? "
+            "GROUP BY s.id ORDER BY s.created_at DESC",
+            (user_id,),
+        )
+    else:
+        cursor = await db.execute(
+            'SELECT s.id, s.start_date, s.end_date, s.status, s.total_relevant, '
+            's.created_at, s."trigger", s.error_message, '
+            "s.llm_input_tokens, s.llm_output_tokens, s.llm_cache_read_tokens, s.llm_cache_write_tokens, "
+            "COUNT(r.id) AS live_result_count, COALESCE(s.username, u.username) AS username "
+            "FROM scans s LEFT JOIN results r ON r.scan_id = s.id "
+            "LEFT JOIN users u ON u.id = s.user_id "
+            "GROUP BY s.id ORDER BY s.created_at DESC"
+        )
     return [dict(row) for row in await cursor.fetchall()]
 
 
@@ -782,24 +981,33 @@ async def add_to_master_list(
     member_type: str,
     constituency: str,
     result_id: int,
+    user_id=None,
 ) -> dict:
     """Add a member to the master list (or update if exists) and link a result."""
-    cursor = await db.execute(
-        """INSERT INTO master_list (member_name, member_id, party, member_type, constituency)
-           VALUES (?, ?, ?, ?, ?)
-           ON CONFLICT(member_name) DO UPDATE SET
-               party = COALESCE(excluded.party, party),
-               member_type = COALESCE(excluded.member_type, member_type),
-               constituency = COALESCE(excluded.constituency, constituency)""",
-        (member_name, member_id, party, member_type, constituency),
-    )
-    master_id = cursor.lastrowid
-    if not master_id:
+    if user_id is not None:
         cursor = await db.execute(
-            "SELECT id FROM master_list WHERE member_name = ?", (member_name,)
+            """INSERT INTO master_list (user_id, member_name, member_id, party, member_type, constituency)
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(user_id, member_name) DO UPDATE SET
+                   party = COALESCE(excluded.party, party),
+                   member_type = COALESCE(excluded.member_type, member_type),
+                   constituency = COALESCE(excluded.constituency, constituency)""",
+            (user_id, member_name, member_id, party, member_type, constituency),
         )
-        row = await cursor.fetchone()
-        master_id = row["id"]
+        master_id = cursor.lastrowid
+        if not master_id:
+            cursor = await db.execute(
+                "SELECT id FROM master_list WHERE user_id = ? AND member_name = ?", (user_id, member_name)
+            )
+            row = await cursor.fetchone()
+            master_id = row["id"]
+    else:
+        cursor = await db.execute(
+            """INSERT INTO master_list (user_id, member_name, member_id, party, member_type, constituency)
+               VALUES (NULL, ?, ?, ?, ?, ?)""",
+            (member_name, member_id, party, member_type, constituency),
+        )
+        master_id = cursor.lastrowid
 
     await db.execute(
         "INSERT OR IGNORE INTO master_activities (master_id, result_id) VALUES (?, ?)",
@@ -809,11 +1017,16 @@ async def add_to_master_list(
     return {"master_id": master_id}
 
 
-async def get_master_list(db: aiosqlite.Connection) -> list[dict]:
+async def get_master_list(db: aiosqlite.Connection, user_id=None) -> list[dict]:
     """Get all master list entries with their linked activities."""
-    cursor = await db.execute(
-        "SELECT * FROM master_list ORDER BY member_name"
-    )
+    if user_id is not None:
+        cursor = await db.execute(
+            "SELECT * FROM master_list WHERE user_id = ? ORDER BY member_name", (user_id,)
+        )
+    else:
+        cursor = await db.execute(
+            "SELECT * FROM master_list ORDER BY member_name"
+        )
     entries = []
     for row in await cursor.fetchall():
         entry = dict(row)
@@ -830,7 +1043,7 @@ async def get_master_list(db: aiosqlite.Connection) -> list[dict]:
 
 
 async def update_master_entry(
-    db: aiosqlite.Connection, master_id: int, notes: str | None = None, priority: str | None = None
+    db: aiosqlite.Connection, master_id: int, notes: str | None = None, priority: str | None = None, user_id=None
 ) -> bool:
     """Update editable fields on a master list entry."""
     updates = []
@@ -843,24 +1056,39 @@ async def update_master_entry(
         params.append(priority)
     if not updates:
         return False
-    params.append(master_id)
-    await db.execute(
-        f"UPDATE master_list SET {', '.join(updates)} WHERE id = ?", params
-    )
-    await db.commit()
-    return True
-
-
-async def delete_master_entry(db: aiosqlite.Connection, master_id: int) -> bool:
-    """Remove a member from the master list."""
-    cursor = await db.execute("DELETE FROM master_list WHERE id = ?", (master_id,))
+    if user_id is not None:
+        params.extend([master_id, user_id])
+        cursor = await db.execute(
+            f"UPDATE master_list SET {', '.join(updates)} WHERE id = ? AND user_id = ?", params
+        )
+    else:
+        params.append(master_id)
+        cursor = await db.execute(
+            f"UPDATE master_list SET {', '.join(updates)} WHERE id = ?", params
+        )
     await db.commit()
     return cursor.rowcount > 0
 
 
-async def get_master_result_ids(db: aiosqlite.Connection) -> list[int]:
+async def delete_master_entry(db: aiosqlite.Connection, master_id: int, user_id=None) -> bool:
+    """Remove a member from the master list."""
+    if user_id is not None:
+        cursor = await db.execute("DELETE FROM master_list WHERE id = ? AND user_id = ?", (master_id, user_id))
+    else:
+        cursor = await db.execute("DELETE FROM master_list WHERE id = ?", (master_id,))
+    await db.commit()
+    return cursor.rowcount > 0
+
+
+async def get_master_result_ids(db: aiosqlite.Connection, user_id=None) -> list[int]:
     """Get all result IDs that are linked to any master list entry."""
-    cursor = await db.execute("SELECT result_id FROM master_activities")
+    if user_id is not None:
+        cursor = await db.execute(
+            "SELECT ma.result_id FROM master_activities ma JOIN master_list ml ON ml.id = ma.master_id WHERE ml.user_id = ?",
+            (user_id,)
+        )
+    else:
+        cursor = await db.execute("SELECT result_id FROM master_activities")
     return [row["result_id"] for row in await cursor.fetchall()]
 
 
@@ -882,11 +1110,18 @@ async def cleanup_stuck_scans(db: aiosqlite.Connection):
         logger.info("Cleaned up %d stuck scan(s) from previous run", row[0])
 
 
-async def remove_master_activity_by_result(db: aiosqlite.Connection, result_id: int) -> bool:
+async def remove_master_activity_by_result(db: aiosqlite.Connection, result_id: int, user_id=None) -> bool:
     """Remove a result's link to the master list. Cleans up empty master entries."""
-    cursor = await db.execute(
-        "SELECT master_id FROM master_activities WHERE result_id = ?", (result_id,)
-    )
+    if user_id is not None:
+        cursor = await db.execute(
+            "SELECT ma.master_id FROM master_activities ma JOIN master_list ml ON ml.id = ma.master_id "
+            "WHERE ma.result_id = ? AND ml.user_id = ?",
+            (result_id, user_id),
+        )
+    else:
+        cursor = await db.execute(
+            "SELECT master_id FROM master_activities WHERE result_id = ?", (result_id,)
+        )
     row = await cursor.fetchone()
     if not row:
         return False
@@ -954,16 +1189,19 @@ async def get_lookahead_events(
     houses: list[str] | None = None,
     keywords: list[str] | None = None,
     starred_only: bool = False,
+    user_id=None,
 ) -> list[dict]:
     """Query cached events with optional filters."""
+    # Use user_id=0 as sentinel when no user so no events are starred
+    star_user_id = user_id if user_id is not None else 0
     sql = """
         SELECT e.*,
                CASE WHEN s.event_id IS NOT NULL THEN 1 ELSE 0 END AS is_starred
         FROM lookahead_events e
-        LEFT JOIN lookahead_starred s ON s.event_id = e.id
+        LEFT JOIN lookahead_starred s ON s.event_id = e.id AND s.user_id = ?
         WHERE e.start_date >= ? AND e.start_date <= ?
     """
-    params: list = [start_date, end_date]
+    params: list = [star_user_id, start_date, end_date]
 
     if event_types:
         placeholders = ",".join("?" for _ in event_types)
@@ -1001,21 +1239,33 @@ async def get_lookahead_events(
     return [dict(row) for row in await cursor.fetchall()]
 
 
-async def star_lookahead_event(db: aiosqlite.Connection, event_id: str) -> bool:
+async def star_lookahead_event(db: aiosqlite.Connection, event_id: str, user_id=None) -> bool:
     """Star a lookahead event. Returns True if newly starred."""
-    cursor = await db.execute(
-        "INSERT OR IGNORE INTO lookahead_starred (event_id) VALUES (?)",
-        (event_id,),
-    )
+    if user_id is not None:
+        cursor = await db.execute(
+            "INSERT OR IGNORE INTO lookahead_starred (user_id, event_id) VALUES (?, ?)",
+            (user_id, event_id),
+        )
+    else:
+        # Fallback: use user_id=0 (no-op effectively since no user has id 0)
+        cursor = await db.execute(
+            "INSERT OR IGNORE INTO lookahead_starred (user_id, event_id) VALUES (0, ?)",
+            (event_id,),
+        )
     await db.commit()
     return cursor.rowcount > 0
 
 
-async def unstar_lookahead_event(db: aiosqlite.Connection, event_id: str) -> bool:
+async def unstar_lookahead_event(db: aiosqlite.Connection, event_id: str, user_id=None) -> bool:
     """Unstar a lookahead event. Returns True if was starred."""
-    cursor = await db.execute(
-        "DELETE FROM lookahead_starred WHERE event_id = ?", (event_id,)
-    )
+    if user_id is not None:
+        cursor = await db.execute(
+            "DELETE FROM lookahead_starred WHERE event_id = ? AND user_id = ?", (event_id, user_id)
+        )
+    else:
+        cursor = await db.execute(
+            "DELETE FROM lookahead_starred WHERE event_id = ?", (event_id,)
+        )
     await db.commit()
     return cursor.rowcount > 0
 
@@ -1080,9 +1330,12 @@ async def get_recess_periods(
 # --- Email Alert query helpers ---
 
 
-async def get_all_alerts(db: aiosqlite.Connection) -> list[dict]:
-    """Get all alerts with their recipients."""
-    cursor = await db.execute("SELECT * FROM email_alerts ORDER BY created_at DESC")
+async def get_all_alerts(db: aiosqlite.Connection, user_id=None) -> list[dict]:
+    """Get all alerts with their recipients. If user_id given, filter to that user."""
+    if user_id is not None:
+        cursor = await db.execute("SELECT * FROM email_alerts WHERE user_id = ? ORDER BY created_at DESC", (user_id,))
+    else:
+        cursor = await db.execute("SELECT * FROM email_alerts ORDER BY created_at DESC")
     alerts = []
     for row in await cursor.fetchall():
         alert = dict(row)
@@ -1094,9 +1347,12 @@ async def get_all_alerts(db: aiosqlite.Connection) -> list[dict]:
     return alerts
 
 
-async def get_alert(db: aiosqlite.Connection, alert_id: int) -> dict | None:
-    """Get a single alert with recipients."""
-    cursor = await db.execute("SELECT * FROM email_alerts WHERE id = ?", (alert_id,))
+async def get_alert(db: aiosqlite.Connection, alert_id: int, user_id=None) -> dict | None:
+    """Get a single alert with recipients. If user_id given, also verify ownership."""
+    if user_id is not None:
+        cursor = await db.execute("SELECT * FROM email_alerts WHERE id = ? AND user_id = ?", (alert_id, user_id))
+    else:
+        cursor = await db.execute("SELECT * FROM email_alerts WHERE id = ?", (alert_id,))
     row = await cursor.fetchone()
     if not row:
         return None
@@ -1108,15 +1364,16 @@ async def get_alert(db: aiosqlite.Connection, alert_id: int) -> dict | None:
     return alert
 
 
-async def create_alert(db: aiosqlite.Connection, data: dict) -> int:
+async def create_alert(db: aiosqlite.Connection, data: dict, user_id=None) -> int:
     """Create an alert and its recipients. Returns alert ID."""
     cursor = await db.execute(
         """INSERT INTO email_alerts
-        (name, alert_type, enabled, cadence, day_of_week, send_time, timezone,
+        (user_id, name, alert_type, enabled, cadence, day_of_week, send_time, timezone,
          topic_ids, sources, scan_period_days, lookahead_days, event_types, houses,
          member_ids, member_names)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
+            user_id,
             data["name"], data["alert_type"], data.get("enabled", 1),
             data.get("cadence", "weekly"), data.get("day_of_week", "monday"),
             data.get("send_time", "09:00"), data.get("timezone", "Europe/London"),
@@ -1141,7 +1398,7 @@ async def create_alert(db: aiosqlite.Connection, data: dict) -> int:
     return alert_id
 
 
-async def update_alert(db: aiosqlite.Connection, alert_id: int, data: dict) -> bool:
+async def update_alert(db: aiosqlite.Connection, alert_id: int, data: dict, user_id=None) -> bool:
     """Update an alert's configuration and recipients."""
     fields = []
     params = []
@@ -1164,10 +1421,16 @@ async def update_alert(db: aiosqlite.Connection, alert_id: int, data: dict) -> b
 
     if fields:
         fields.append("updated_at = CURRENT_TIMESTAMP")
-        params.append(alert_id)
-        await db.execute(
-            f"UPDATE email_alerts SET {', '.join(fields)} WHERE id = ?", params
-        )
+        if user_id is not None:
+            params.extend([alert_id, user_id])
+            await db.execute(
+                f"UPDATE email_alerts SET {', '.join(fields)} WHERE id = ? AND user_id = ?", params
+            )
+        else:
+            params.append(alert_id)
+            await db.execute(
+                f"UPDATE email_alerts SET {', '.join(fields)} WHERE id = ?", params
+            )
 
     # Replace recipients if provided
     if "recipients" in data:
@@ -1182,19 +1445,28 @@ async def update_alert(db: aiosqlite.Connection, alert_id: int, data: dict) -> b
     return True
 
 
-async def delete_alert(db: aiosqlite.Connection, alert_id: int) -> bool:
+async def delete_alert(db: aiosqlite.Connection, alert_id: int, user_id=None) -> bool:
     """Delete an alert and its recipients (CASCADE)."""
-    cursor = await db.execute("DELETE FROM email_alerts WHERE id = ?", (alert_id,))
+    if user_id is not None:
+        cursor = await db.execute("DELETE FROM email_alerts WHERE id = ? AND user_id = ?", (alert_id, user_id))
+    else:
+        cursor = await db.execute("DELETE FROM email_alerts WHERE id = ?", (alert_id,))
     await db.commit()
     return cursor.rowcount > 0
 
 
-async def toggle_alert(db: aiosqlite.Connection, alert_id: int, enabled: bool) -> bool:
+async def toggle_alert(db: aiosqlite.Connection, alert_id: int, enabled: bool, user_id=None) -> bool:
     """Enable or disable an alert."""
-    cursor = await db.execute(
-        "UPDATE email_alerts SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        (1 if enabled else 0, alert_id),
-    )
+    if user_id is not None:
+        cursor = await db.execute(
+            "UPDATE email_alerts SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?",
+            (1 if enabled else 0, alert_id, user_id),
+        )
+    else:
+        cursor = await db.execute(
+            "UPDATE email_alerts SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (1 if enabled else 0, alert_id),
+        )
     await db.commit()
     return cursor.rowcount > 0
 
@@ -1268,28 +1540,24 @@ async def get_enabled_alerts(db: aiosqlite.Connection) -> list[dict]:
 
 
 def hash_password(password: str) -> str:
-    """Hash a password with PBKDF2-SHA256 and a random salt."""
-    salt = secrets.token_hex(16)
-    key = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100_000)
-    return f"{salt}:{key.hex()}"
+    """Hash a password with bcrypt."""
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
 def verify_password(password: str, stored_hash: str) -> bool:
-    """Verify a password against a stored hash."""
+    """Verify a password against a stored bcrypt hash."""
     try:
-        salt, key_hex = stored_hash.split(":", 1)
-        key = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100_000)
-        return secrets.compare_digest(key.hex(), key_hex)
+        return bcrypt.checkpw(password.encode(), stored_hash.encode())
     except Exception:
         return False
 
 
-async def create_user(db: aiosqlite.Connection, username: str, password: str) -> int:
+async def create_user(db: aiosqlite.Connection, username: str, password: str, is_admin: bool = False) -> int:
     """Create a user with a hashed password. Returns the new user ID."""
     password_hash = hash_password(password)
     cursor = await db.execute(
-        "INSERT INTO users (username, password_hash) VALUES (?, ?)",
-        (username, password_hash),
+        "INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, ?)",
+        (username, password_hash, 1 if is_admin else 0),
     )
     await db.commit()
     return cursor.lastrowid
@@ -1298,7 +1566,7 @@ async def create_user(db: aiosqlite.Connection, username: str, password: str) ->
 async def get_user_by_username(db: aiosqlite.Connection, username: str) -> dict | None:
     """Fetch a user row by username."""
     cursor = await db.execute(
-        "SELECT id, username, password_hash FROM users WHERE username = ?", (username,)
+        "SELECT id, username, password_hash, is_admin FROM users WHERE username = ?", (username,)
     )
     row = await cursor.fetchone()
     return dict(row) if row else None
@@ -1317,16 +1585,23 @@ async def create_session(db: aiosqlite.Connection, user_id: int) -> str:
 
 
 async def get_session_user(db: aiosqlite.Connection, token: str) -> dict | None:
-    """Return the user for a valid, unexpired session token, or None."""
+    """Return the user for a valid, unexpired session token, or None. Updates last_online_at."""
     now = datetime.utcnow().isoformat()
     cursor = await db.execute(
-        """SELECT u.id, u.username FROM sessions s
+        """SELECT u.id, u.username, u.is_admin FROM sessions s
            JOIN users u ON u.id = s.user_id
            WHERE s.token = ? AND s.expires_at > ?""",
         (token, now),
     )
     row = await cursor.fetchone()
-    return dict(row) if row else None
+    if not row:
+        return None
+    await db.execute(
+        "UPDATE users SET last_online_at = ? WHERE id = ?",
+        (now, row["id"]),
+    )
+    await db.commit()
+    return dict(row)
 
 
 async def delete_session(db: aiosqlite.Connection, token: str) -> None:
@@ -1338,9 +1613,12 @@ async def delete_session(db: aiosqlite.Connection, token: str) -> None:
 # --- Member Group query helpers ---
 
 
-async def get_all_groups(db: aiosqlite.Connection) -> list[dict]:
+async def get_all_groups(db: aiosqlite.Connection, user_id=None) -> list[dict]:
     """Return all member groups with parsed JSON fields."""
-    cursor = await db.execute("SELECT * FROM member_groups ORDER BY name")
+    if user_id is not None:
+        cursor = await db.execute("SELECT * FROM member_groups WHERE user_id = ? ORDER BY name", (user_id,))
+    else:
+        cursor = await db.execute("SELECT * FROM member_groups ORDER BY name")
     rows = await cursor.fetchall()
     result = []
     for row in rows:
@@ -1356,11 +1634,12 @@ async def create_group(
     name: str,
     member_ids: list[str],
     member_names: list[str],
+    user_id=None,
 ) -> dict:
     """Create a member group. Returns the new group dict."""
     cursor = await db.execute(
-        "INSERT INTO member_groups (name, member_ids, member_names) VALUES (?, ?, ?)",
-        (name, json.dumps(member_ids), json.dumps(member_names)),
+        "INSERT INTO member_groups (user_id, name, member_ids, member_names) VALUES (?, ?, ?, ?)",
+        (user_id, name, json.dumps(member_ids), json.dumps(member_names)),
     )
     group_id = cursor.lastrowid
     await db.commit()
@@ -1373,21 +1652,31 @@ async def update_group(
     name: str,
     member_ids: list[str],
     member_names: list[str],
+    user_id=None,
 ) -> dict | None:
     """Update a member group. Returns updated dict or None if not found."""
-    cursor = await db.execute(
-        "UPDATE member_groups SET name = ?, member_ids = ?, member_names = ? WHERE id = ?",
-        (name, json.dumps(member_ids), json.dumps(member_names), group_id),
-    )
+    if user_id is not None:
+        cursor = await db.execute(
+            "UPDATE member_groups SET name = ?, member_ids = ?, member_names = ? WHERE id = ? AND user_id = ?",
+            (name, json.dumps(member_ids), json.dumps(member_names), group_id, user_id),
+        )
+    else:
+        cursor = await db.execute(
+            "UPDATE member_groups SET name = ?, member_ids = ?, member_names = ? WHERE id = ?",
+            (name, json.dumps(member_ids), json.dumps(member_names), group_id),
+        )
     await db.commit()
     if cursor.rowcount == 0:
         return None
     return {"id": group_id, "name": name, "member_ids": member_ids, "member_names": member_names}
 
 
-async def delete_group(db: aiosqlite.Connection, group_id: int) -> bool:
+async def delete_group(db: aiosqlite.Connection, group_id: int, user_id=None) -> bool:
     """Delete a member group. Returns True if found."""
-    cursor = await db.execute("DELETE FROM member_groups WHERE id = ?", (group_id,))
+    if user_id is not None:
+        cursor = await db.execute("DELETE FROM member_groups WHERE id = ? AND user_id = ?", (group_id, user_id))
+    else:
+        cursor = await db.execute("DELETE FROM member_groups WHERE id = ?", (group_id,))
     await db.commit()
     return cursor.rowcount > 0
 
@@ -1395,17 +1684,29 @@ async def delete_group(db: aiosqlite.Connection, group_id: int) -> bool:
 # --- Index query helpers ---
 
 
-async def get_completed_scans_summary(db: aiosqlite.Connection) -> list[dict]:
+async def get_completed_scans_summary(db: aiosqlite.Connection, user_id=None) -> list[dict]:
     """Return completed scans with topic names and result counts for the Index selector."""
-    cursor = await db.execute(
-        """SELECT s.id, s.start_date, s.end_date, s.topic_ids, s.completed_at,
-                  s.total_relevant, COUNT(r.id) as result_count
-           FROM scans s
-           LEFT JOIN results r ON r.scan_id = s.id
-           WHERE s.status = 'completed'
-           GROUP BY s.id
-           ORDER BY s.completed_at DESC"""
-    )
+    if user_id is not None:
+        cursor = await db.execute(
+            """SELECT s.id, s.start_date, s.end_date, s.topic_ids, s.completed_at,
+                      s.total_relevant, COUNT(r.id) as result_count
+               FROM scans s
+               LEFT JOIN results r ON r.scan_id = s.id
+               WHERE s.status = 'completed' AND s.user_id = ?
+               GROUP BY s.id
+               ORDER BY s.completed_at DESC""",
+            (user_id,),
+        )
+    else:
+        cursor = await db.execute(
+            """SELECT s.id, s.start_date, s.end_date, s.topic_ids, s.completed_at,
+                      s.total_relevant, COUNT(r.id) as result_count
+               FROM scans s
+               LEFT JOIN results r ON r.scan_id = s.id
+               WHERE s.status = 'completed'
+               GROUP BY s.id
+               ORDER BY s.completed_at DESC"""
+        )
     rows = await cursor.fetchall()
     result = []
     for row in rows:
@@ -1425,32 +1726,42 @@ async def get_completed_scans_summary(db: aiosqlite.Connection) -> list[dict]:
     return result
 
 
-async def get_results_for_scans(db: aiosqlite.Connection, scan_ids: list[int]) -> list[dict]:
-    """Return all results for the given scan IDs."""
+async def get_results_for_scans(db: aiosqlite.Connection, scan_ids: list[int], user_id=None) -> list[dict]:
+    """Return all results for the given scan IDs. If user_id given, verify scan ownership."""
     if not scan_ids:
         return []
     placeholders = ",".join("?" for _ in scan_ids)
-    cursor = await db.execute(
-        f"SELECT * FROM results WHERE scan_id IN ({placeholders}) ORDER BY activity_date DESC",
-        scan_ids,
-    )
+    if user_id is not None:
+        cursor = await db.execute(
+            f"SELECT r.* FROM results r JOIN scans s ON s.id = r.scan_id "
+            f"WHERE r.scan_id IN ({placeholders}) AND s.user_id = ? ORDER BY r.activity_date DESC",
+            scan_ids + [user_id],
+        )
+    else:
+        cursor = await db.execute(
+            f"SELECT * FROM results WHERE scan_id IN ({placeholders}) ORDER BY activity_date DESC",
+            scan_ids,
+        )
     return [dict(row) for row in await cursor.fetchall()]
 
 
-async def save_index_config(db: aiosqlite.Connection, name: str, scan_ids: list[int]) -> dict:
+async def save_index_config(db: aiosqlite.Connection, name: str, scan_ids: list[int], user_id=None) -> dict:
     """Save a named index configuration. Returns the new config dict."""
     cursor = await db.execute(
-        "INSERT INTO index_configs (name, scan_ids) VALUES (?, ?)",
-        (name, json.dumps(scan_ids)),
+        "INSERT INTO index_configs (user_id, name, scan_ids) VALUES (?, ?, ?)",
+        (user_id, name, json.dumps(scan_ids)),
     )
     config_id = cursor.lastrowid
     await db.commit()
     return {"id": config_id, "name": name, "scan_ids": scan_ids}
 
 
-async def get_index_configs(db: aiosqlite.Connection) -> list[dict]:
+async def get_index_configs(db: aiosqlite.Connection, user_id=None) -> list[dict]:
     """Return all saved index configs."""
-    cursor = await db.execute("SELECT * FROM index_configs ORDER BY created_at DESC")
+    if user_id is not None:
+        cursor = await db.execute("SELECT * FROM index_configs WHERE user_id = ? ORDER BY created_at DESC", (user_id,))
+    else:
+        cursor = await db.execute("SELECT * FROM index_configs ORDER BY created_at DESC")
     rows = await cursor.fetchall()
     result = []
     for row in rows:
@@ -1460,8 +1771,53 @@ async def get_index_configs(db: aiosqlite.Connection) -> list[dict]:
     return result
 
 
-async def delete_index_config(db: aiosqlite.Connection, config_id: int) -> bool:
+async def delete_index_config(db: aiosqlite.Connection, config_id: int, user_id=None) -> bool:
     """Delete a saved index config. Returns True if found."""
-    cursor = await db.execute("DELETE FROM index_configs WHERE id = ?", (config_id,))
+    if user_id is not None:
+        cursor = await db.execute("DELETE FROM index_configs WHERE id = ? AND user_id = ?", (config_id, user_id))
+    else:
+        cursor = await db.execute("DELETE FROM index_configs WHERE id = ?", (config_id,))
     await db.commit()
     return cursor.rowcount > 0
+
+
+async def get_all_users(db: aiosqlite.Connection) -> list[dict]:
+    """Get all users with scan counts (for admin dashboard)."""
+    cursor = await db.execute("""
+        SELECT u.id, u.username, u.is_admin, u.created_at, u.last_online_at,
+               COUNT(DISTINCT s.id) as scan_count,
+               MAX(s.created_at) as last_scan_at
+        FROM users u
+        LEFT JOIN scans s ON s.user_id = u.id
+        GROUP BY u.id
+        ORDER BY u.created_at
+    """)
+    return [dict(row) for row in await cursor.fetchall()]
+
+
+async def delete_user(db: aiosqlite.Connection, user_id: int) -> bool:
+    """Delete a user and all their data. Scans are preserved with user_id=NULL
+    so they remain in scan history with the stored username."""
+    # Detach scans before deletion so the CASCADE doesn't remove them
+    await db.execute("UPDATE scans SET user_id = NULL WHERE user_id = ?", (user_id,))
+    cursor = await db.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    await db.commit()
+    return cursor.rowcount > 0
+
+
+async def seed_default_topics_for_user(db: aiosqlite.Connection, user_id: int):
+    """Seed default topics and keywords for a new user."""
+    for topic_name, kws in DEFAULT_TOPICS.items():
+        try:
+            cursor = await db.execute(
+                "INSERT INTO topics (user_id, name) VALUES (?, ?)", (user_id, topic_name)
+            )
+            topic_id = cursor.lastrowid
+            for kw in kws:
+                await db.execute(
+                    "INSERT OR IGNORE INTO keywords (topic_id, keyword) VALUES (?, ?)",
+                    (topic_id, kw),
+                )
+        except Exception:
+            pass  # Topic may already exist
+    await db.commit()

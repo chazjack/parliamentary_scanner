@@ -2,7 +2,7 @@
 
 import io
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
 
@@ -14,25 +14,26 @@ from backend.database import (
     replace_keywords,
     update_topic_name,
 )
+from backend.deps import get_current_user
 from backend.models import KeywordsUpdate, TopicCreate, TopicUpdate
 
 router = APIRouter(prefix="/api/topics", tags=["topics"])
 
 
 @router.get("")
-async def list_topics():
+async def list_topics(user: dict = Depends(get_current_user)):
     db = await get_db()
     try:
-        return await get_all_topics(db)
+        return await get_all_topics(db, user_id=user["id"])
     finally:
         await db.close()
 
 
 @router.post("", status_code=201)
-async def create_topic_endpoint(body: TopicCreate):
+async def create_topic_endpoint(body: TopicCreate, user: dict = Depends(get_current_user)):
     db = await get_db()
     try:
-        return await create_topic(db, body.name, body.keywords)
+        return await create_topic(db, body.name, body.keywords, user_id=user["id"])
     except Exception as e:
         if "UNIQUE" in str(e):
             raise HTTPException(400, f"Topic '{body.name}' already exists")
@@ -42,10 +43,10 @@ async def create_topic_endpoint(body: TopicCreate):
 
 
 @router.put("/{topic_id}")
-async def update_topic_endpoint(topic_id: int, body: TopicUpdate):
+async def update_topic_endpoint(topic_id: int, body: TopicUpdate, user: dict = Depends(get_current_user)):
     db = await get_db()
     try:
-        if not await update_topic_name(db, topic_id, body.name):
+        if not await update_topic_name(db, topic_id, body.name, user_id=user["id"]):
             raise HTTPException(404, "Topic not found")
         return {"ok": True}
     finally:
@@ -53,10 +54,10 @@ async def update_topic_endpoint(topic_id: int, body: TopicUpdate):
 
 
 @router.delete("/{topic_id}")
-async def delete_topic_endpoint(topic_id: int):
+async def delete_topic_endpoint(topic_id: int, user: dict = Depends(get_current_user)):
     db = await get_db()
     try:
-        if not await delete_topic(db, topic_id):
+        if not await delete_topic(db, topic_id, user_id=user["id"]):
             raise HTTPException(404, "Topic not found")
         return {"ok": True}
     finally:
@@ -64,10 +65,10 @@ async def delete_topic_endpoint(topic_id: int):
 
 
 @router.get("/export")
-async def export_topics_excel():
+async def export_topics_excel(user: dict = Depends(get_current_user)):
     db = await get_db()
     try:
-        topics = await get_all_topics(db)
+        topics = await get_all_topics(db, user_id=user["id"])
     finally:
         await db.close()
 
@@ -95,6 +96,7 @@ async def export_topics_excel():
 async def import_topics_excel(
     file: UploadFile = File(...),
     mode: str = Form("merge"),
+    user: dict = Depends(get_current_user),
 ):
     contents = await file.read()
     try:
@@ -111,12 +113,12 @@ async def import_topics_excel(
     try:
         # In replace mode, delete all existing topics first
         if mode == "replace":
-            existing_all = await get_all_topics(db)
+            existing_all = await get_all_topics(db, user_id=user["id"])
             for t in existing_all:
-                await delete_topic(db, t["id"])
+                await delete_topic(db, t["id"], user_id=user["id"])
             await db.commit()
 
-        existing = await get_all_topics(db)
+        existing = await get_all_topics(db, user_id=user["id"])
         by_name = {t["name"].lower(): t for t in existing}
 
         created = 0
@@ -142,10 +144,10 @@ async def import_topics_excel(
                         )
                     await db.commit()
                 else:
-                    await replace_keywords(db, topic_id, keywords)
+                    await replace_keywords(db, topic_id, keywords, user_id=user["id"])
                 updated += 1
             else:
-                await create_topic(db, name, keywords)
+                await create_topic(db, name, keywords, user_id=user["id"])
                 created += 1
 
         return {"ok": True, "created": created, "updated": updated}
@@ -154,10 +156,10 @@ async def import_topics_excel(
 
 
 @router.put("/{topic_id}/keywords")
-async def update_keywords_endpoint(topic_id: int, body: KeywordsUpdate):
+async def update_keywords_endpoint(topic_id: int, body: KeywordsUpdate, user: dict = Depends(get_current_user)):
     db = await get_db()
     try:
-        if not await replace_keywords(db, topic_id, body.keywords):
+        if not await replace_keywords(db, topic_id, body.keywords, user_id=user["id"]):
             raise HTTPException(404, "Topic not found")
         return {"ok": True}
     finally:

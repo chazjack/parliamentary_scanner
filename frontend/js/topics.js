@@ -229,11 +229,14 @@ function updateTopicSelectionIndicator() {
     if (!el) return;
     const selectedTopics = state.topics.filter(t => checkedTopicIds.has(t.id));
     const count = selectedTopics.length;
-    const kwCount = selectedTopics.reduce((sum, t) => sum + t.keywords.length, 0);
+    const uniqueKws = new Set(selectedTopics.flatMap(t => t.keywords.map(k => k.toLowerCase())));
+    const kwCount = uniqueKws.size;
+    const totalKwCount = selectedTopics.reduce((sum, t) => sum + t.keywords.length, 0);
     if (count === 0) {
         el.textContent = '0 selected';
     } else {
-        el.textContent = `${count} selected (${kwCount} keyword${kwCount !== 1 ? 's' : ''})`;
+        const kwLabel = kwCount === 0 ? '0 keywords' : `${kwCount} unique keyword${kwCount !== 1 ? 's' : ''}`;
+        el.textContent = `${count} selected (${kwLabel})`;
     }
     window.updateScanWarning?.();
 }

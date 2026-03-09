@@ -108,7 +108,14 @@ async def _execute_scan_alert(db, alert: dict):
     start_date = (datetime.utcnow() - timedelta(days=period_days)).strftime("%Y-%m-%d")
 
     # Create scan record tagged as scheduled
-    scan_id = await create_scan(db, start_date, end_date, topic_ids, sources or None)
+    user_id = alert.get("user_id")
+    username = None
+    if user_id:
+        cur = await db.execute("SELECT username FROM users WHERE id = ?", (user_id,))
+        row = await cur.fetchone()
+        if row:
+            username = row[0]
+    scan_id = await create_scan(db, start_date, end_date, topic_ids, sources or None, user_id=user_id, username=username)
     # Tag the scan as scheduled
     await db.execute(
         'UPDATE scans SET "trigger" = ?, alert_id = ? WHERE id = ?',
@@ -132,7 +139,7 @@ async def _execute_scan_alert(db, alert: dict):
     results = await get_scan_results(db, scan_id)
 
     # Get topic names
-    all_topics = await get_all_topics(db)
+    all_topics = await get_all_topics(db, user_id=alert.get("user_id"))
     topic_names = [t["name"] for t in all_topics if t["id"] in topic_ids]
 
     # Build email
@@ -201,7 +208,7 @@ async def _execute_lookahead_alert(db, alert: dict):
     keywords = None
     topic_ids = json.loads(alert["topic_ids"]) if isinstance(alert.get("topic_ids"), str) and alert.get("topic_ids") else []
     if topic_ids:
-        all_topics = await get_all_topics(db)
+        all_topics = await get_all_topics(db, user_id=alert.get("user_id"))
         kw_set = set()
         for t in all_topics:
             if t["id"] in topic_ids:
@@ -213,6 +220,7 @@ async def _execute_lookahead_alert(db, alert: dict):
         event_types=event_types,
         houses=houses,
         keywords=keywords,
+        user_id=alert.get("user_id"),
     )
 
     # Build email

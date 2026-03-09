@@ -485,9 +485,9 @@ async function removeFromMasterByResult(resultId, btn) {
 
 const SOURCE_COLOURS = {
     'hansard':          { color: '#f87171', bg: 'rgba(248,113,113,0.15)', label: 'Hansard'      },
-    'written_question': { color: '#fbbf24', bg: 'rgba(251,191,36,0.15)', label: 'Written Q'    },
-    'written_answer':   { color: '#fbbf24', bg: 'rgba(251,191,36,0.15)', label: 'Written Ans'  },
-    'written_statement':{ color: '#4ade80', bg: 'rgba(74,222,128,0.15)', label: 'Written Stmt' },
+    'written_question': { color: '#fbbf24', bg: 'rgba(251,191,36,0.15)', label: 'Written Question' },
+    'written_answer':   { color: '#fbbf24', bg: 'rgba(251,191,36,0.15)', label: 'Written Answer'   },
+    'written_statement':{ color: '#4ade80', bg: 'rgba(74,222,128,0.15)', label: 'Written Statement' },
     'edm':              { color: '#e879f9', bg: 'rgba(232,121,249,0.15)',label: 'EDM'          },
     'bill':             { color: '#fb923c', bg: 'rgba(251,146,60,0.15)', label: 'Bill'         },
     'division':         { color: '#7dd3fc', bg: 'rgba(125,211,252,0.15)', label: 'Division'     },
@@ -781,9 +781,13 @@ async function loadHistory() {
     const start = (historyPage - 1) * HISTORY_PER_PAGE;
     const pageScans = scans.slice(start, start + HISTORY_PER_PAGE);
 
+    const isAdmin = !!(state.currentUser && state.currentUser.is_admin);
+    container.classList.toggle('history-admin', isAdmin);
+
     const header = document.createElement('div');
     header.className = 'history-header';
     header.innerHTML = `
+        ${isAdmin ? '<span>User</span>' : ''}
         <span>Date Initiated</span>
         <span>Date Range</span>
         <span>Results</span>
@@ -819,6 +823,7 @@ async function loadHistory() {
         const cost = calcCost(s);
         const costStr = cost > 0 ? `~$${cost.toFixed(2)}` : '—';
         div.innerHTML = `
+            ${isAdmin ? `<span class="history-user">${s.username ? escapeHtml(s.username) : '—'}</span>` : ''}
             <span class="history-conducted">${automatedDot}${conductedStr}</span>
             <span class="history-date">${formatDate(s.start_date)} to ${formatDate(s.end_date)}</span>
             <span>${s.live_result_count ?? s.total_relevant ?? 0} results</span>

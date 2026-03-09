@@ -3,7 +3,7 @@
 import logging
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from backend.config import LOOKAHEAD_CACHE_TTL
 from backend.database import (
@@ -18,6 +18,7 @@ from backend.database import (
     upsert_lookahead_events,
     upsert_recess_periods,
 )
+from backend.deps import get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,7 @@ async def get_events(
     event_types: str = Query("", description="Comma-separated event types"),
     houses: str = Query("", description="Comma-separated: Commons,Lords"),
     starred_only: bool = Query(False, description="Only return starred events"),
+    user: dict = Depends(get_current_user),
 ):
     """Get upcoming events, optionally filtered by topics/keywords."""
     db = await get_db()
@@ -71,7 +73,7 @@ async def get_events(
         if topic_ids:
             ids = [int(x) for x in topic_ids.split(",") if x.strip()]
             if ids:
-                topics = await get_all_topics(db)
+                topics = await get_all_topics(db, user_id=user["id"])
                 selected = [t for t in topics if t["id"] in ids]
                 kw_set = set()
                 for t in selected:
@@ -87,6 +89,7 @@ async def get_events(
             houses=house_list,
             keywords=keywords,
             starred_only=starred_only,
+            user_id=user["id"],
         )
 
         # Group by date
@@ -109,22 +112,22 @@ async def get_events(
 
 
 @router.post("/star/{event_id}")
-async def star_event(event_id: str):
+async def star_event(event_id: str, user: dict = Depends(get_current_user)):
     """Star an event."""
     db = await get_db()
     try:
-        await star_lookahead_event(db, event_id)
+        await star_lookahead_event(db, event_id, user_id=user["id"])
         return {"starred": True}
     finally:
         await db.close()
 
 
 @router.delete("/star/{event_id}")
-async def unstar_event(event_id: str):
+async def unstar_event(event_id: str, user: dict = Depends(get_current_user)):
     """Unstar an event."""
     db = await get_db()
     try:
-        await unstar_lookahead_event(db, event_id)
+        await unstar_lookahead_event(db, event_id, user_id=user["id"])
         return {"starred": False}
     finally:
         await db.close()

@@ -512,8 +512,8 @@ function _buildMemberResultsBox(stats) {
     const perMember = stats.per_member_source_counts || {};
     const total = stats.total_api_results || 0;
     const SOURCE_LABELS = {
-        hansard: 'Hansard', written_questions: 'Written Qs',
-        written_statements: 'Written Stmts', edms: 'EDMs', oral_evidence: 'Oral Evidence',
+        hansard: 'Hansard', written_questions: 'Written Questions',
+        written_statements: 'Written Statements', edms: 'EDMs', oral_evidence: 'Oral Evidence',
     };
 
     const memberNames = Object.keys(perMember);
@@ -647,8 +647,8 @@ function renderSourceCircles(stats) {
 
     const perSourceRelevant = stats.per_source_relevant || {};
     const sourceLabels = {
-        'hansard': 'Hansard', 'written_questions': 'Written Qs',
-        'written_statements': 'Written Stmts', 'edms': 'EDMs',
+        'hansard': 'Hansard', 'written_questions': 'Written Questions',
+        'written_statements': 'Written Statements', 'edms': 'EDMs',
         'bills': 'Bills', 'divisions': 'Divisions', 'oral_evidence': 'Oral Evidence',
     };
     const sourceBadgeClass = {

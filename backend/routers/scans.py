@@ -3,10 +3,11 @@
 import asyncio
 import json
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 from backend.database import get_db, get_scan, get_scan_list, create_scan, update_scan_progress
+from backend.deps import get_current_user
 from backend.models import ScanCreate
 from backend.services.scanner import get_active_scan_count, MAX_CONCURRENT_SCANS
 
@@ -47,13 +48,15 @@ def register_scan_runner(fn):
 
 
 @router.post("", status_code=201)
-async def start_scan(body: ScanCreate):
+async def start_scan(body: ScanCreate, user: dict = Depends(get_current_user)):
     db = await get_db()
     try:
         scan_id = await create_scan(
             db, body.start_date, body.end_date, body.topic_ids, body.sources,
             target_member_ids=body.target_member_ids,
             target_member_names=body.target_member_names,
+            user_id=user["id"],
+            username=user["username"],
         )
         if get_active_scan_count() >= MAX_CONCURRENT_SCANS:
             await update_scan_progress(db, scan_id, status="queued")
@@ -91,11 +94,11 @@ async def promote_queued_scan():
 
 
 @router.post("/{scan_id}/cancel")
-async def cancel_scan(scan_id: int):
+async def cancel_scan(scan_id: int, user: dict = Depends(get_current_user)):
     event = active_scan_events.get(scan_id)
     db = await get_db()
     try:
-        scan = await get_scan(db, scan_id)
+        scan = await get_scan(db, scan_id, user_id=user["id"])
         if not scan:
             raise HTTPException(404, "Scan not found")
         if scan["status"] not in ("running", "queued"):
@@ -110,7 +113,7 @@ async def cancel_scan(scan_id: int):
 
 
 @router.get("/{scan_id}/progress")
-async def scan_progress(scan_id: int):
+async def scan_progress(scan_id: int, user: dict = Depends(get_current_user)):
     """SSE endpoint streaming scan progress updates."""
 
     async def event_stream():
@@ -122,7 +125,7 @@ async def scan_progress(scan_id: int):
         while True:
             db = await get_db()
             try:
-                scan = await get_scan(db, scan_id)
+                scan = await get_scan(db, scan_id, user_id=user["id"])
             finally:
                 await db.close()
 
@@ -171,21 +174,23 @@ async def scan_progress(scan_id: int):
 
 
 @router.get("")
-async def list_scans():
+async def list_scans(user: dict = Depends(get_current_user)):
     db = await get_db()
     try:
-        return await get_scan_list(db)
+        # Admins see all users' scans (no user_id filter); regular users see only their own
+        uid = None if user.get("is_admin") else user["id"]
+        return await get_scan_list(db, user_id=uid)
     finally:
         await db.close()
 
 
 @router.get("/{scan_id}/results")
-async def scan_results(scan_id: int):
+async def scan_results(scan_id: int, user: dict = Depends(get_current_user)):
     from backend.database import get_scan_results
 
     db = await get_db()
     try:
-        scan = await get_scan(db, scan_id)
+        scan = await get_scan(db, scan_id, user_id=user["id"])
         if not scan:
             raise HTTPException(404, "Scan not found")
         results = await get_scan_results(db, scan_id)

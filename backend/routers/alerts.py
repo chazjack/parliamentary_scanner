@@ -3,7 +3,7 @@
 import json
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from backend.database import (
     get_db,
@@ -15,6 +15,7 @@ from backend.database import (
     toggle_alert,
     get_alert_run_history,
 )
+from backend.deps import get_current_user
 from backend.models import AlertCreate, AlertUpdate
 
 logger = logging.getLogger(__name__)
@@ -34,19 +35,19 @@ def register_alert_executor(execute_fn, sync_fn):
 
 
 @router.get("")
-async def list_alerts():
+async def list_alerts(user: dict = Depends(get_current_user)):
     db = await get_db()
     try:
-        return await get_all_alerts(db)
+        return await get_all_alerts(db, user_id=user["id"])
     finally:
         await db.close()
 
 
 @router.get("/{alert_id}")
-async def get_alert_detail(alert_id: int):
+async def get_alert_detail(alert_id: int, user: dict = Depends(get_current_user)):
     db = await get_db()
     try:
-        alert = await get_alert(db, alert_id)
+        alert = await get_alert(db, alert_id, user_id=user["id"])
         if not alert:
             raise HTTPException(404, "Alert not found")
         return alert
@@ -55,10 +56,10 @@ async def get_alert_detail(alert_id: int):
 
 
 @router.post("", status_code=201)
-async def create_new_alert(body: AlertCreate):
+async def create_new_alert(body: AlertCreate, user: dict = Depends(get_current_user)):
     db = await get_db()
     try:
-        alert_id = await create_alert(db, body.model_dump())
+        alert_id = await create_alert(db, body.model_dump(), user_id=user["id"])
         alert = await get_alert(db, alert_id)
     finally:
         await db.close()
@@ -70,15 +71,15 @@ async def create_new_alert(body: AlertCreate):
 
 
 @router.put("/{alert_id}")
-async def update_existing_alert(alert_id: int, body: AlertUpdate):
+async def update_existing_alert(alert_id: int, body: AlertUpdate, user: dict = Depends(get_current_user)):
     db = await get_db()
     try:
-        existing = await get_alert(db, alert_id)
+        existing = await get_alert(db, alert_id, user_id=user["id"])
         if not existing:
             raise HTTPException(404, "Alert not found")
 
         update_data = body.model_dump(exclude_none=True)
-        await update_alert(db, alert_id, update_data)
+        await update_alert(db, alert_id, update_data, user_id=user["id"])
         alert = await get_alert(db, alert_id)
     finally:
         await db.close()
@@ -90,10 +91,10 @@ async def update_existing_alert(alert_id: int, body: AlertUpdate):
 
 
 @router.delete("/{alert_id}")
-async def delete_existing_alert(alert_id: int):
+async def delete_existing_alert(alert_id: int, user: dict = Depends(get_current_user)):
     db = await get_db()
     try:
-        deleted = await delete_alert(db, alert_id)
+        deleted = await delete_alert(db, alert_id, user_id=user["id"])
         if not deleted:
             raise HTTPException(404, "Alert not found")
     finally:
@@ -106,10 +107,10 @@ async def delete_existing_alert(alert_id: int):
 
 
 @router.post("/{alert_id}/toggle")
-async def toggle_alert_enabled(alert_id: int, enabled: bool = True):
+async def toggle_alert_enabled(alert_id: int, enabled: bool = True, user: dict = Depends(get_current_user)):
     db = await get_db()
     try:
-        toggled = await toggle_alert(db, alert_id, enabled)
+        toggled = await toggle_alert(db, alert_id, enabled, user_id=user["id"])
         if not toggled:
             raise HTTPException(404, "Alert not found")
     finally:
@@ -122,11 +123,11 @@ async def toggle_alert_enabled(alert_id: int, enabled: bool = True):
 
 
 @router.post("/{alert_id}/run")
-async def run_alert_now(alert_id: int):
+async def run_alert_now(alert_id: int, user: dict = Depends(get_current_user)):
     """Manually trigger an alert execution."""
     db = await get_db()
     try:
-        alert = await get_alert(db, alert_id)
+        alert = await get_alert(db, alert_id, user_id=user["id"])
         if not alert:
             raise HTTPException(404, "Alert not found")
     finally:
@@ -141,11 +142,11 @@ async def run_alert_now(alert_id: int):
 
 
 @router.post("/{alert_id}/test")
-async def test_alert(alert_id: int):
+async def test_alert(alert_id: int, user: dict = Depends(get_current_user)):
     """Send a test email for this alert (to first recipient only)."""
     db = await get_db()
     try:
-        alert = await get_alert(db, alert_id)
+        alert = await get_alert(db, alert_id, user_id=user["id"])
         if not alert:
             raise HTTPException(404, "Alert not found")
     finally:
@@ -203,10 +204,10 @@ async def test_alert(alert_id: int):
 
 
 @router.get("/{alert_id}/history")
-async def alert_history(alert_id: int):
+async def alert_history(alert_id: int, user: dict = Depends(get_current_user)):
     db = await get_db()
     try:
-        alert = await get_alert(db, alert_id)
+        alert = await get_alert(db, alert_id, user_id=user["id"])
         if not alert:
             raise HTTPException(404, "Alert not found")
         history = await get_alert_run_history(db, alert_id)
@@ -216,13 +217,13 @@ async def alert_history(alert_id: int):
 
 
 @router.get("/{alert_id}/preview")
-async def preview_alert_email(alert_id: int):
+async def preview_alert_email(alert_id: int, user: dict = Depends(get_current_user)):
     """Return the HTML that would be sent, without actually sending."""
     from backend.services.email_templates import scan_digest_html, lookahead_digest_html
 
     db = await get_db()
     try:
-        alert = await get_alert(db, alert_id)
+        alert = await get_alert(db, alert_id, user_id=user["id"])
         if not alert:
             raise HTTPException(404, "Alert not found")
     finally:

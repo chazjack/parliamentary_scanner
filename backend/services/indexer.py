@@ -137,11 +137,15 @@ def generate_index(results: list[dict]) -> dict:
     topics_out: dict[str, list[dict]] = {}
     for topic, members in topic_members.items():
         ranked = []
-        for i, (_, m) in enumerate(
-            sorted(members.items(), key=lambda x: (-x[1]["mentions"], x[0])), 1
-        ):
+        sorted_members = sorted(members.items(), key=lambda x: (-x[1]["mentions"], x[0]))
+        prev_mentions = None
+        rank = 0
+        for i, (_, m) in enumerate(sorted_members):
+            if m["mentions"] != prev_mentions:
+                rank = i + 1
+                prev_mentions = m["mentions"]
             ranked.append({
-                "rank": i,
+                "rank": rank,
                 "member_name": m["member_name"],
                 "party": m["party"],
                 "member_type": m["member_type"],
@@ -155,12 +159,16 @@ def generate_index(results: list[dict]) -> dict:
 
     # Serialise cross-topic results
     cross_out = []
-    for i, (_, m) in enumerate(
-        sorted(cross_members.items(), key=lambda x: (-x[1]["mentions"], x[0])), 1
-    ):
+    sorted_cross = sorted(cross_members.items(), key=lambda x: (-x[1]["mentions"], x[0]))
+    prev_mentions = None
+    rank = 0
+    for i, (_, m) in enumerate(sorted_cross):
+        if m["mentions"] != prev_mentions:
+            rank = i + 1
+            prev_mentions = m["mentions"]
         topics_active = sorted(m["topics_active"])
         cross_out.append({
-            "rank": i,
+            "rank": rank,
             "member_name": m["member_name"],
             "party": m["party"],
             "member_type": m["member_type"],

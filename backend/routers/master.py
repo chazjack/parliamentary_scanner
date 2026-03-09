@@ -3,7 +3,7 @@
 import io
 import json
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -16,6 +16,7 @@ from backend.database import (
     get_master_result_ids,
     remove_master_activity_by_result,
 )
+from backend.deps import get_current_user
 
 router = APIRouter(prefix="/api/master", tags=["master"])
 
@@ -35,7 +36,7 @@ class MasterUpdateRequest(BaseModel):
 
 
 @router.post("/add", status_code=201)
-async def add_to_master(body: MasterAddRequest):
+async def add_to_master(body: MasterAddRequest, user: dict = Depends(get_current_user)):
     db = await get_db()
     try:
         result = await add_to_master_list(
@@ -46,6 +47,7 @@ async def add_to_master(body: MasterAddRequest):
             member_type=body.member_type,
             constituency=body.constituency,
             result_id=body.result_id,
+            user_id=user["id"],
         )
         return result
     finally:
@@ -53,19 +55,19 @@ async def add_to_master(body: MasterAddRequest):
 
 
 @router.get("")
-async def list_master():
+async def list_master(user: dict = Depends(get_current_user)):
     db = await get_db()
     try:
-        return await get_master_list(db)
+        return await get_master_list(db, user_id=user["id"])
     finally:
         await db.close()
 
 
 @router.put("/{master_id}")
-async def update_master(master_id: int, body: MasterUpdateRequest):
+async def update_master(master_id: int, body: MasterUpdateRequest, user: dict = Depends(get_current_user)):
     db = await get_db()
     try:
-        ok = await update_master_entry(db, master_id, notes=body.notes, priority=body.priority)
+        ok = await update_master_entry(db, master_id, notes=body.notes, priority=body.priority, user_id=user["id"])
         if not ok:
             raise HTTPException(404, "Entry not found")
         return {"ok": True}
@@ -74,10 +76,10 @@ async def update_master(master_id: int, body: MasterUpdateRequest):
 
 
 @router.delete("/{master_id}")
-async def remove_from_master(master_id: int):
+async def remove_from_master(master_id: int, user: dict = Depends(get_current_user)):
     db = await get_db()
     try:
-        ok = await delete_master_entry(db, master_id)
+        ok = await delete_master_entry(db, master_id, user_id=user["id"])
         if not ok:
             raise HTTPException(404, "Entry not found")
         return {"ok": True}
@@ -86,22 +88,22 @@ async def remove_from_master(master_id: int):
 
 
 @router.get("/result-ids")
-async def master_result_ids():
+async def master_result_ids(user: dict = Depends(get_current_user)):
     """Get all result IDs linked to master list entries."""
     db = await get_db()
     try:
-        ids = await get_master_result_ids(db)
+        ids = await get_master_result_ids(db, user_id=user["id"])
         return {"result_ids": ids}
     finally:
         await db.close()
 
 
 @router.delete("/activity/{result_id}")
-async def remove_activity_by_result(result_id: int):
+async def remove_activity_by_result(result_id: int, user: dict = Depends(get_current_user)):
     """Remove a result link from the master list (granular removal)."""
     db = await get_db()
     try:
-        ok = await remove_master_activity_by_result(db, result_id)
+        ok = await remove_master_activity_by_result(db, result_id, user_id=user["id"])
         if not ok:
             raise HTTPException(404, "Activity link not found")
         return {"ok": True}
@@ -110,14 +112,14 @@ async def remove_activity_by_result(result_id: int):
 
 
 @router.get("/export")
-async def export_master():
+async def export_master(user: dict = Depends(get_current_user)):
     """Export master list as Excel."""
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment
 
     db = await get_db()
     try:
-        entries = await get_master_list(db)
+        entries = await get_master_list(db, user_id=user["id"])
     finally:
         await db.close()
 

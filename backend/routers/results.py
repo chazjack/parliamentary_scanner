@@ -7,7 +7,7 @@ from datetime import datetime
 
 import anthropic as _anthropic
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 from backend.config import ANTHROPIC_API_KEY, ANTHROPIC_MODEL
@@ -15,6 +15,7 @@ from backend.database import (
     get_db, get_scan, get_scan_results, get_audit_log,
     get_audit_summary, get_audit_entry, get_all_topics, insert_result,
 )
+from backend.deps import get_current_user
 from backend.models import AuditReclassifyRequest
 
 logger = logging.getLogger(__name__)
@@ -52,10 +53,10 @@ async def classifier_health():
 
 
 @router.get("/scans/{scan_id}/stats")
-async def scan_stats(scan_id: int):
+async def scan_stats(scan_id: int, user: dict = Depends(get_current_user)):
     db = await get_db()
     try:
-        scan = await get_scan(db, scan_id)
+        scan = await get_scan(db, scan_id, user_id=user["id"])
         if not scan:
             raise HTTPException(404, "Scan not found")
         return {
@@ -68,13 +69,13 @@ async def scan_stats(scan_id: int):
 
 
 @router.get("/scans/{scan_id}/export")
-async def export_excel(scan_id: int):
+async def export_excel(scan_id: int, user: dict = Depends(get_current_user)):
     """Export scan results as an Excel file."""
     from backend.services.exporter import create_excel_export
 
     db = await get_db()
     try:
-        scan = await get_scan(db, scan_id)
+        scan = await get_scan(db, scan_id, user_id=user["id"])
         if not scan:
             raise HTTPException(404, "Scan not found")
         results = await get_scan_results(db, scan_id)
@@ -92,11 +93,11 @@ async def export_excel(scan_id: int):
 
 
 @router.get("/scans/{scan_id}/audit")
-async def scan_audit(scan_id: int, include_duplicates: bool = False):
+async def scan_audit(scan_id: int, include_duplicates: bool = False, user: dict = Depends(get_current_user)):
     """Get audit log for a scan — shows discarded and filtered items."""
     db = await get_db()
     try:
-        scan = await get_scan(db, scan_id)
+        scan = await get_scan(db, scan_id, user_id=user["id"])
         if not scan:
             raise HTTPException(404, "Scan not found")
         summary = await get_audit_summary(db, scan_id)
@@ -107,19 +108,22 @@ async def scan_audit(scan_id: int, include_duplicates: bool = False):
 
 
 @router.get("/members/frequent")
-async def frequent_members():
+async def frequent_members(user: dict = Depends(get_current_user)):
     """Get MPs/Peers appearing across multiple scans."""
     db = await get_db()
     try:
         cursor = await db.execute(
-            """SELECT member_name, party, member_type,
-                      COUNT(DISTINCT scan_id) as scan_count,
+            """SELECT r.member_name, r.party, r.member_type,
+                      COUNT(DISTINCT r.scan_id) as scan_count,
                       COUNT(*) as total_appearances,
-                      GROUP_CONCAT(DISTINCT topics) as all_topics
-               FROM results
-               GROUP BY member_name
+                      GROUP_CONCAT(DISTINCT r.topics) as all_topics
+               FROM results r
+               JOIN scans s ON s.id = r.scan_id
+               WHERE s.user_id = ?
+               GROUP BY r.member_name
                HAVING scan_count > 1
-               ORDER BY scan_count DESC, total_appearances DESC"""
+               ORDER BY scan_count DESC, total_appearances DESC""",
+            (user["id"],),
         )
         rows = await cursor.fetchall()
         return [dict(row) for row in rows]
@@ -128,7 +132,7 @@ async def frequent_members():
 
 
 @router.post("/audit/reclassify")
-async def reclassify_audit_item(body: AuditReclassifyRequest):
+async def reclassify_audit_item(body: AuditReclassifyRequest, user: dict = Depends(get_current_user)):
     """Re-run classification on a discarded audit item and add to results if relevant."""
     from backend.services.classifier import TopicClassifier
     from backend.services.parliament import Contribution, ParliamentAPIClient
@@ -136,6 +140,11 @@ async def reclassify_audit_item(body: AuditReclassifyRequest):
 
     db = await get_db()
     try:
+        # Verify the scan belongs to the user
+        scan = await get_scan(db, body.scan_id, user_id=user["id"])
+        if not scan:
+            raise HTTPException(404, "Scan not found")
+
         # Fetch audit entry
         entry = await get_audit_entry(db, body.audit_id)
         if not entry:
@@ -159,8 +168,8 @@ async def reclassify_audit_item(body: AuditReclassifyRequest):
             matched_keywords=[],
         )
 
-        # Load all topics for classification
-        all_topics = await get_all_topics(db)
+        # Load all topics for classification (scoped to user)
+        all_topics = await get_all_topics(db, user_id=user["id"])
         all_topics_dict = {t["name"]: t["keywords"] for t in all_topics}
 
         classifier = TopicClassifier(all_topics_dict)

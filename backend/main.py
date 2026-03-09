@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
 from backend.database import init_db, get_db, cleanup_stuck_scans, get_session_user
-from backend.routers import topics, scans, results, master, lookahead, alerts, auth, groups, index
+from backend.routers import topics, scans, results, master, lookahead, alerts, auth, groups, index, admin
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +36,7 @@ async def auth_middleware(request: Request, call_next):
             await db.close()
         if not user:
             return JSONResponse({"detail": "Session expired."}, status_code=401)
+        request.state.user = user
     return await call_next(request)
 
 
@@ -49,6 +50,7 @@ app.include_router(lookahead.router)
 app.include_router(alerts.router)
 app.include_router(groups.router)
 app.include_router(index.router)
+app.include_router(admin.router)
 
 
 @app.on_event("startup")
