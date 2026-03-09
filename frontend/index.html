@@ -88,7 +88,7 @@
             <div class="la-cal-header">
                 <h2 class="la-cal-title">Scanner</h2>
                 <div style="display:flex;align-items:center;justify-content:space-between;">
-                    <p style="margin:0;font-size:0.85rem;color:var(--ps-text-muted,#888);">Search parliamentary records by date, topic and parliamentarian.</p>
+                    <p class="scanner-subtitle" style="margin:0;font-size:0.85rem;color:var(--ps-text-muted,#888);">Search parliamentary records by date, topic and parliamentarian.</p>
                     <button id="tourTriggerBtn" onclick="startTour()" style="font-size:0.85rem;color:var(--ps-text-muted,#888);opacity:0.7;background:none;border:none;cursor:pointer;padding:0;font-family:inherit;" title="Take a guided walkthrough of the scanner">How does this work?</button>
                 </div>
             </div>
@@ -104,7 +104,6 @@
                         <input type="hidden" id="endDate">
                     </div>
                     <button id="scanBtn" class="scan-btn">Scan Records</button>
-                    <button id="cancelBtn" class="ps-btn ps-btn--ghost" style="display:none;">Cancel</button>
                     <div id="scanWarning" class="scan-warning" style="display:none;"></div>
                 </div>
             </div>
@@ -199,7 +198,7 @@
                     <div class="results-tab-group">
                         <h2 id="resultsTabBtn" class="results-tab-btn results-tab-active" onclick="switchResultsTab('results')">Results</h2>
                         <span class="results-tab-sep">|</span>
-                        <h2 id="auditTabBtn" class="results-tab-btn" onclick="switchResultsTab('audit')">Discarded Items</h2>
+                        <h2 id="auditTabBtn" class="results-tab-btn" onclick="switchResultsTab('audit')">Discarded</h2>
                     </div>
                     <div style="display:flex;align-items:center;gap:6px;">
                         <button id="exportBtn" class="ps-btn ps-btn--ghost ps-btn--sm" title="Export to Excel" style="display:inline-flex;align-items:center;border:none;">
@@ -378,9 +377,9 @@
         <div class="setup-subnav" id="setupSubnav" style="display:none;">
             <div class="results-tab-group">
                 <h2 class="setup-subnav__btn results-tab-active" data-section="alerts" onclick="switchSetupSection('alerts')">Alerts</h2>
-                <span class="results-tab-sep">|</span>
+                <span class="setup-subnav__sep">·</span>
                 <h2 class="setup-subnav__btn" data-section="topics" onclick="switchSetupSection('topics')">Topics</h2>
-                <span class="results-tab-sep">|</span>
+                <span class="setup-subnav__sep">·</span>
                 <h2 class="setup-subnav__btn" data-section="groups" onclick="switchSetupSection('groups')">Groups</h2>
             </div>
         </div>

@@ -113,8 +113,19 @@
         margin-bottom: 16px;
     }
 
+    .setup-subnav__sep {
+        color: rgba(255, 255, 255, 0.2);
+        font-size: 1.75rem;
+        font-weight: 300;
+        line-height: 1;
+        vertical-align: middle;
+        user-select: none;
+        position: relative;
+        top: -0.1em;
+    }
+
     .setup-subnav__btn {
-        font-size: 1.25rem;
+        font-size: 1.75rem;
         font-weight: 700;
         letter-spacing: -0.02em;
         margin: 0;
@@ -156,8 +167,7 @@
         text-align: left;
     }
 
-    #scanBtn,
-    #cancelBtn {
+    #scanBtn {
         width: 100%;
     }
 
@@ -205,7 +215,23 @@
     }
 
     .la-cal-title {
-        font-size: 1.1rem;
+        font-size: 1.75rem;
+    }
+
+    /* Hide scanner subtitle, keep the tour button */
+    .scanner-subtitle {
+        display: none;
+    }
+
+    /* Pipeline stat boxes: one per row */
+    .pipeline-stats-row {
+        flex-direction: column;
+    }
+
+    .pipe-box {
+        flex: 0 0 auto;
+        width: 100%;
+        min-width: 0;
     }
 
     /* Tighter chip groups */

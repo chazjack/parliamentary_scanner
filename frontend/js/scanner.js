@@ -77,7 +77,6 @@ function setSummaryBadge(status) {
 }
 
 const scanBtn = document.getElementById('scanBtn');
-const cancelBtn = document.getElementById('cancelBtn');
 const progressSection = document.getElementById('progress-section');
 const progressLabel = document.getElementById('progressLabel');
 const progressPanels = document.getElementById('progressPanels');
@@ -88,8 +87,8 @@ const sourceCirclesRow = document.getElementById('sourceCirclesRow');
 
 let _liveResultsInterval = null;
 
-scanBtn.addEventListener('click', startScan);
-cancelBtn.addEventListener('click', cancelScan);
+let _scanBtnMode = 'scan';
+scanBtn.addEventListener('click', () => { if (_scanBtnMode === 'cancel') cancelScan(); else startScan(); });
 document.getElementById('summaryCancelBtn').addEventListener('click', cancelScan);
 
 async function startScan() {
@@ -137,10 +136,10 @@ async function startScan() {
         .filter(g => g.keywords.length > 0);
 
     state.cancelling = false;
-    scanBtn.disabled = true;
-    scanBtn.textContent = 'Scanning';
+    scanBtn.disabled = false;
+    scanBtn.textContent = 'Cancel';
     scanBtn.classList.add('scan-btn--scanning');
-    cancelBtn.style.display = '';
+    _scanBtnMode = 'cancel';
     setSummaryBadge('running');
     const _dp = document.getElementById('summaryScanDate');
     if (_dp) { _dp.textContent = ''; _dp.style.display = 'none'; }
@@ -300,6 +299,8 @@ function _stopLiveResults() {
 
 async function cancelScan() {
     if (!state.currentScanId) return;
+    scanBtn.disabled = true;
+    scanBtn.textContent = 'Cancelling…';
     const killBtn = document.getElementById('summaryCancelBtn');
     if (killBtn) { killBtn.disabled = true; killBtn.textContent = 'Cancelling…'; }
 
@@ -679,10 +680,10 @@ function friendlyError(msg) {
 }
 
 function resetScanUI() {
+    _scanBtnMode = 'scan';
     scanBtn.disabled = false;
     scanBtn.textContent = 'Scan Records';
     scanBtn.classList.remove('scan-btn--scanning');
-    cancelBtn.style.display = 'none';
     _stopLiveResults();
     hideResultsPill();
 }

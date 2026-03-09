@@ -784,7 +784,7 @@
     {
       target:   '#tour-pipe-4',
       title:    'Discarded',
-      body:     'Items the classifier determined to be not relevant are filtered out and can be viewed in the Discarded Items section below.',
+      body:     'Items the classifier determined to be not relevant are filtered out and can be viewed in the Discarded section below.',
       position: 'bottom',
       scrollTo: 'top',
     },
@@ -813,7 +813,7 @@
     {
       target:           '#results-section',
       title:            'Discarded items',
-      body:             'The Discarded Items tab shows everything the AI reviewed but filtered out, with a reason for each. Use the action button to manually promote any item back into Results.',
+      body:             'The Discarded tab shows everything the AI reviewed but filtered out, with a reason for each. Use the action button to manually promote any item back into Results.',
       position:         'bottom',
       scrollTo:         'top',
       anchorToViewport: { v: 'bottom', h: 'center' },
