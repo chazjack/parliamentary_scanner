@@ -37,6 +37,7 @@ const state = {
     groups: [],
     currentScanId: null,
     eventSource: null,
+    cancelling: false,
 };
 
 // Set default date range (past 2 days)
@@ -72,13 +73,25 @@ function switchTab(tabName) {
         btn.classList.toggle('active', btn.dataset.tab === tabName);
     });
 
-    // Toggle tab content
+    const isSetup = domTab === 'setup';
+
+    // Show/hide tabs
     document.getElementById('tab-scanner').style.display = domTab === 'scanner' ? '' : 'none';
     document.getElementById('tab-record').style.display = domTab === 'record' ? '' : 'none';
     document.getElementById('tab-lookahead').style.display = domTab === 'lookahead' ? '' : 'none';
-    document.getElementById('tab-alerts').style.display = domTab === 'alerts' ? '' : 'none';
-    document.getElementById('tab-topics').style.display = domTab === 'topics' ? '' : 'none';
-    document.getElementById('tab-groups').style.display = domTab === 'groups' ? '' : 'none';
+    document.getElementById('tab-alerts').style.display = (domTab === 'alerts') ? '' : 'none';
+    document.getElementById('tab-topics').style.display = (domTab === 'topics') ? '' : 'none';
+    document.getElementById('tab-groups').style.display = (domTab === 'groups') ? '' : 'none';
+
+    // Show/hide setup subnav
+    const subnav = document.getElementById('setupSubnav');
+    if (subnav) subnav.style.display = isSetup ? '' : 'none';
+
+    // In setup mode, delegate to switchSetupSection (default: alerts)
+    if (isSetup) {
+        const activeSection = subnav && subnav.querySelector('.setup-subnav__btn.results-tab-active');
+        switchSetupSection(activeSection ? activeSection.dataset.section : 'alerts');
+    }
 
     // Load data for the active tab
     if (domTab === 'record') {
@@ -89,7 +102,7 @@ function switchTab(tabName) {
     }
     if (domTab === 'alerts') {
         loadAlerts();
-    } else {
+    } else if (!isSetup) {
         stopAlertPolling();
     }
     if (domTab === 'topics') {
@@ -98,6 +111,23 @@ function switchTab(tabName) {
     if (domTab === 'groups') {
         loadGroups();
     }
+}
+
+function switchSetupSection(section) {
+    // Update active state
+    document.querySelectorAll('.setup-subnav__btn').forEach(btn => {
+        btn.classList.toggle('results-tab-active', btn.dataset.section === section);
+    });
+
+    // Show only the selected section's tab
+    document.getElementById('tab-alerts').style.display = section === 'alerts' ? '' : 'none';
+    document.getElementById('tab-topics').style.display = section === 'topics' ? '' : 'none';
+    document.getElementById('tab-groups').style.display = section === 'groups' ? '' : 'none';
+
+    // Load data for the shown section
+    if (section === 'alerts') loadAlerts();
+    if (section === 'topics') renderTopicsPage();
+    if (section === 'groups') loadGroups();
 }
 
 // API health check
@@ -176,10 +206,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.querySelector('.ps-sidebar').classList.add('collapsed');
     }
 
-    // Switch to tab from URL path, defaulting to Calendar
-    const validTabs = ['calendar', 'scanner', 'record', 'alerts', 'topics', 'groups'];
+    // Switch to tab from URL path, defaulting to Scanner
+    const validTabs = ['calendar', 'scanner', 'record', 'alerts', 'topics', 'groups', 'setup'];
     const pathTab = window.location.pathname.slice(1).split('/')[0];
-    switchTab(validTabs.includes(pathTab) ? pathTab : 'calendar');
+    switchTab(validTabs.includes(pathTab) ? pathTab : 'scanner');
 
     // Always show progress/summary section (remove any cached display:none)
     const ps = document.getElementById('progress-section');
@@ -211,7 +241,7 @@ function sidebarSearch(value) {
 
 // Handle browser back/forward navigation
 window.addEventListener('popstate', () => {
-    const validTabs = ['calendar', 'scanner', 'record', 'alerts', 'topics', 'groups'];
+    const validTabs = ['calendar', 'scanner', 'record', 'alerts', 'topics', 'groups', 'setup'];
     const pathTab = window.location.pathname.slice(1).split('/')[0];
     if (!validTabs.includes(pathTab)) return;
     const calendarVisible = document.getElementById('tab-lookahead').style.display !== 'none';

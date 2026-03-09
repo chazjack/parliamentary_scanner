@@ -13,5 +13,6 @@ if __name__ == "__main__":
         port=port,
         reload=reload,
         reload_dirs=["backend", "frontend"] if reload else None,
+        reload_includes=["*.py", "*.html", "*.css", "*.js"] if reload else None,
         reload_excludes=["*.db", "*.db-journal", "*.db-wal"] if reload else None,
     )

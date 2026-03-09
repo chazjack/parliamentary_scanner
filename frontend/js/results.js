@@ -481,6 +481,7 @@ const SOURCE_COLOURS = {
     'edm':              { color: '#e879f9', bg: 'rgba(232,121,249,0.15)',label: 'EDM'          },
     'bill':             { color: '#fb923c', bg: 'rgba(251,146,60,0.15)', label: 'Bill'         },
     'division':         { color: '#7dd3fc', bg: 'rgba(125,211,252,0.15)', label: 'Division'     },
+    'oral_evidence':    { color: '#a78bfa', bg: 'rgba(167,139,250,0.15)', label: 'Oral Evidence' },
 };
 
 function forumCell(sourceType, forum, dateStr) {

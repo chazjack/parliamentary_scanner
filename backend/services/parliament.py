@@ -10,6 +10,8 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 
+import base64
+
 import httpx
 
 from backend.config import (
@@ -19,6 +21,7 @@ from backend.config import (
     BILLS_API_BASE,
     DIVISIONS_API_BASE,
     MEMBERS_API_BASE,
+    COMMITTEES_API_BASE,
     REQUEST_DELAY,
 )
 
@@ -96,6 +99,10 @@ class ParliamentAPIClient:
             follow_redirects=True,
         )
         self._member_cache: dict[str, dict] = {}
+        # Cache of oral evidence sessions keyed by (start_date, end_date).
+        # Each entry is a list of dicts: {id, text, member_name, house, context, date, url}
+        # Populated once per scan; subsequent keyword searches reuse it.
+        self._oral_evidence_cache: dict[tuple, list[dict]] = {}
 
     async def close(self):
         await self.client.aclose()
@@ -125,6 +132,30 @@ class ParliamentAPIClient:
                         logger.warning("Rate limited on %s, waiting %ds", url, wait)
                         await asyncio.sleep(wait)
                         continue
+                    logger.error("HTTP %s for %s: %s", e.response.status_code, url, e)
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(2 ** attempt)
+                        continue
+                    return None
+                except httpx.RequestError as e:
+                    logger.error("Request error for %s: %s", url, e)
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(2 ** attempt)
+                        continue
+                    return None
+            return None
+
+    async def _get_bytes(self, url: str, max_retries: int = 3) -> bytes | None:
+        """GET raw bytes (for document endpoints that return binary/base64 content)."""
+        host_sem = self._get_host_sem(url)
+        async with host_sem:
+            for attempt in range(max_retries):
+                try:
+                    await asyncio.sleep(REQUEST_DELAY)
+                    resp = await self.client.get(url)
+                    resp.raise_for_status()
+                    return resp.content
+                except httpx.HTTPStatusError as e:
                     logger.error("HTTP %s for %s: %s", e.response.status_code, url, e)
                     if attempt < max_retries - 1:
                         await asyncio.sleep(2 ** attempt)
@@ -734,6 +765,189 @@ class ParliamentAPIClient:
 
         return contributions
 
+    # ---- Committees Oral Evidence API ----
+
+    @staticmethod
+    def _parse_transcript_text(html: str) -> str:
+        """Strip HTML tags and decode entities to plain text."""
+        text = re.sub(r"<[^>]+>", "", html)
+        text = re.sub(r"&#xa0;|&nbsp;", " ", text)
+        text = re.sub(r"&[a-z#0-9]+;", "", text)
+        return re.sub(r"\s+", " ", text).strip()
+
+    @staticmethod
+    def _extract_present_members(plain_text: str) -> list[str]:
+        """Parse 'Members present' and 'Also present' sections from transcript plain text.
+
+        Returns cleaned name strings — always MPs/Peers as only committee members
+        and invited parliamentarians appear in these sections.
+        """
+        names = []
+        for prefix in ("Members present:", "Also present:"):
+            m = re.search(re.escape(prefix) + r"\s*(.+?)\.", plain_text)
+            if not m:
+                continue
+            for raw_name in m.group(1).split(";"):
+                name = re.sub(r"\(.*?\)", "", raw_name).strip()
+                if name:
+                    names.append(name)
+        return names
+
+    @staticmethod
+    def _extract_witnesses(plain_text: str) -> list[str]:
+        """Parse 'WitnessI:', 'WitnessII:' etc. from transcript plain text.
+
+        Returns the name portion of each witness entry (before any comma/title).
+        Witnesses may be external experts or parliamentarians (e.g. ministers).
+        """
+        names = []
+        for m in re.finditer(r"Witness(?:es)?\s*[IVX\d]+\s*:\s*([^,\n]{5,80})", plain_text):
+            name = m.group(1).strip()
+            if name:
+                names.append(name)
+        return names
+
+    def _parse_oral_evidence_item(self, item: dict) -> dict | None:
+        """Extract and normalise metadata from a raw OralEvidence API item."""
+        evidence_id = item.get("id")
+        if not evidence_id:
+            return None
+
+        meeting_date = item.get("meetingDate") or item.get("activityStartDate", "")
+        try:
+            dt = datetime.fromisoformat(meeting_date.replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            dt = datetime.now()
+
+        committees = item.get("committees", []) or []
+        committee_name = committees[0].get("name", "") if committees else ""
+        house_raw = committees[0].get("house", "") if committees else ""
+        if "lord" in house_raw.lower():
+            house = "Lords"
+        elif "joint" in house_raw.lower() or "both" in house_raw.lower():
+            house = "Joint"
+        else:
+            house = "Commons"
+
+        businesses = item.get("committeeBusinesses", []) or []
+        inquiry_name = businesses[0].get("name", "") if businesses else ""
+
+        witnesses = item.get("witnesses", []) or []
+        witness_names = []
+        for w in witnesses:
+            name = w.get("name") or ""
+            if not name:
+                orgs = w.get("organisations", []) or []
+                name = orgs[0].get("name", "") if orgs else ""
+            if name:
+                witness_names.append(name)
+        member_name = ", ".join(witness_names) if witness_names else committee_name or "Committee witness"
+
+        return {
+            "id": evidence_id,
+            "dt": dt,
+            "house": house,
+            "committee_name": committee_name,
+            "inquiry_name": inquiry_name,
+            "member_name": member_name,
+        }
+
+    async def _load_oral_evidence_sessions(self, start_date: str, end_date: str) -> list[dict]:
+        """Fetch all oral evidence sessions in the date range, download their transcript
+        text, and cache the results. Called once per scan regardless of keyword count."""
+        cache_key = (start_date, end_date)
+        if cache_key in self._oral_evidence_cache:
+            return self._oral_evidence_cache[cache_key]
+
+        sessions = []
+        skip = 0
+        while True:
+            params = {"StartDate": start_date, "EndDate": end_date, "Take": 30, "Skip": skip}
+            data = await self._get(f"{COMMITTEES_API_BASE}/api/OralEvidence", params)
+            if not data:
+                break
+            items = data.get("items", []) if isinstance(data, dict) else []
+            if not items:
+                break
+
+            for item in items:
+                meta = self._parse_oral_evidence_item(item)
+                if not meta:
+                    continue
+
+                # Fetch and decode transcript
+                doc_url = f"{COMMITTEES_API_BASE}/api/OralEvidence/{meta['id']}/Document/Html"
+                raw_bytes = await self._get_bytes(doc_url)
+                plain = ""
+                if raw_bytes:
+                    try:
+                        plain = self._parse_transcript_text(
+                            base64.b64decode(raw_bytes).decode("utf-8", errors="replace")
+                        )
+                    except Exception:
+                        plain = self._parse_transcript_text(
+                            raw_bytes.decode("utf-8", errors="replace")
+                        )
+
+                meta["parliamentarians"] = self._extract_present_members(plain)
+                meta["witnesses"] = self._extract_witnesses(plain)
+                meta["text"] = plain
+                sessions.append(meta)
+                logger.debug(
+                    "Loaded oral evidence session %s (%d chars, %d members, %d witnesses)",
+                    meta["id"], len(plain), len(meta["parliamentarians"]), len(meta["witnesses"])
+                )
+
+            total = data.get("totalResults", 0) if isinstance(data, dict) else 0
+            skip += 30
+            if skip >= total or not items:
+                break
+
+        self._oral_evidence_cache[cache_key] = sessions
+        logger.info("Oral evidence cache: %d sessions for %s–%s", len(sessions), start_date, end_date)
+        return sessions
+
+    async def search_oral_evidence(
+        self, keyword: str, start_date: str, end_date: str, on_page=None
+    ) -> list[Contribution]:
+        """Search select committee oral evidence transcripts by keyword in full text."""
+        sessions = await self._load_oral_evidence_sessions(start_date, end_date)
+
+        contributions = []
+        kw_lower = keyword.lower()
+        for s in sessions:
+            if kw_lower not in s["text"].lower():
+                continue
+
+            parliamentarians = s.get("parliamentarians", [])
+            witnesses = s.get("witnesses", [])
+            all_names = parliamentarians + witnesses
+            if not all_names:
+                logger.debug("Skipping oral evidence session %s — no participants found", s["id"])
+                continue
+
+            member_name = "; ".join(all_names)
+            context = s["inquiry_name"] or s["committee_name"] or "Select Committee Oral Evidence"
+            url = f"https://committees.parliament.uk/oralevidence/{s['id']}/html/"
+
+            contributions.append(Contribution(
+                id=f"oe-{s['id']}",
+                member_name=member_name,
+                member_id="",
+                text=s["text"][:4000],
+                date=s["dt"],
+                house=s["house"],
+                source_type="oral_evidence",
+                context=context,
+                url=url,
+                matched_keywords=[keyword],
+            ))
+
+        if on_page and contributions:
+            await on_page(contributions)
+
+        return contributions
+
     # ---- Unified search ----
 
     SOURCE_NAMES = [
@@ -743,6 +957,7 @@ class ParliamentAPIClient:
         "Early Day Motions",
         "Bills",
         "Divisions",
+        "Oral Evidence",
     ]
 
     async def search_all(
@@ -771,6 +986,7 @@ class ParliamentAPIClient:
             ("Early Day Motions", "edms", self.search_edms),
             ("Bills", "bills", self.search_bills),
             ("Divisions", "divisions", self.search_divisions),
+            ("Oral Evidence", "oral_evidence", self.search_oral_evidence),
         ]
 
         # Filter to only enabled sources
@@ -1099,6 +1315,55 @@ class ParliamentAPIClient:
 
         return contributions
 
+    async def fetch_member_oral_evidence(
+        self,
+        member_id: str,
+        member_name: str,
+        start_date: str,
+        end_date: str,
+    ) -> list[Contribution]:
+        """Find oral evidence sessions where a specific member participated.
+
+        Searches transcript text for the member's surname (last token of member_name),
+        then checks the participants list. Returns contributions with member_id set
+        so they pass the scanner's member_id hard filter.
+        """
+        sessions = await self._load_oral_evidence_sessions(start_date, end_date)
+
+        # Match on surname to handle "Baroness X", "Mr X MP" etc.
+        surname = member_name.strip().split()[-1].lower() if member_name.strip() else ""
+        if not surname or len(surname) < 3:
+            return []
+
+        contributions = []
+        for s in sessions:
+            if surname not in s["text"].lower():
+                continue
+
+            all_names = s.get("parliamentarians", []) + s.get("witnesses", [])
+            # Verify the name actually appears in the participant lists, not just body text
+            if not any(surname in n.lower() for n in all_names):
+                continue
+
+            member_name_display = "; ".join(all_names) if all_names else member_name
+            context = s["inquiry_name"] or s["committee_name"] or "Select Committee Oral Evidence"
+            url = f"https://committees.parliament.uk/oralevidence/{s['id']}/html/"
+
+            contributions.append(Contribution(
+                id=f"oe-{s['id']}",
+                member_name=member_name_display,
+                member_id=member_id,  # set so scanner's member_id filter passes
+                text=s["text"][:4000],
+                date=s["dt"],
+                house=s["house"],
+                source_type="oral_evidence",
+                context=context,
+                url=url,
+                matched_keywords=[],
+            ))
+
+        return contributions
+
     async def fetch_member_all(
         self,
         member_id: str,
@@ -1118,6 +1383,7 @@ class ParliamentAPIClient:
             ("written_questions", self.fetch_member_written_questions),
             ("written_statements", self.fetch_member_written_statements),
             ("edms", self.fetch_member_edms),
+            ("oral_evidence", self.fetch_member_oral_evidence),
         ]
 
         if enabled_sources is not None:

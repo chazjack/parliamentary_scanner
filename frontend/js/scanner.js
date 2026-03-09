@@ -45,8 +45,8 @@ function _applyResultsState() {
     el('auditTabBtn').classList.toggle('results-tab-active', !onResults);
 
     // View button states
-    el('mentionsViewBtn').classList.toggle('results-view-active', _resultsView === 'mentions');
-    el('membersViewBtn').classList.toggle('results-view-active', _resultsView === 'members');
+    el('mentionsViewBtn').classList.toggle('results-view-seg__btn--active', _resultsView === 'mentions');
+    el('membersViewBtn').classList.toggle('results-view-seg__btn--active', _resultsView === 'members');
 }
 
 function switchResultsTab(tab) {
@@ -136,7 +136,10 @@ async function startScan() {
         .map(t => ({ name: t.name, keywords: [...t.keywords] }))
         .filter(g => g.keywords.length > 0);
 
+    state.cancelling = false;
     scanBtn.disabled = true;
+    scanBtn.textContent = 'Scanning';
+    scanBtn.classList.add('scan-btn--scanning');
     cancelBtn.style.display = '';
     setSummaryBadge('running');
     const _dp = document.getElementById('summaryScanDate');
@@ -157,8 +160,9 @@ async function startScan() {
     document.getElementById('auditSummary').innerHTML = '';
     document.getElementById('auditList').innerHTML = '<p class="empty-state-preview">Scanning...</p>';
 
-    // Reset stage indicator
+    // Reset stage indicator and pill
     resetStageIndicator();
+    hideResultsPill();
 
     // Make sure progress content is expanded
     const content = document.getElementById('progressContent');
@@ -248,6 +252,7 @@ function connectSSE(scanId) {
             setSummaryBadge('cancelled');
             es.close();
             state.eventSource = null;
+            state.cancelling = false;
             _stopLiveResults();
             progressLabel.textContent = 'Scan cancelled.';
             document.querySelectorAll('.kw-chip:not(.kw-done)').forEach(el => {
@@ -297,6 +302,14 @@ async function cancelScan() {
     if (!state.currentScanId) return;
     const killBtn = document.getElementById('summaryCancelBtn');
     if (killBtn) { killBtn.disabled = true; killBtn.textContent = 'Cancelling…'; }
+
+    // Immediately freeze chips so SSE messages arriving during the API call don't re-pulsate them
+    state.cancelling = true;
+    document.querySelectorAll('.kw-chip:not(.kw-done)').forEach(el => {
+        el.classList.remove('kw-active');
+        el.classList.add('kw-cancelled');
+    });
+
     try {
         await API.post(`/api/scans/${state.currentScanId}/cancel`);
         progressLabel.textContent = 'Cancelling...';
@@ -304,6 +317,7 @@ async function cancelScan() {
         loadHistory();
     } catch (err) {
         console.error('Cancel failed:', err);
+        state.cancelling = false;
         if (killBtn) { killBtn.disabled = false; killBtn.textContent = 'Cancel Scan'; }
     }
 }
@@ -427,12 +441,16 @@ function renderKeywordChips(stats, scanStatus) {
                 const count = kwCounts[kw] || 0;
                 countBadge = `<span class="kw-count">${count}</span>`;
             } else if (status === 'active') {
-                chipClass += ' kw-active';
+                if (state.cancelling) {
+                    chipClass += ' kw-cancelled';
+                } else {
+                    chipClass += ' kw-active';
+                }
                 const count = kwCounts[kw] || 0;
                 if (count > 0) {
                     countBadge = `<span class="kw-count">${count}</span>`;
                 }
-            } else if (scanStatus === 'cancelled') {
+            } else if (state.cancelling || scanStatus === 'cancelled') {
                 chipClass += ' kw-cancelled';
             }
 
@@ -546,10 +564,19 @@ function renderPipelineBoxes(stats) {
         </div>`;
     }
 
+    // Show pill if results have started appearing and user isn't already viewing them
+    const relevantCount = stats.classified_relevant || 0;
+    if (relevantCount > 0) {
+        const resultsEl = document.getElementById('results-section');
+        const resultsVisible = resultsEl && resultsEl.getBoundingClientRect().top < window.innerHeight;
+        if (!resultsVisible) showResultsPill(relevantCount);
+        else hideResultsPill();
+    }
+
     const boxes = [
         { label: 'Keyword Results', value: totalApiResults, cls: 'pipe-box-has-tooltip', tooltip: kwTooltip },
         { label: 'Classified', value: `${totalClassified}/${sentToClassifier}`, cls: classifiedCls, tooltip: classifiedTooltip, badge: classifiedBadge },
-        { label: 'Relevant', value: stats.classified_relevant || 0, cls: 'pipe-box-relevant', target: 'results-section' },
+        { label: 'Relevant', value: relevantCount, cls: 'pipe-box-relevant', target: 'results-section' },
         { label: 'Discarded', value: stats.classified_discarded || 0, cls: `pipe-box-discarded${buildDiscardTooltip(stats) ? ' pipe-box-has-tooltip' : ''}`, target: 'results-section', resultsTab: 'audit', tooltip: buildDiscardTooltip(stats) },
     ];
 
@@ -591,17 +618,18 @@ function renderSourceCircles(stats) {
     const sourceLabels = {
         'hansard': 'Hansard', 'written_questions': 'Written Qs',
         'written_statements': 'Written Stmts', 'edms': 'EDMs',
-        'bills': 'Bills', 'divisions': 'Divisions',
+        'bills': 'Bills', 'divisions': 'Divisions', 'oral_evidence': 'Oral Evidence',
     };
     const sourceBadgeClass = {
         'hansard': 'source-badge--hansard', 'written_questions': 'source-badge--written-qs',
         'written_statements': 'source-badge--written-stmts', 'edms': 'source-badge--edms',
         'bills': 'source-badge--bills', 'divisions': 'source-badge--divisions',
+        'oral_evidence': 'source-badge--oral-evidence',
     };
     const keyToType = {
         'hansard': 'hansard', 'written_questions': 'written_question',
         'written_statements': 'written_statement', 'edms': 'edm',
-        'bills': 'bill', 'divisions': 'division',
+        'bills': 'bill', 'divisions': 'division', 'oral_evidence': 'oral_evidence',
     };
 
     const enabledSources = Array.from(document.querySelectorAll('#source-toggles .ps-chip--active'))
@@ -652,8 +680,52 @@ function friendlyError(msg) {
 
 function resetScanUI() {
     scanBtn.disabled = false;
+    scanBtn.textContent = 'Scan Records';
+    scanBtn.classList.remove('scan-btn--scanning');
     cancelBtn.style.display = 'none';
     _stopLiveResults();
+    hideResultsPill();
+}
+
+/* ---- View Results pill ---- */
+
+let _pillResultsObserver = null;
+
+function showResultsPill(count) {
+    const pill = document.getElementById('view-results-pill');
+    const label = document.getElementById('view-results-pill-label');
+    if (!pill) return;
+    label.textContent = `View ${count} result${count !== 1 ? 's' : ''}`;
+    pill.hidden = false;
+
+    // Set up an IntersectionObserver to auto-hide once results scroll into view
+    if (!_pillResultsObserver) {
+        const target = document.getElementById('results-section');
+        if (target) {
+            _pillResultsObserver = new IntersectionObserver((entries) => {
+                if (entries[0].isIntersecting) hideResultsPill();
+            }, { threshold: 0.15 });
+            _pillResultsObserver.observe(target);
+        }
+    }
+}
+
+function hideResultsPill() {
+    const pill = document.getElementById('view-results-pill');
+    if (pill) pill.hidden = true;
+    if (_pillResultsObserver) {
+        _pillResultsObserver.disconnect();
+        _pillResultsObserver = null;
+    }
+}
+
+function scrollToResults() {
+    const target = document.getElementById('results-section');
+    if (target) {
+        expandSection('results-section');
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    hideResultsPill();
 }
 
 /* ---- Scan Size Warning ---- */

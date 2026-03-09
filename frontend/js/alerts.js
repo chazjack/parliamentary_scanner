@@ -330,7 +330,7 @@ function _sourceLabel(s) {
     const labels = {
         hansard: 'Hansard', written_questions: 'Written Questions',
         written_statements: 'Written Statements', edms: 'EDMs',
-        bills: 'Bills', divisions: 'Divisions'
+        bills: 'Bills', divisions: 'Divisions', oral_evidence: 'Oral Evidence'
     };
     return labels[s] || s;
 }

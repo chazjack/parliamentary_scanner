@@ -678,17 +678,44 @@ async def _run_member_topic_scan(
         ]
         await insert_audit_log_batch(db, audit_rows)
 
-    # Keyword pre-filter: only classify contributions containing at least one topic keyword
+    # Keyword pre-filter: only classify contributions containing at least one topic keyword.
+    # Process each keyword individually so the Summary chips animate active → done
+    # progressively (mirrors the topic-only scan's per-keyword progress updates).
     all_keywords_lower = {
         kw.lower(): kw
         for kws in selected_topics.values()
         for kw in kws
     }
+    all_kw_pairs = list(all_keywords_lower.items())   # [(lower, canonical), ...]
+    total_kw = len(all_kw_pairs)
+    stats["total_keywords"] = total_kw
+    stats["completed_keywords"] = 0
+
+    # Build a per-contribution keyword match map: id(c) → [matched canonical kws]
+    from collections import defaultdict
+    kw_hits: dict[int, list[str]] = defaultdict(list)
+
+    for i, (kw_lower, kw) in enumerate(all_kw_pairs):
+        stats["kw_status"][kw] = "active"
+        stats["phase"] = f'Filtering "{kw}" ({i + 1}/{total_kw})'
+        await _update_with_stats(15 + i / total_kw * 10)
+
+        count = 0
+        for c in to_classify:
+            if kw_lower in c.text.lower():
+                kw_hits[id(c)].append(kw)
+                count += 1
+
+        stats["kw_counts"][kw] = count
+        stats["kw_status"][kw] = "done"
+        stats["completed_keywords"] = i + 1
+        await _update_with_stats(15 + (i + 1) / total_kw * 10)
+
+    # Apply the filter using accumulated matches
     keyword_passed = []
     keyword_filtered = []
     for c in to_classify:
-        text_lower = c.text.lower()
-        matched = [kw for kw_lower, kw in all_keywords_lower.items() if kw_lower in text_lower]
+        matched = kw_hits.get(id(c), [])
         if matched:
             c.matched_keywords = matched
             keyword_passed.append(c)
@@ -698,6 +725,7 @@ async def _run_member_topic_scan(
     stats["removed_by_keyword_filter"] = len(keyword_filtered)
     stats["sent_to_classifier"] = len(keyword_passed)
     to_classify = keyword_passed
+
     await _update_with_stats(25)
 
     if keyword_filtered:

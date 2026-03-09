@@ -1,0 +1,227 @@
+/* ============================================================================
+   ParliScan — Mobile Styles
+   All rules are scoped inside @media so the desktop layout is untouched.
+   ============================================================================ */
+
+/* Hidden on desktop — shown only inside the media query below */
+.mobile-bottom-nav {
+    display: none;
+}
+
+/* ============================================================================
+   ≤ 480px  (phones)
+   ============================================================================ */
+@media (max-width: 480px) {
+
+    /* ── Layout: collapse sidebar, go full-width ─────────────────────────── */
+    .ps-sidebar {
+        display: none !important;
+    }
+
+    /* Switch from horizontal flex-row to block so main fills the viewport */
+    .ps-app {
+        display: block;
+    }
+
+    /* Let the page scroll naturally; remove the desktop overflow clip */
+    main.ps-main {
+        overflow: visible;
+        width: 100%;
+        padding: 12px 10px;
+        /* Leave room for the fixed bottom nav (60px) + safe-area (notch/home bar) */
+        padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px) + 12px);
+    }
+
+    /* ── Bottom navigation bar ───────────────────────────────────────────── */
+    .mobile-bottom-nav {
+        display: flex;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        /* Include iOS home-bar area */
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+        height: calc(60px + env(safe-area-inset-bottom, 0px));
+        background: var(--ps-bg-base);
+        border-top: 1px solid var(--ps-border-default);
+        z-index: 2000;
+        align-items: stretch;
+    }
+
+    .mobile-bottom-nav__item {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: var(--ps-text-muted);
+        font-family: inherit;
+        padding: 6px 2px 0;
+        transition: color 0.15s;
+        min-width: 0;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .mobile-bottom-nav__item:hover,
+    .mobile-bottom-nav__item.active {
+        color: var(--ps-accent);
+    }
+
+    .mobile-bottom-nav__item svg {
+        flex-shrink: 0;
+    }
+
+    .mobile-bottom-nav__label {
+        font-size: 9px;
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 100%;
+        line-height: 1;
+    }
+
+    /* ── Alerts tab ─────────────────────────────────────────────────────── */
+    /* #tab-alerts uses flex:1 + overflow:auto for an internal scroll area on
+       desktop. When ps-app becomes display:block here, that flex chain breaks
+       and flex:1 collapses to 0 height, hiding all content.                  */
+    #tab-alerts {
+        flex: none;
+        overflow: visible;
+    }
+
+    #alertFormList {
+        flex: none;
+        min-height: auto;
+    }
+
+    /* Single-column alert form on mobile */
+    .alert-form-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .alert-schedule-row {
+        flex-wrap: wrap;
+    }
+
+    /* ── Setup subnav ────────────────────────────────────────────────────── */
+    .setup-subnav {
+        margin-bottom: 16px;
+    }
+
+    .setup-subnav__btn {
+        font-size: 1.25rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        margin: 0;
+        cursor: pointer;
+        color: rgba(255, 255, 255, 0.35);
+        transition: color 0.15s;
+        user-select: none;
+        background: none;
+        border: none;
+        padding: 0;
+        font-family: inherit;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .setup-subnav__btn.results-tab-active {
+        color: #fff;
+    }
+
+    /* Hide the per-tab page titles when shown inside setup (subnav replaces them) */
+    #setupSubnav ~ #tab-alerts .la-cal-header,
+    #setupSubnav ~ #tab-topics .la-cal-header,
+    #setupSubnav ~ #tab-groups .la-cal-header {
+        display: none;
+    }
+
+    /* ── Scanner: stack the control row ─────────────────────────────────── */
+    .control-row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+    }
+
+    .date-picker-wrapper {
+        width: 100%;
+    }
+
+    #datePickerDisplay {
+        width: 100%;
+        text-align: left;
+    }
+
+    #scanBtn,
+    #cancelBtn {
+        width: 100%;
+    }
+
+    /* Calendar dropdown: keep it within the viewport */
+    .calendar-dropdown {
+        left: 0 !important;
+        right: 0 !important;
+        max-width: calc(100vw - 24px) !important;
+        min-width: 0 !important;
+    }
+
+    /* ── Results & data tables: horizontal scroll ────────────────────────── */
+    .table-container,
+    .ps-table-wrapper {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* ── View-results pill: lift above bottom nav ────────────────────────── */
+    .view-results-pill {
+        bottom: calc(68px + env(safe-area-inset-bottom, 0px));
+    }
+
+    /* ── Calendar: fix bottom nav disappearing ───────────────────────────── */
+
+    /* Prevent the 640px time grid from expanding the page body wider than
+       the viewport, which pushes bottom nav icons off screen.              */
+    html, body {
+        overflow-x: hidden;
+        max-width: 100vw;
+    }
+
+    /* The combination of overflow-x:auto + overflow-y:clip on the same
+       element is treated by Chrome/Safari as a containing block for
+       position:fixed children — breaking the bottom nav.
+       On mobile we don't need the clip trick, so switch to visible.       */
+    .la-time-grid-outer {
+        overflow-y: visible;
+    }
+
+    /* ── Misc tightening ─────────────────────────────────────────────────── */
+    .la-cal-header {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .la-cal-title {
+        font-size: 1.1rem;
+    }
+
+    /* Tighter chip groups */
+    .ps-chip-group__items {
+        gap: 4px;
+    }
+
+    .ps-chip {
+        font-size: 0.75rem;
+        padding: 4px 8px;
+    }
+
+    .control-group-card,
+    #history-section,
+    #results-section,
+    #progress-section {
+        margin-bottom: 12px;
+    }
+}

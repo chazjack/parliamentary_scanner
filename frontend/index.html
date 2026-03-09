@@ -9,6 +9,8 @@
     <link rel="stylesheet" href="/css/parliscan-tokens.css">
     <link rel="stylesheet" href="/css/parliscan-components.css">
     <link rel="stylesheet" href="/css/styles.css">
+    <link rel="stylesheet" href="/css/tour.css">
+    <link rel="stylesheet" href="/css/mobile.css">
 </head>
 <body class="ps-app">
 
@@ -34,6 +36,7 @@
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
                 </span>
                 <span class="ps-sidebar__nav-label">Calendar</span>
+                <span class="ps-sidebar__nav-beta">Beta</span>
             </button>
             <button class="ps-sidebar__nav-item tab-btn" data-tab="record" onclick="switchTab('record')" title="Record">
                 <span class="ps-sidebar__nav-icon">
@@ -84,6 +87,10 @@
         <div id="tab-scanner" style="display:none;">
             <div class="la-cal-header">
                 <h2 class="la-cal-title">Scanner</h2>
+                <div style="display:flex;align-items:center;justify-content:space-between;">
+                    <p style="margin:0;font-size:0.85rem;color:var(--ps-text-muted,#888);">Search parliamentary records by date, topic and parliamentarian.</p>
+                    <button id="tourTriggerBtn" onclick="startTour()" style="font-size:0.85rem;color:var(--ps-text-muted,#888);opacity:0.7;background:none;border:none;cursor:pointer;padding:0;font-family:inherit;" title="Take a guided walkthrough of the scanner">How does this work?</button>
+                </div>
             </div>
             <!-- Grouped Control Card -->
             <section class="control-group-card">
@@ -96,7 +103,7 @@
                         <input type="hidden" id="startDate">
                         <input type="hidden" id="endDate">
                     </div>
-                    <button id="scanBtn" class="ps-btn ps-btn--primary">Scan</button>
+                    <button id="scanBtn" class="scan-btn">Scan Records</button>
                     <button id="cancelBtn" class="ps-btn ps-btn--ghost" style="display:none;">Cancel</button>
                     <div id="scanWarning" class="scan-warning" style="display:none;"></div>
                 </div>
@@ -119,10 +126,11 @@
                         <button class="ps-chip ps-chip--active" data-source="edms" title="Motions signed by MPs to show support for a cause">EDMs</button>
                         <button class="ps-chip ps-chip--active" data-source="bills" title="Proposed legislation being considered by Parliament">Bills</button>
                         <button class="ps-chip ps-chip--active" data-source="divisions" title="Recorded votes in the House of Commons">Divisions</button>
+                        <button class="ps-chip ps-chip--active" data-source="oral_evidence" title="Transcripts of witness sessions before select committees">Oral Evidence</button>
                     </div>
                 </div>
 
-                <div class="ps-chip-group">
+                <div class="ps-chip-group" id="topic-toggles">
                     <div class="ps-chip-group__header">
                         <span class="ps-chip-group__label">TOPICS</span>
                          <span id="topicSelectionIndicator" style="font-size:var(--ps-text-md);color:var(--ps-text-secondary);margin-left:6px;flex:1;"></span>
@@ -213,9 +221,11 @@
                     <!-- Sub-view selector: Mentions / Members (shown on Results tab only) -->
                     <div id="resultsViewSelector" style="margin-bottom:12px;">
                         <div class="results-view-group">
-                            <span id="mentionsViewBtn" class="results-view-btn results-view-active" onclick="switchResultsView('mentions')">Mentions</span>
-                            <span class="results-view-sep">|</span>
-                            <span id="membersViewBtn" class="results-view-btn" onclick="switchResultsView('members')">Members</span>
+                            <span class="results-view-label">View by</span>
+                            <div class="results-view-seg">
+                                <span id="mentionsViewBtn" class="results-view-seg__btn results-view-seg__btn--active" onclick="switchResultsView('mentions')">Mentions</span>
+                                <span id="membersViewBtn" class="results-view-seg__btn" onclick="switchResultsView('members')">Members</span>
+                            </div>
                         </div>
                     </div>
                     <!-- Mentions view -->
@@ -362,6 +372,17 @@
             <!-- List view (grouped rows, rendered by JS) -->
             <div id="la-list-view" class="la-list-outer" style="display:none;"></div>
 
+        </div>
+
+        <!-- ===== Setup subnav (mobile only) ===== -->
+        <div class="setup-subnav" id="setupSubnav" style="display:none;">
+            <div class="results-tab-group">
+                <h2 class="setup-subnav__btn results-tab-active" data-section="alerts" onclick="switchSetupSection('alerts')">Alerts</h2>
+                <span class="results-tab-sep">|</span>
+                <h2 class="setup-subnav__btn" data-section="topics" onclick="switchSetupSection('topics')">Topics</h2>
+                <span class="results-tab-sep">|</span>
+                <h2 class="setup-subnav__btn" data-section="groups" onclick="switchSetupSection('groups')">Groups</h2>
+            </div>
         </div>
 
         <!-- ===== Alerts Tab ===== -->
@@ -556,13 +577,14 @@
             <div class="la-cal-header" style="border-bottom:none;">
                 <h2 class="la-cal-title">Topics</h2>
             </div>
-            <div class="topics-page-add">
-                <input class="ps-input" type="text" id="topicsPageNewName" placeholder="New topic name...">
-                <button class="ps-btn ps-btn--secondary ps-btn--sm" id="topicsPageAddBtn">+ Add Topic</button>
-                <button class="ps-btn ps-btn--ghost ps-btn--sm btn-undo disabled" id="topicsPageUndoBtn" onclick="undoLastAction()" title="Undo" style="margin-left:auto;">&#8617;</button>
-            </div>
-            <div id="topicsPageGrid" class="topics-page-grid"></div>
-            <div style="display:flex;align-items:center;gap:8px;margin-top:12px;">
+            <section class="control-group-card topics-page-card-wrap">
+                <div class="topics-page-add">
+                    <input class="ps-input topics-page-add__input" type="text" id="topicsPageNewName" placeholder="Add new topic">
+                    <button class="ps-btn ps-btn--ghost ps-btn--sm btn-undo disabled" id="topicsPageUndoBtn" onclick="undoLastAction()" title="Undo" style="margin-left:auto;">&#8617;</button>
+                </div>
+                <div id="topicsPageGrid" class="topics-page-grid"></div>
+            </section>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
                 <a href="/api/topics/export" download class="ps-btn ps-btn--ghost ps-btn--sm" style="border:none;text-decoration:none;">Export</a>
                 <button class="ps-btn ps-btn--ghost ps-btn--sm" style="border:none;" onclick="document.getElementById('topicsImportInput').click()">Import</button>
                 <input type="file" id="topicsImportInput" accept=".xlsx" style="display:none;" onchange="importTopicsExcel(this)">
@@ -633,6 +655,7 @@
     <script src="/js/alerts.js"></script>
     <script src="/js/groups.js"></script>
     <script src="/js/index.js"></script>
+    <script src="/js/tour.js"></script>
 
     <!-- Group members popover — lives at body level so it's never hidden by a tab's display:none -->
     <div id="groupMembersPopover" class="topic-popover" style="display:none;">
@@ -689,5 +712,31 @@
             <button class="import-modal__cancel" onclick="closeImportModal()">Cancel</button>
         </div>
     </div>
+
+    <!-- View Results pill — appears during scan when results start arriving -->
+    <button id="view-results-pill" class="view-results-pill" onclick="scrollToResults()" aria-label="Scroll to results" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        <span id="view-results-pill-label">View results</span>
+    </button>
+
+    <!-- ===== Mobile Bottom Navigation (hidden on desktop via CSS) ===== -->
+    <nav class="mobile-bottom-nav" aria-label="Main navigation">
+        <button class="mobile-bottom-nav__item tab-btn active" data-tab="scanner" onclick="switchTab('scanner')">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="15" r="1.5" fill="currentColor" stroke="none"/><path d="M7 10 A6 6 0 0 1 17 10"/><path d="M4 7 A10 10 0 0 1 20 7"/></svg>
+            <span class="mobile-bottom-nav__label">Scanner</span>
+        </button>
+        <button class="mobile-bottom-nav__item tab-btn" data-tab="calendar" onclick="switchTab('calendar')">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <span class="mobile-bottom-nav__label">Calendar</span>
+        </button>
+        <button class="mobile-bottom-nav__item tab-btn" data-tab="record" onclick="switchTab('record')">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
+            <span class="mobile-bottom-nav__label">Record</span>
+        </button>
+        <button class="mobile-bottom-nav__item tab-btn" data-tab="setup" onclick="switchTab('setup')">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            <span class="mobile-bottom-nav__label">Setup</span>
+        </button>
+    </nav>
 </body>
 </html>

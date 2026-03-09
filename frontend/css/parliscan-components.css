@@ -217,14 +217,14 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 0 var(--ps-space-2);
+  padding: 0 4px 0 6px;
 }
 
 .ps-sidebar__nav-item {
   display: flex;
   align-items: center;
   gap: var(--ps-space-3);
-  padding: 7px 10px 7px 8px;
+  padding: 7px 10px 7px 6px;
   height: 34px;
   border-radius: var(--ps-radius-lg);
   background: transparent;
@@ -276,6 +276,7 @@
   padding: 1px 5px;
   line-height: 1.4;
   flex-shrink: 0;
+  margin-left: -6px;
 }
 
 .ps-sidebar.collapsed .ps-sidebar__nav-beta {
@@ -459,6 +460,8 @@
 .ps-chip--active[data-source="bills"]:hover       { background: rgba(251,146,60,0.22); }
 .ps-chip--active[data-source="divisions"]         { color: #7dd3fc; background: rgba(125,211,252,0.15); border-color: rgba(125,211,252,0.4); }
 .ps-chip--active[data-source="divisions"]:hover   { background: rgba(125,211,252,0.22); }
+.ps-chip--active[data-source="oral_evidence"]     { color: #a78bfa; background: rgba(167,139,250,0.15); border-color: rgba(167,139,250,0.4); }
+.ps-chip--active[data-source="oral_evidence"]:hover { background: rgba(167,139,250,0.22); }
 
 .ps-chip-group {
   display: flex;

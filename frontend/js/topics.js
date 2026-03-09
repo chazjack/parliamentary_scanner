@@ -32,7 +32,8 @@ function renderTopics() {
     if (activePopoverTopicId !== null) {
         const topic = state.topics.find(t => t.id === activePopoverTopicId);
         if (topic) {
-            const titleEl = document.querySelector('.topic-popover__title');
+            const popover = document.getElementById('topicPopover');
+            const titleEl = popover.querySelector('.topic-popover__title');
             if (titleEl && titleEl.tagName !== 'INPUT') {
                 titleEl.textContent = topic.name;
                 titleEl.onclick = (e) => { e.stopPropagation(); startRenamePopover(activePopoverTopicId); };
@@ -93,7 +94,7 @@ function openTopicPopover(topicId, anchorEl) {
     renderTopicChips(); // re-render to apply .open class on arrow
 
     const popover = document.getElementById('topicPopover');
-    const titleEl = document.querySelector('.topic-popover__title');
+    const titleEl = popover.querySelector('.topic-popover__title');
     titleEl.textContent = topic.name;
     titleEl.onclick = (e) => { e.stopPropagation(); startRenamePopover(topicId); };
 
@@ -176,6 +177,11 @@ document.addEventListener('click', (e) => {
         closeTopicPopover();
     }
 });
+
+// Close popover when scrolling the page
+window.addEventListener('scroll', () => {
+    if (activePopoverTopicId !== null) closeTopicPopover();
+}, { passive: true });
 
 // ── Chip toggle ───────────────────────────────────────────────────────────────
 
@@ -280,7 +286,7 @@ async function renameTopic(topicId, newName) {
 }
 
 function startRenameCard(topicId) {
-    const card = document.querySelector(`.topics-page-card[data-topic-id="${topicId}"]`);
+    const card = document.querySelector(`.topics-page-row[data-topic-id="${topicId}"]`);
     if (!card) return;
     const nameEl = card.querySelector('.topics-page-card__name');
     if (!nameEl) return;
@@ -323,7 +329,7 @@ function startRenameCard(topicId) {
 }
 
 function startRenamePopover(topicId) {
-    const titleEl = document.querySelector('.topic-popover__title');
+    const titleEl = document.getElementById('topicPopover').querySelector('.topic-popover__title');
     if (!titleEl || titleEl.tagName === 'INPUT') return;
     const oldName = titleEl.textContent;
 
@@ -408,16 +414,7 @@ document.getElementById('addTopicBtn').addEventListener('click', async () => {
     expandToTopic(newTopic.id);
 });
 
-document.getElementById('topicsPageAddBtn').addEventListener('click', async () => {
-    const input = document.getElementById('topicsPageNewName');
-    const name = input.value.trim();
-    if (!name) return;
-    const newTopic = await API.post('/api/topics', { name, keywords: [] });
-    input.value = '';
-    await loadTopics();
-    renderTopicsPage();
-    highlightNewTopic(newTopic.id);
-});
+// topicsPageAddBtn removed — enter key on input handles submission
 
 document.getElementById('topicsPageNewName').addEventListener('keydown', async (e) => {
     if (e.key !== 'Enter') return;
@@ -442,52 +439,181 @@ document.getElementById('newTopicName').addEventListener('keydown', async (e) =>
 
 // ── Topics page ───────────────────────────────────────────────────────────────
 
+let _activePageKwTopicId = null;
+let _openRowMenuId = null;
+
 function renderTopicsPage() {
     const grid = document.getElementById('topicsPageGrid');
     if (!grid) return;
 
-    // Sync undo button state
     const undoBtn = document.getElementById('topicsPageUndoBtn');
     if (undoBtn) undoBtn.classList.toggle('disabled', undoStack.length === 0);
 
     if (state.topics.length === 0) {
-        grid.innerHTML = '<p class="empty-state">No topics yet. Add one below.</p>';
+        grid.innerHTML = '<p class="empty-state">No topics yet. Add one above.</p>';
         return;
     }
 
-    grid.innerHTML = state.topics.map(topic => `
-        <div class="topics-page-card" data-topic-id="${topic.id}">
-            <div class="topics-page-card__header">
-                <span class="topics-page-card__name" onclick="startRenameCard(${topic.id})" title="Click to rename">${escapeHtml(topic.name)}</span>
-                <button class="topics-page-card__delete" onclick="deleteTopicFromPage(${topic.id})" title="Delete topic">&times;</button>
-            </div>
-            <div class="topics-page-card__keywords">
-                ${topic.keywords.length === 0
-                    ? '<span class="topic-popover__empty">No keywords yet.</span>'
-                    : topic.keywords.map(kw => `
-                        <span class="keyword-chip">
-                            ${escapeHtml(kw)}
-                            <span class="remove-kw" onclick="removeKeywordFromPage(${topic.id}, '${escapeAttr(kw)}')">&times;</span>
-                        </span>`).join('')
-                }
-            </div>
-            <div class="topics-page-card__add">
-                <input class="ps-input" type="text" id="page-kw-input-${topic.id}" placeholder="Add keyword..."
-                       onkeydown="if(event.key==='Enter') addKeywordFromPage(${topic.id})">
-                <button class="ps-btn ps-btn--ghost ps-btn--sm" onclick="addKeywordFromPage(${topic.id})">Add</button>
-            </div>
-        </div>
-    `).join('');
+    grid.innerHTML = `
+        <table class="topics-page-table">
+            <colgroup>
+                <col class="topics-page-table__col-name">
+                <col>
+                <col class="topics-page-table__col-menu">
+            </colgroup>
+            <thead>
+                <tr>
+                    <th>Topic</th>
+                    <th>Keywords</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                ${state.topics.map(topic => `
+                    <tr class="topics-page-row" data-topic-id="${topic.id}">
+                        <td class="topics-page-row__name-cell">
+                            <span class="topics-page-card__name" onclick="startRenameCard(${topic.id})" title="Click to rename">${escapeHtml(topic.name)}</span>
+                        </td>
+                        <td class="topics-page-row__keywords-cell">
+                            <div class="topics-page-row__keywords-wrap" id="kw-wrap-${topic.id}">
+                                ${topic.keywords.map(kw => `
+                                    <span class="keyword-chip">
+                                        ${escapeHtml(kw)}
+                                        <span class="remove-kw" onclick="removeKeywordFromPage(${topic.id}, '${escapeAttr(kw)}')">&times;</span>
+                                    </span>`).join('')}
+                                <div class="topic-add-expander" id="kw-add-${topic.id}" title="Add keyword">
+                                    <span class="topic-add-plus">+</span>
+                                    <input class="topic-add-input" type="text" placeholder="Add keyword...">
+                                </div>
+                            </div>
+                            <button class="topics-page-row__expand-btn" id="kw-expand-${topic.id}" style="display:none;" onclick="toggleKwExpand(${topic.id})">···</button>
+                        </td>
+                        <td class="topics-page-row__menu-cell">
+                            <div class="topics-page-row__menu-wrap" id="row-menu-wrap-${topic.id}">
+                                <button class="topics-page-row__menu-btn" onclick="toggleRowMenu(${topic.id})">⋮</button>
+                                <div class="topics-page-row__menu-dropdown" id="row-menu-${topic.id}" style="display:none;">
+                                    <button class="topics-page-row__menu-item topics-page-row__menu-item--danger" onclick="deleteTopicFromPage(${topic.id}); closeRowMenus()">Delete topic</button>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+
+    initPageKwExpanders();
+    initKwOverflow();
 }
 
+function initPageKwExpanders() {
+    state.topics.forEach(topic => {
+        const expander = document.getElementById(`kw-add-${topic.id}`);
+        if (!expander) return;
+        const input = expander.querySelector('.topic-add-input');
+        if (!input) return;
+
+        if (_activePageKwTopicId === topic.id) {
+            expander.classList.add('expanded');
+            setTimeout(() => { input.focus(); input.value = ''; }, 50);
+        }
+
+        expander.addEventListener('click', () => {
+            if (!expander.classList.contains('expanded')) {
+                _activePageKwTopicId = topic.id;
+                expander.classList.add('expanded');
+                input.focus();
+            }
+        });
+
+        input.addEventListener('keydown', async (e) => {
+            if (e.key === 'Escape') {
+                _activePageKwTopicId = null;
+                expander.classList.remove('expanded');
+                input.value = '';
+                return;
+            }
+            if (e.key === 'Enter') {
+                const kw = input.value.trim();
+                if (!kw) return;
+                input.value = '';
+                _activePageKwTopicId = topic.id; // ensure it survives re-render
+                const t = state.topics.find(x => x.id === topic.id);
+                if (!t) return;
+                pushUndo({ type: 'remove_keyword', topicId: topic.id, keyword: kw });
+                await API.put(`/api/topics/${topic.id}/keywords`, { keywords: [...t.keywords, kw] });
+                await loadTopics();
+                renderTopicsPage();
+            }
+        });
+
+        input.addEventListener('blur', () => {
+            setTimeout(() => {
+                if (!document.contains(input)) return; // re-render replaced this element
+                if (_activePageKwTopicId !== topic.id) return;
+                _activePageKwTopicId = null;
+                expander.classList.remove('expanded');
+                input.value = '';
+            }, 300);
+        });
+    });
+}
+
+function initKwOverflow() {
+    state.topics.forEach(topic => {
+        const wrap = document.getElementById(`kw-wrap-${topic.id}`);
+        const btn = document.getElementById(`kw-expand-${topic.id}`);
+        if (!wrap || !btn) return;
+        if (wrap.scrollHeight > wrap.clientHeight + 2) {
+            btn.style.display = '';
+        }
+    });
+}
+
+function toggleKwExpand(topicId) {
+    const wrap = document.getElementById(`kw-wrap-${topicId}`);
+    const btn = document.getElementById(`kw-expand-${topicId}`);
+    if (!wrap || !btn) return;
+    const expanded = wrap.classList.toggle('kw-expanded');
+    btn.textContent = expanded ? 'Show less' : '···';
+}
+
+function toggleRowMenu(topicId) {
+    const menu = document.getElementById(`row-menu-${topicId}`);
+    if (!menu) return;
+    const isOpen = menu.style.display !== 'none';
+    closeRowMenus();
+    if (!isOpen) {
+        menu.style.display = 'block';
+        _openRowMenuId = topicId;
+    }
+}
+
+function closeRowMenus() {
+    document.querySelectorAll('.topics-page-row__menu-dropdown').forEach(m => m.style.display = 'none');
+    _openRowMenuId = null;
+}
+
+document.addEventListener('click', (e) => {
+    if (_openRowMenuId !== null && !e.target.closest('.topics-page-row__menu-wrap')) {
+        closeRowMenus();
+    }
+});
+
 function highlightNewTopic(topicId) {
-    const card = document.querySelector(`.topics-page-card[data-topic-id="${topicId}"]`);
-    if (!card) return;
-    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    card.classList.add('topics-page-card--new');
-    setTimeout(() => card.classList.remove('topics-page-card--new'), 2000);
-    const kwInput = document.getElementById(`page-kw-input-${topicId}`);
-    if (kwInput) setTimeout(() => kwInput.focus(), 100);
+    const row = document.querySelector(`.topics-page-row[data-topic-id="${topicId}"]`);
+    if (!row) return;
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    row.classList.add('topics-page-row--new');
+    setTimeout(() => row.classList.remove('topics-page-row--new'), 2000);
+    // Open keyword expander so user can start adding immediately
+    _activePageKwTopicId = topicId;
+    const expander = document.getElementById(`kw-add-${topicId}`);
+    const input = expander?.querySelector('.topic-add-input');
+    if (expander && input) {
+        expander.classList.add('expanded');
+        setTimeout(() => input.focus(), 100);
+    }
 }
 
 async function addKeywordFromPage(topicId) {
