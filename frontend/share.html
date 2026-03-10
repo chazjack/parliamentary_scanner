@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ParliScan — Shared Results</title>
+    <link rel="icon" type="image/svg+xml" href="/icon-no-bg (1).svg">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/parliscan-tokens.css">
+    <link rel="stylesheet" href="/css/parliscan-components.css">
+    <link rel="stylesheet" href="/css/styles.css">
+    <style>
+        .share-page-wrap {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 24px 20px 60px;
+        }
+        .share-page-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 32px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+        }
+        .share-page-logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            text-decoration: none;
+        }
+        .share-page-logo img {
+            width: 28px;
+            height: 28px;
+        }
+        .share-page-logo-text {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #fff;
+            letter-spacing: -0.02em;
+        }
+        .share-page-signin {
+            font-size: 0.85rem;
+            color: rgba(255,255,255,0.5);
+            text-decoration: none;
+        }
+        .share-page-signin:hover { color: rgba(255,255,255,0.8); }
+        .share-scan-summary {
+            margin-bottom: 24px;
+        }
+        .share-summary-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .share-summary-row:last-child { margin-bottom: 0; }
+        .share-summary-section-label {
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--ps-text-muted, rgba(255,255,255,0.4));
+            flex-shrink: 0;
+            align-self: center;
+            margin-right: 2px;
+        }
+        .share-section-title {
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: #fff;
+            margin: 0 0 14px;
+        }
+        #shareError {
+            text-align: center;
+            padding: 80px 20px;
+            color: rgba(255,255,255,0.5);
+            font-size: 1rem;
+        }
+        #shareLoading {
+            text-align: center;
+            padding: 80px 20px;
+            color: rgba(255,255,255,0.4);
+            font-size: 0.9rem;
+        }
+        /* Match #results-section card style */
+        #share-results-section {
+            background: var(--card-bg);
+            padding: 16px 20px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            max-width: 100%;
+            overflow-x: clip;
+            margin-bottom: 16px;
+        }
+        /* Match #resultsTable styles exactly */
+        #shareResultsTable,
+        #shareMembersTable {
+            width: 100%;
+            min-width: 600px;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+        #shareResultsTable th,
+        #shareMembersTable th {
+            background: var(--ps-bg-raised);
+            color: var(--ps-text-muted);
+            padding: 10px 8px;
+            text-align: left;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+            white-space: nowrap;
+            border-bottom: 1px solid var(--ps-border-default);
+        }
+        #shareResultsTable td,
+        #shareMembersTable td {
+            padding: 8px;
+            border-bottom: 1px solid var(--border);
+            vertical-align: top;
+            color: var(--ps-text-secondary);
+        }
+        #shareResultsTable tbody tr:hover,
+        #shareMembersTable tbody tr:hover {
+            background: var(--ps-bg-subtle);
+        }
+    </style>
+</head>
+<body class="ps-app" style="background:var(--ps-bg,#0f1117);">
+
+<div class="share-page-wrap">
+    <div class="share-page-header">
+        <a href="/" class="share-page-logo">
+            <img src="/icon-no-bg (1).svg" alt="ParliScan">
+            <span class="share-page-logo-text">ParliScan</span>
+        </a>
+        <a href="/login" class="share-page-signin">Sign in</a>
+    </div>
+
+    <div id="shareLoading">Loading shared results…</div>
+    <div id="shareError" style="display:none;">This link is no longer active or does not exist.</div>
+
+    <div id="shareContent" style="display:none;">
+        <!-- Scan summary -->
+        <div class="share-scan-summary" id="shareScanSummary"></div>
+
+        <!-- Results section -->
+        <section id="share-results-section">
+            <div class="results-header">
+                <h2 class="share-section-title">Results</h2>
+            </div>
+            <div id="inlineAnalysisWrap" style="display:none;margin-bottom:16px;"></div>
+            <div id="shareResultsViewSelector" style="margin-bottom:12px;">
+                <div class="results-view-group">
+                    <span class="results-view-label">View by</span>
+                    <div class="results-view-seg">
+                        <span id="shareMentionsViewBtn" class="results-view-seg__btn results-view-seg__btn--active" onclick="shareSetView('mentions')">Mentions</span>
+                        <span id="shareMembersViewBtn" class="results-view-seg__btn" onclick="shareSetView('members')">Members</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mentions view -->
+            <div id="shareMentionsContent" style="width:100%;">
+                <div class="table-container ps-table-wrapper" style="width:100%;">
+                    <table id="shareResultsTable" class="ps-table" style="width:100%;">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Party</th>
+                                <th>Topic(s)</th>
+                                <th>Summary</th>
+                                <th>Quote</th>
+                                <th>Source</th>
+                            </tr>
+                        </thead>
+                        <tbody id="shareResultsBody"></tbody>
+                    </table>
+                </div>
+                <div id="shareResultsPagination" class="history-pagination"></div>
+            </div>
+
+            <!-- Members view -->
+            <div id="shareMembersContent" style="display:none;width:100%;">
+                <div class="table-container ps-table-wrapper" style="width:100%;">
+                    <table class="ps-table" id="shareMembersTable" style="width:100%;">
+                        <thead>
+                            <tr>
+                                <th style="width:40px;text-align:center;">#</th>
+                                <th>Member</th>
+                                <th>Party / Type</th>
+                                <th>Mentions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="shareMembersBody"></tbody>
+                    </table>
+                </div>
+                <div id="shareMembersPagination" class="history-pagination" style="margin-top:8px;"></div>
+            </div>
+        </section>
+
+        <!-- Analysis section -->
+        <section id="analysis-section" style="display:none;">
+            <div class="analysis-header">
+                <div class="analysis-header-left">
+                    <span class="analysis-title">Analysis</span>
+                    <span class="analysis-member-chip" id="analysisMemberName"></span>
+                </div>
+                <button class="analysis-close-btn" onclick="closeAnalysis()" title="Close">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="2" y1="2" x2="12" y2="12"/><line x1="12" y1="2" x2="2" y2="12"/></svg>
+                </button>
+            </div>
+            <div class="analysis-body">
+                <div id="analysisContent"></div>
+            </div>
+        </section>
+    </div>
+</div>
+
+<script src="/js/share.js"></script>
+<script src="/js/member-profile.js"></script>
+</body>
+</html>

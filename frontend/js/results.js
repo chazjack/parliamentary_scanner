@@ -121,7 +121,38 @@ async function loadResults(scanId) {
     renderResults(allResults);
     document.getElementById('results-section').style.display = '';
     if (data.scan) loadStatus(data.scan);
+
+    // Auto-show inline analysis for single-member scans; hide Members toggle
+    if (typeof renderInlineAnalysis === 'function' && typeof clearInlineAnalysis === 'function') {
+        try {
+            // Prefer explicit target name; fall back to unique member in results
+            const targetNames = JSON.parse(data.scan?.target_member_name || '[]');
+            const uniqueResultMembers = [...new Set(allResults.map(r => r.member_name).filter(Boolean))];
+            const memberName = targetNames.length === 1
+                ? targetNames[0]
+                : (uniqueResultMembers.length === 1 ? uniqueResultMembers[0] : null);
+
+            if (typeof setSingleMemberMode === 'function') {
+                setSingleMemberMode(!!memberName);
+            }
+
+            if (memberName && allResults.length > 0) {
+                renderInlineAnalysis(memberName, scanId);
+            } else {
+                clearInlineAnalysis();
+            }
+        } catch(e) {
+            clearInlineAnalysis();
+        }
+    }
     _idxGenerateForScan(scanId);
+
+    // Restore share bar if this scan already has a share link
+    if (data.scan && data.scan.share_token) {
+        _showShareBar(`${location.origin}/share/${data.scan.share_token}`);
+    } else {
+        _hideShareBar();
+    }
 }
 
 function loadStatus(scan) {
@@ -298,6 +329,7 @@ function renderResultsPage() {
 
     for (const r of pageResults) {
         const tr = document.createElement('tr');
+        if (r.id) tr.id = `result-row-${r.id}`;
 
         // Parse topics JSON, filtered to only topics selected for this scan
         let topics = r.topics;
@@ -324,17 +356,14 @@ function renderResultsPage() {
             quoteHtml = `<a href="${escapeHtml(r.source_url)}" target="_blank" class="quote-link">${quoteHtml}</a>`;
         }
 
-        // Master button — three states
-        const inMaster = masterResultIds.has(r.id);
-        const btnClass = inMaster ? 'btn-add-master state-added ps-btn ps-btn--sm' : 'btn-add-master state-add ps-btn ps-btn--secondary ps-btn--sm';
-        const btnIcon = inMaster ? SVG_CHECK + ' Added' : 'Add';
-        const btnTitle = inMaster ? 'In record (hover to remove)' : 'Add to record';
-
         // Escape values for data attributes
         const escapedName = escapeHtml(r.member_name);
         const escapedParty = escapeHtml(r.party || '');
         const escapedType = escapeHtml(r.member_type || '');
         const escapedConstituency = escapeHtml(r.constituency || '');
+
+        // Master state for the menu item label
+        const inMaster = masterResultIds.has(r.id);
 
         // Merged Party + Type column
         const typeSmall = r.member_type ? `<br>${typePill(r.member_type)}` : '';
@@ -351,13 +380,24 @@ function renderResultsPage() {
             <td>${escapeHtml(r.summary || '—')}</td>
             <td>${quoteHtml}</td>
             <td>${forumCell(r.source_type || '', r.forum || '', dateStr)}</td>
-            <td><button class="${btnClass}" title="${btnTitle}"
-                data-result-id="${r.id}"
-                data-member-name="${escapedName}"
-                data-member-id="${r.member_id || ''}"
-                data-party="${escapedParty}"
-                data-member-type="${escapedType}"
-                data-constituency="${escapedConstituency}">${btnIcon}</button></td>
+            <td>
+                <div class="result-actions-dropdown" id="result-actions-${r.id}">
+                    <button class="ps-btn ps-btn--ghost ps-btn--sm result-actions-trigger"
+                            title="Actions">&#8942;</button>
+                    <div class="result-actions-menu" id="result-menu-${r.id}" style="display:none;">
+                        <button class="result-menu-add"
+                            data-result-id="${r.id}"
+                            data-member-name="${escapedName}"
+                            data-member-id="${r.member_id || ''}"
+                            data-party="${escapedParty}"
+                            data-member-type="${escapedType}"
+                            data-constituency="${escapedConstituency}"
+                            data-in-master="${inMaster ? '1' : '0'}"
+                            >${inMaster ? SVG_CHECK + ' In record' : 'Add to record'}</button>
+                        <button class="result-menu-discard" data-result-id="${r.id}">Discard</button>
+                    </div>
+                </div>
+            </td>
         `;
 
         // Member name → open profile
@@ -369,9 +409,24 @@ function renderResultsPage() {
             });
         }
 
-        // Wire up button events
-        const btn = tr.querySelector('.btn-add-master');
-        setupMasterButton(btn);
+        // Wire up three-dot trigger
+        const trigger = tr.querySelector('.result-actions-trigger');
+        trigger.addEventListener('click', (e) => toggleResultMenu(e, r.id));
+
+        // Wire up menu items
+        tr.querySelector('.result-menu-add').addEventListener('click', (e) => {
+            closeResultMenu(r.id);
+            const btn = e.currentTarget;
+            if (btn.dataset.inMaster === '1') {
+                removeFromMasterByResult(parseInt(btn.dataset.resultId), btn);
+            } else {
+                addToMasterFromBtn(btn);
+            }
+        });
+        tr.querySelector('.result-menu-discard').addEventListener('click', () => {
+            closeResultMenu(r.id);
+            discardResult(r.id, tr);
+        });
 
         tbody.appendChild(tr);
     }
@@ -396,32 +451,6 @@ function renderResultsPagination() {
     `;
 }
 
-function setupMasterButton(btn) {
-    const resultId = parseInt(btn.dataset.resultId);
-    const inMaster = masterResultIds.has(resultId);
-
-    if (inMaster) {
-        // Hover: show ✗ in grey; leave: revert to ✓ green
-        btn.addEventListener('mouseenter', () => {
-            if (btn.classList.contains('state-added')) {
-                btn.textContent = 'Remove';
-            }
-        });
-        btn.addEventListener('mouseleave', () => {
-            if (btn.classList.contains('state-added')) {
-                btn.innerHTML = SVG_CHECK + ' Added';
-            }
-        });
-        btn.addEventListener('click', async () => {
-            await removeFromMasterByResult(resultId, btn);
-        });
-    } else {
-        btn.addEventListener('click', async () => {
-            await addToMasterFromBtn(btn);
-        });
-    }
-}
-
 async function addToMasterFromBtn(btn) {
     const resultId = parseInt(btn.dataset.resultId);
     try {
@@ -434,20 +463,10 @@ async function addToMasterFromBtn(btn) {
             constituency: btn.dataset.constituency || '',
         });
 
-        // Update state
         masterResultIds.add(resultId);
+        btn.dataset.inMaster = '1';
+        btn.innerHTML = SVG_CHECK + ' In record';
 
-        // Transition button to "added" state
-        btn.className = 'btn-add-master state-added ps-btn ps-btn--sm';
-        btn.innerHTML = SVG_CHECK + ' Added';
-        btn.title = 'In record (hover to remove)';
-
-        // Re-wire events for the new state
-        btn.replaceWith(btn.cloneNode(true));
-        const newBtn = document.querySelector(`.btn-add-master[data-result-id="${resultId}"]`);
-        if (newBtn) setupMasterButton(newBtn);
-
-        // Reload master list if visible
         if (typeof loadMasterList === 'function') loadMasterList();
     } catch (err) {
         console.error('Failed to add to master list:', err);
@@ -455,33 +474,68 @@ async function addToMasterFromBtn(btn) {
 }
 
 async function removeFromMasterByResult(resultId, btn) {
-    btn.className = 'btn-add-master state-removing ps-btn ps-btn--sm';
+    const origHtml = btn.innerHTML;
     btn.textContent = '…';
     try {
         await API.del(`/api/master/activity/${resultId}`);
 
-        // Update state
         masterResultIds.delete(resultId);
+        btn.dataset.inMaster = '0';
+        btn.textContent = 'Add to record';
 
-        // Transition back to "add" state
-        btn.className = 'btn-add-master state-add ps-btn ps-btn--secondary ps-btn--sm';
-        btn.textContent = 'Add';
-        btn.title = 'Add to record';
-
-        // Re-wire events
-        btn.replaceWith(btn.cloneNode(true));
-        const newBtn = document.querySelector(`.btn-add-master[data-result-id="${resultId}"]`);
-        if (newBtn) setupMasterButton(newBtn);
-
-        // Reload master list if visible
         if (typeof loadMasterList === 'function') loadMasterList();
     } catch (err) {
         console.error('Failed to remove from master:', err);
-        // Revert
-        btn.className = 'btn-add-master state-added ps-btn ps-btn--sm';
-        btn.innerHTML = SVG_CHECK + ' Added';
+        btn.innerHTML = origHtml;
     }
 }
+
+// ── Result row three-dot menu ─────────────────────────────────────────────────
+
+function toggleResultMenu(e, resultId) {
+    e.stopPropagation();
+    // Close any other open result menus
+    document.querySelectorAll('.result-actions-menu').forEach(m => {
+        if (m.id !== `result-menu-${resultId}`) m.style.display = 'none';
+    });
+    const menu = document.getElementById(`result-menu-${resultId}`);
+    if (!menu) return;
+    const isHidden = menu.style.display === 'none' || menu.style.display === '';
+    if (isHidden) {
+        const rect = e.currentTarget.getBoundingClientRect();
+        menu.style.display = 'block';
+        const menuW = menu.offsetWidth;
+        const left = Math.max(8, rect.right - menuW);
+        menu.style.top = (rect.bottom + 4) + 'px';
+        menu.style.left = left + 'px';
+    } else {
+        menu.style.display = 'none';
+    }
+}
+
+function closeResultMenu(resultId) {
+    const menu = document.getElementById(`result-menu-${resultId}`);
+    if (menu) menu.style.display = 'none';
+}
+
+document.addEventListener('click', () => {
+    document.querySelectorAll('.result-actions-menu').forEach(m => m.style.display = 'none');
+});
+
+async function discardResult(resultId, tr) {
+    try {
+        await API.post(`/api/results/${resultId}/discard`, {});
+        // Remove the row from local state and re-render
+        allResults = allResults.filter(r => r.id !== resultId);
+        currentDisplayResults = currentDisplayResults.filter(r => r.id !== resultId);
+        renderResultsPage();
+        // Reload audit panel if visible
+        if (state.currentScanId && typeof loadAudit === 'function') loadAudit(state.currentScanId);
+    } catch (err) {
+        console.error('Failed to discard result:', err);
+    }
+}
+
 
 const SOURCE_COLOURS = {
     'hansard':          { color: '#f87171', bg: 'rgba(248,113,113,0.15)', label: 'Hansard'      },
@@ -583,11 +637,72 @@ function getCellValue(row, col) {
     return String(row[col] || '').toLowerCase();
 }
 
-// Export button
-document.getElementById('exportBtn').addEventListener('click', () => {
+// ── Results header three-dot menu ─────────────────────────────────────────────
+
+const _resultsMenuBtn      = document.getElementById('resultsMenuBtn');
+const _resultsMenuDropdown = document.getElementById('resultsMenuDropdown');
+
+_resultsMenuBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const open = _resultsMenuDropdown.style.display !== 'none';
+    _resultsMenuDropdown.style.display = open ? 'none' : '';
+});
+
+document.addEventListener('click', () => {
+    _resultsMenuDropdown.style.display = 'none';
+});
+
+document.getElementById('downloadMenuItem').addEventListener('click', () => {
+    _resultsMenuDropdown.style.display = 'none';
     if (!state.currentScanId) return;
     window.location.href = `/api/scans/${state.currentScanId}/export`;
 });
+
+document.getElementById('indexExportMenuItem').addEventListener('click', () => {
+    _resultsMenuDropdown.style.display = 'none';
+    exportIndexExcel();
+});
+
+document.getElementById('shareMenuItem').addEventListener('click', async () => {
+    _resultsMenuDropdown.style.display = 'none';
+    if (!state.currentScanId) return;
+    try {
+        const data = await API.post(`/api/scans/${state.currentScanId}/share`, {});
+        const url = `${location.origin}/share/${data.share_token}`;
+        _showShareBar(url);
+    } catch (err) {
+        console.error('Failed to create share link:', err);
+    }
+});
+
+document.getElementById('copyShareLinkBtn').addEventListener('click', () => {
+    const input = document.getElementById('shareLinkInput');
+    navigator.clipboard.writeText(input.value).then(() => {
+        const btn = document.getElementById('copyShareLinkBtn');
+        btn.textContent = 'Copied!';
+        setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
+    });
+});
+
+document.getElementById('unshareBtn').addEventListener('click', async () => {
+    if (!state.currentScanId) return;
+    try {
+        await API.del(`/api/scans/${state.currentScanId}/share`);
+        _hideShareBar();
+    } catch (err) {
+        console.error('Failed to unshare:', err);
+    }
+});
+
+function _showShareBar(url) {
+    const bar = document.getElementById('shareBar');
+    document.getElementById('shareLinkInput').value = url;
+    bar.style.display = '';
+}
+
+function _hideShareBar() {
+    document.getElementById('shareBar').style.display = 'none';
+}
 
 // Audit panel
 async function loadAudit(scanId) {

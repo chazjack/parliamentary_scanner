@@ -19,6 +19,14 @@ function expandSection(sectionId) {
 
 let _resultsTab = 'results';   // 'results' | 'audit'
 let _resultsView = 'mentions'; // 'mentions' | 'members'
+let _singleMemberScan = false;
+
+function setSingleMemberMode(v) {
+    _singleMemberScan = v;
+    // If we're hiding the toggle and user was on Members, snap back to Mentions
+    if (v && _resultsView === 'members') _resultsView = 'mentions';
+    _applyResultsState();
+}
 
 function _applyResultsState() {
     const onResults = _resultsTab === 'results';
@@ -27,18 +35,21 @@ function _applyResultsState() {
 
     const el = id => document.getElementById(id);
 
-    // Sub-view selector visibility
-    el('resultsViewSelector').style.display = onResults ? '' : 'none';
+    // Sub-view selector: hide entirely for single-member scans (Members tab is redundant)
+    el('resultsViewSelector').style.display = (onResults && !_singleMemberScan) ? '' : 'none';
+    const inlineWrap = el('inlineAnalysisWrap');
+    if (inlineWrap && inlineWrap.innerHTML) inlineWrap.style.display = onResults ? '' : 'none';
 
     // Content panels
     el('mentionsContent').style.display = onMentions ? '' : 'none';
     el('membersContent').style.display  = onMembers  ? '' : 'none';
     el('auditTabContent').style.display = onResults  ? 'none' : '';
 
-    // Export buttons
-    el('exportBtn').style.display = onMentions ? '' : 'none';
+    // Export menu items — show/hide within the three-dot dropdown
+    el('downloadMenuItem').style.display = onMentions ? '' : 'none';
+    el('shareMenuItem').style.display = onMentions ? '' : 'none';
     const hasIndexData = typeof _idx !== 'undefined' && _idx.data !== null;
-    el('indexExportBtn').style.display = (onMembers && hasIndexData) ? '' : 'none';
+    el('indexExportMenuItem').style.display = (onMembers && hasIndexData) ? '' : 'none';
 
     // Tab button states
     el('resultsTabBtn').classList.toggle('results-tab-active', onResults);

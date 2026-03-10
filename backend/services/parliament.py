@@ -1398,7 +1398,7 @@ class ParliamentAPIClient:
             # Parliament Members API IDs for newer MPs. Use sponsor name as a
             # fallback guard so we only keep EDMs actually tabled by this member.
             target_name_lower = member_name.lower().strip()
-            target_surname = target_name_lower.split()[-1] if target_name_lower else ""
+            target_parts = target_name_lower.split() if target_name_lower else []
 
             for edm in response:
                 edm_id = str(edm.get("Id", ""))
@@ -1410,8 +1410,11 @@ class ParliamentAPIClient:
                 sponsor_id = str(sponsor.get("MnisId", member_id))
                 sponsors_count = edm.get("SponsorsCount", 0)
 
-                # Skip EDMs not actually sponsored by this member
-                if target_surname and target_surname not in sponsor_name.lower():
+                # Skip EDMs not actually sponsored by this member.
+                # Match all parts of the target name against the sponsor name to
+                # avoid false positives from members sharing the same surname.
+                sponsor_name_lower = sponsor_name.lower()
+                if target_parts and not all(part in sponsor_name_lower for part in target_parts):
                     continue
 
                 try:
@@ -1456,8 +1459,9 @@ class ParliamentAPIClient:
         """
         sessions = await self._load_oral_evidence_sessions(start_date, end_date)
 
-        # Match on surname to handle "Baroness X", "Mr X MP" etc.
-        surname = member_name.strip().split()[-1].lower() if member_name.strip() else ""
+        # Use surname for broad text search; handles "Baroness X", "Mr X MP" etc.
+        name_parts = [p.lower() for p in member_name.strip().split()] if member_name.strip() else []
+        surname = name_parts[-1] if name_parts else ""
         if not surname or len(surname) < 3:
             return []
 
@@ -1467,12 +1471,17 @@ class ParliamentAPIClient:
                 continue
 
             all_names = s.get("parliamentarians", []) + s.get("witnesses", [])
-            # Verify the name actually appears in the participant lists, not just body text
-            if not any(surname in n.lower() for n in all_names):
+            # Verify the member actually participated: all name parts must appear in
+            # at least one participant entry to avoid false positives from same surname.
+            def name_matches(n: str) -> bool:
+                n_lower = n.lower()
+                return all(part in n_lower for part in name_parts)
+
+            if not any(name_matches(n) for n in all_names):
                 continue
 
             # Use the specific matched participant name rather than all participants
-            matched_name = next((n for n in all_names if surname in n.lower()), member_name)
+            matched_name = next((n for n in all_names if name_matches(n)), member_name)
             context = s["inquiry_name"] or s["committee_name"] or "Select Committee Oral Evidence"
             url = f"https://committees.parliament.uk/oralevidence/{s['id']}/html/"
 

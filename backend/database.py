@@ -58,7 +58,8 @@ CREATE TABLE IF NOT EXISTS scans (
     llm_input_tokens INTEGER DEFAULT 0,
     llm_output_tokens INTEGER DEFAULT 0,
     llm_cache_read_tokens INTEGER DEFAULT 0,
-    llm_cache_write_tokens INTEGER DEFAULT 0
+    llm_cache_write_tokens INTEGER DEFAULT 0,
+    share_token TEXT
 );
 
 CREATE TABLE IF NOT EXISTS results (
@@ -477,6 +478,20 @@ async def init_db():
             )
             await db.commit()
             logger.info("Migrated scans: added username column")
+        if "share_token" not in scan_columns:
+            await db.execute("ALTER TABLE scans ADD COLUMN share_token TEXT")
+            await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_scans_share_token ON scans(share_token) WHERE share_token IS NOT NULL")
+            await db.commit()
+            logger.info("Migrated scans: added share_token column")
+
+        # Migration: results - add share_token column
+        cursor = await db.execute("PRAGMA table_info(results)")
+        result_columns = [row[1] for row in await cursor.fetchall()]
+        if "share_token" not in result_columns:
+            await db.execute("ALTER TABLE results ADD COLUMN share_token TEXT")
+            await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_results_share_token ON results(share_token) WHERE share_token IS NOT NULL")
+            await db.commit()
+            logger.info("Migrated results: added share_token column")
 
         # Migration: email_alerts - add user_id
         cursor = await db.execute("PRAGMA table_info(email_alerts)")
@@ -645,6 +660,19 @@ async def get_all_topics(db: aiosqlite.Connection, user_id=None) -> list[dict]:
         keywords = [r["keyword"] for r in await kw_cursor.fetchall()]
         topics.append({"id": row["id"], "name": row["name"], "keywords": keywords})
     return topics
+
+
+async def get_topic_names_by_ids(db: aiosqlite.Connection, topic_ids: list[int]) -> list[str]:
+    """Return topic names for the given IDs, preserving order."""
+    if not topic_ids:
+        return []
+    placeholders = ",".join("?" * len(topic_ids))
+    cursor = await db.execute(
+        f"SELECT id, name FROM topics WHERE id IN ({placeholders})",
+        topic_ids,
+    )
+    rows = {row["id"]: row["name"] for row in await cursor.fetchall()}
+    return [rows[i] for i in topic_ids if i in rows]
 
 
 async def create_topic(
@@ -850,6 +878,81 @@ async def get_scan_results(
         (scan_id,),
     )
     return [dict(row) for row in await cursor.fetchall()]
+
+
+async def set_scan_share_token(db: aiosqlite.Connection, scan_id: int, token):
+    await db.execute("UPDATE scans SET share_token = ? WHERE id = ?", (token, scan_id))
+    await db.commit()
+
+
+async def get_scan_by_share_token(db: aiosqlite.Connection, token: str) -> dict | None:
+    cursor = await db.execute("SELECT * FROM scans WHERE share_token = ?", (token,))
+    row = await cursor.fetchone()
+    return dict(row) if row else None
+
+
+async def get_result_by_id(db: aiosqlite.Connection, result_id: int) -> dict | None:
+    """Get a single scan result by ID."""
+    cursor = await db.execute("SELECT * FROM results WHERE id = ?", (result_id,))
+    row = await cursor.fetchone()
+    return dict(row) if row else None
+
+
+async def set_result_share_token(db: aiosqlite.Connection, result_id: int, token: str):
+    await db.execute("UPDATE results SET share_token = ? WHERE id = ?", (token, result_id))
+    await db.commit()
+
+
+async def get_result_by_share_token(db: aiosqlite.Connection, token: str) -> dict | None:
+    """Get a result (joined with scan meta) by its share token."""
+    cursor = await db.execute(
+        """SELECT r.*, s.start_date, s.end_date, s.created_at AS scan_created_at
+           FROM results r
+           JOIN scans s ON s.id = r.scan_id
+           WHERE r.share_token = ?""",
+        (token,),
+    )
+    row = await cursor.fetchone()
+    return dict(row) if row else None
+
+
+async def discard_result(db: aiosqlite.Connection, result_id: int, user_id: int) -> bool:
+    """Move a result to the audit_log (user-discarded) and remove from results.
+    Returns True if the result was found and discarded, False otherwise."""
+    # Verify ownership via scan
+    cursor = await db.execute(
+        "SELECT r.* FROM results r JOIN scans s ON s.id = r.scan_id WHERE r.id = ? AND s.user_id = ?",
+        (result_id, user_id),
+    )
+    row = await cursor.fetchone()
+    if not row:
+        return False
+    result = dict(row)
+
+    text_preview = (result.get("verbatim_quote") or result.get("summary") or "")[:500]
+    full_text = result.get("raw_text") or result.get("verbatim_quote") or ""
+
+    await db.execute(
+        """INSERT INTO audit_log
+           (scan_id, member_name, source_type, text_preview, classification,
+            activity_date, context, full_text, matched_keywords, source_url,
+            discard_reason, discard_category)
+           VALUES (?, ?, ?, ?, 'user_discarded', ?, ?, ?, ?, ?, 'Manually discarded by user', 'user_discarded')""",
+        (
+            result["scan_id"],
+            result["member_name"],
+            result.get("source_type", ""),
+            text_preview,
+            result.get("activity_date", ""),
+            result.get("forum", ""),
+            full_text,
+            result.get("topics", "[]"),
+            result.get("source_url", ""),
+        ),
+    )
+    await db.execute("DELETE FROM results WHERE id = ?", (result_id,))
+    await db.commit()
+    return True
 
 
 async def insert_audit_log(

@@ -2,11 +2,12 @@
 
 import asyncio
 import json
+import uuid as _uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
-from backend.database import get_db, get_scan, get_scan_list, create_scan, update_scan_progress
+from backend.database import get_db, get_scan, get_scan_list, create_scan, update_scan_progress, set_scan_share_token
 from backend.deps import get_current_user
 from backend.models import ScanCreate
 from backend.services.scanner import get_active_scan_count, MAX_CONCURRENT_SCANS
@@ -190,10 +191,41 @@ async def scan_results(scan_id: int, user: dict = Depends(get_current_user)):
 
     db = await get_db()
     try:
-        scan = await get_scan(db, scan_id, user_id=user["id"])
+        uid = None if user.get("is_admin") else user["id"]
+        scan = await get_scan(db, scan_id, user_id=uid)
         if not scan:
             raise HTTPException(404, "Scan not found")
         results = await get_scan_results(db, scan_id)
         return {"scan": dict(scan), "results": results}
+    finally:
+        await db.close()
+
+
+@router.post("/{scan_id}/share")
+async def share_scan(scan_id: int, user: dict = Depends(get_current_user)):
+    db = await get_db()
+    try:
+        uid = None if user.get("is_admin") else user["id"]
+        scan = await get_scan(db, scan_id, user_id=uid)
+        if not scan:
+            raise HTTPException(404, "Scan not found")
+        token = scan.get("share_token") or _uuid.uuid4().hex
+        if not scan.get("share_token"):
+            await set_scan_share_token(db, scan_id, token)
+        return {"share_token": token}
+    finally:
+        await db.close()
+
+
+@router.delete("/{scan_id}/share")
+async def unshare_scan(scan_id: int, user: dict = Depends(get_current_user)):
+    db = await get_db()
+    try:
+        uid = None if user.get("is_admin") else user["id"]
+        scan = await get_scan(db, scan_id, user_id=uid)
+        if not scan:
+            raise HTTPException(404, "Scan not found")
+        await set_scan_share_token(db, scan_id, None)
+        return {"ok": True}
     finally:
         await db.close()

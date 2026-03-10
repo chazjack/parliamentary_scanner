@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
 from backend.database import init_db, get_db, cleanup_stuck_scans, get_session_user
-from backend.routers import topics, scans, results, master, lookahead, alerts, auth, groups, index, admin
+from backend.routers import topics, scans, results, master, lookahead, alerts, auth, groups, index, admin, share
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ app = FastAPI(title="Parliamentary Monitor", version="2.0.0")
 async def auth_middleware(request: Request, call_next):
     """Protect all /api/* routes except /api/auth/* with session cookie."""
     path = request.url.path
-    if path.startswith("/api/") and not path.startswith("/api/auth/"):
+    if path.startswith("/api/") and not path.startswith("/api/auth/") and not path.startswith("/api/share/"):
         token = request.cookies.get("session")
         if not token:
             return JSONResponse({"detail": "Not authenticated."}, status_code=401)
@@ -51,6 +51,7 @@ app.include_router(alerts.router)
 app.include_router(groups.router)
 app.include_router(index.router)
 app.include_router(admin.router)
+app.include_router(share.router)
 
 
 @app.on_event("startup")
@@ -128,6 +129,10 @@ async def serve_spa(full_path: str, request: Request):
     # Serve login page without auth.
     if full_path == "login":
         return FileResponse(FRONTEND_DIR / "login.html", headers=NO_CACHE_HEADERS)
+
+    # Serve share page without auth.
+    if full_path.startswith("share/"):
+        return FileResponse(FRONTEND_DIR / "share.html", headers=NO_CACHE_HEADERS)
 
     # All other routes require a valid session.
     token = request.cookies.get("session")

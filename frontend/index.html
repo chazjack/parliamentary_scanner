@@ -209,22 +209,40 @@
                         <h2 id="auditTabBtn" class="results-tab-btn" onclick="switchResultsTab('audit')">Discarded</h2>
                     </div>
                     <div style="display:flex;align-items:center;gap:6px;">
-                        <button id="exportBtn" class="ps-btn ps-btn--ghost ps-btn--sm" title="Export to Excel" style="display:inline-flex;align-items:center;border:none;">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-                            </svg>
-                        </button>
-                        <button id="indexExportBtn" class="ps-btn ps-btn--ghost ps-btn--sm" onclick="exportIndexExcel()" title="Export Members to Excel" style="display:none;align-items:center;border:none;">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-                            </svg>
-                        </button>
+                        <div style="position:relative;" id="resultsMenuWrap">
+                            <button id="resultsMenuBtn" class="ps-btn ps-btn--ghost ps-btn--sm" title="More options" style="display:inline-flex;align-items:center;border:none;padding:6px 8px;">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1.2" fill="currentColor" stroke="none"/></svg>
+                            </button>
+                            <div id="resultsMenuDropdown" class="results-menu-dropdown" style="display:none;">
+                                <button id="shareMenuItem" class="results-menu-item">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                                    Share
+                                </button>
+                                <button id="downloadMenuItem" class="results-menu-item">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                    Download
+                                </button>
+                                <button id="indexExportMenuItem" class="results-menu-item" style="display:none;">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                    Export Members
+                                </button>
+                            </div>
+                        </div>
                         <button class="section-collapse-btn" onclick="toggleSection('results-section')" title="Collapse">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
                         </button>
                     </div>
                 </div>
+                <!-- Share bar (shown when a share link is active) -->
+                <div id="shareBar" class="share-bar" style="display:none;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;opacity:0.6;"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                    <input id="shareLinkInput" type="text" readonly class="share-bar__input">
+                    <button id="copyShareLinkBtn" class="ps-btn ps-btn--ghost ps-btn--sm share-bar__copy">Copy</button>
+                    <button id="unshareBtn" class="ps-btn ps-btn--ghost ps-btn--sm share-bar__unshare">Unshare</button>
+                </div>
                 <div class="section-body" id="resultsSectionBody">
+                    <!-- Inline analysis: auto-shown for single-member scans -->
+                    <div id="inlineAnalysisWrap" style="display:none;margin-bottom:16px;"></div>
                     <!-- Sub-view selector: Mentions / Members (shown on Results tab only) -->
                     <div id="resultsViewSelector" style="margin-bottom:12px;">
                         <div class="results-view-group">

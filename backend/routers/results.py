@@ -14,6 +14,7 @@ from backend.config import ANTHROPIC_API_KEY, ANTHROPIC_MODEL
 from backend.database import (
     get_db, get_scan, get_scan_results, get_audit_log,
     get_audit_summary, get_audit_entry, get_all_topics, insert_result,
+    discard_result,
 )
 from backend.deps import get_current_user
 from backend.models import AuditReclassifyRequest
@@ -229,3 +230,17 @@ async def reclassify_audit_item(body: AuditReclassifyRequest, user: dict = Depen
 
     finally:
         await db.close()
+
+
+@router.post("/results/{result_id}/discard")
+async def discard_result_endpoint(result_id: int, user: dict = Depends(get_current_user)):
+    """Move a result to the discarded pile (audit_log) and remove it from results."""
+    db = await get_db()
+    try:
+        ok = await discard_result(db, result_id, user["id"])
+        if not ok:
+            raise HTTPException(404, "Result not found")
+        return {"discarded": True}
+    finally:
+        await db.close()
+
