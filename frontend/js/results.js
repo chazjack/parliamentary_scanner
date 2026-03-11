@@ -65,6 +65,13 @@ const PARTY_DOT_MAP = {
     'Democratic Unionist Party': 'dup',
 };
 
+function topicChip(name) {
+    const MAX = 15, TRUNC = 13;
+    const display = name.length > MAX ? name.slice(0, TRUNC) + '…' : name;
+    const titleAttr = name.length > MAX ? ` title="${escapeHtml(name)}"` : '';
+    return `<span class="ps-chip-topic-wrap ps-chip-topic-wrap--view-only"${titleAttr}><span class="ps-chip">${escapeHtml(display)}</span></span>`;
+}
+
 function partyDotClass(party) {
     return PARTY_DOT_MAP[party] || 'independent';
 }
@@ -319,7 +326,7 @@ function renderResultsPage() {
         const msg = state.currentScanId
             ? 'No results.'
             : 'No scan selected or active.';
-        tbody.innerHTML = `<tr><td colspan="7" class="empty-state-preview">${msg}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" class="empty-state-preview">${msg}</td></tr>`;
         renderResultsPagination();
         return;
     }
@@ -365,17 +372,19 @@ function renderResultsPage() {
         // Master state for the menu item label
         const inMaster = masterResultIds.has(r.id);
 
-        // Merged Party + Type column
-        const typeSmall = r.member_type ? `<br>${typePill(r.member_type)}` : '';
+        // Party + Type below name
+        const typeSmall = r.member_type ? ` ${typePill(r.member_type)}` : '';
+        const partyLine = (r.party || r.member_type)
+            ? `<div class="ps-member__meta">${partyPill(r.party || '—')}${typeSmall}</div>`
+            : '';
 
-        // One badge per topic
+        // One badge per topic (truncated to 12 chars with hover tooltip)
         const topicBadges = topicNames.length
-            ? topicNames.map(t => `<span class="ps-chip-topic-wrap ps-chip-topic-wrap--view-only"><span class="ps-chip">${escapeHtml(t)}</span></span>`).join(' ')
+            ? `<div class="topic-badge-list">${topicNames.map(t => topicChip(t)).join('')}</div>`
             : '—';
 
         tr.innerHTML = `
-            <td><div class="ps-member"><span class="ps-member__name mp-member-link">${escapeHtml(r.member_name)}</span></div></td>
-            <td>${partyPill(r.party || '—')}${typeSmall}</td>
+            <td><div class="ps-member"><span class="ps-member__name mp-member-link">${escapeHtml(r.member_name)}</span>${partyLine}</div></td>
             <td>${topicBadges}</td>
             <td>${escapeHtml(r.summary || '—')}</td>
             <td>${quoteHtml}</td>

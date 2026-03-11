@@ -786,6 +786,13 @@ u    padding: 0;
     border-radius: 20px;
 }
 
+/* Topic badge list in results table — wraps pills onto new lines */
+.topic-badge-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
 .topic-add-input-legacy {
     flex: 1;
     padding: 4px 10px;
@@ -2031,11 +2038,13 @@ u    padding: 0;
     display: flex;
     align-items: center;
     gap: 8px;
+    flex: 1;
+    min-width: 0;
     background: rgba(255,255,255,0.04);
     border: 1px solid rgba(255,255,255,0.1);
     border-radius: 8px;
-    padding: 8px 12px;
-    margin-bottom: 12px;
+    padding: 4px 10px;
+    margin: 0 8px;
 }
 
 .share-bar__input {
@@ -4016,6 +4025,7 @@ u    padding: 0;
     display: flex;
     gap: 4px;
     flex-shrink: 0;
+    flex-wrap: wrap;
 }
 
 .la-list-badge {

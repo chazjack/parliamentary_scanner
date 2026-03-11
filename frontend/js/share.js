@@ -71,6 +71,13 @@ function trimQuote(text, max = 70) {
     return words.slice(0, max).join(' ') + '…';
 }
 
+function topicChip(name) {
+    const MAX = 15, TRUNC = 13;
+    const display = name.length > MAX ? name.slice(0, TRUNC) + '…' : name;
+    const titleAttr = name.length > MAX ? ` title="${escapeHtml(name)}"` : '';
+    return `<span class="ps-chip-topic-wrap ps-chip-topic-wrap--view-only"${titleAttr}><span class="ps-chip">${escapeHtml(display)}</span></span>`;
+}
+
 function partyPill(party) {
     if (!party || party === '—') return '—';
     const c = PARTY_COLOURS[party];
@@ -242,14 +249,16 @@ function renderShareResultsPage() {
             quoteHtml = `<a href="${escapeHtml(r.source_url)}" target="_blank" class="quote-link">${quoteHtml}</a>`;
         }
 
-        const typeSmall = r.member_type ? `<br>${typePill(r.member_type)}` : '';
+        const typeSmall = r.member_type ? ` ${typePill(r.member_type)}` : '';
+        const partyLine = (r.party || r.member_type)
+            ? `<div class="ps-member__meta">${partyPill(r.party || '—')}${typeSmall}</div>`
+            : '';
         const topicBadges = topicNames.length
-            ? topicNames.map(t => `<span class="ps-chip-topic-wrap ps-chip-topic-wrap--view-only"><span class="ps-chip">${escapeHtml(t)}</span></span>`).join(' ')
+            ? `<div class="topic-badge-list">${topicNames.map(t => topicChip(t)).join('')}</div>`
             : '—';
 
         tr.innerHTML = `
-            <td><div class="ps-member"><span class="ps-member__name mp-member-link" style="cursor:pointer;">${escapeHtml(r.member_name)}</span></div></td>
-            <td>${partyPill(r.party || '—')}${typeSmall}</td>
+            <td><div class="ps-member"><span class="ps-member__name mp-member-link" style="cursor:pointer;">${escapeHtml(r.member_name)}</span>${partyLine}</div></td>
             <td>${topicBadges}</td>
             <td>${escapeHtml(r.summary || '—')}</td>
             <td>${quoteHtml}</td>

@@ -124,6 +124,67 @@
         #shareMembersTable tbody tr:hover {
             background: var(--ps-bg-subtle);
         }
+
+        /* ── Mobile ────────────────────────────────────────────────────── */
+        @media (max-width: 640px) {
+            .share-page-wrap {
+                padding: 14px 12px 48px;
+            }
+
+            .share-page-header {
+                margin-bottom: 20px;
+                padding-bottom: 14px;
+            }
+
+            .share-page-logo-text {
+                font-size: 1rem;
+            }
+
+            /* Pipe-box stat row: allow wrapping, shrink boxes */
+            .share-summary-row {
+                gap: 6px;
+            }
+
+            .share-summary-row .pipe-box {
+                flex: 1 1 auto;
+                min-width: 80px;
+            }
+
+            /* Results section: remove clip so inner wrapper can scroll */
+            #share-results-section {
+                padding: 12px 12px;
+                overflow-x: visible;
+            }
+
+            /* Table wrappers scroll horizontally */
+            #shareMentionsContent .table-container,
+            #shareMembersContent .table-container,
+            #shareMentionsContent .ps-table-wrapper,
+            #shareMembersContent .ps-table-wrapper {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            /* View-by toggle: tighten */
+            #shareResultsViewSelector {
+                margin-bottom: 8px;
+            }
+
+            /* Analysis panel */
+            #analysis-section .analysis-body {
+                padding: 12px;
+            }
+
+            /* Inline timeline: tighten */
+            #inlineAnalysisWrap {
+                margin-bottom: 10px;
+            }
+
+            /* Pagination: centre on mobile */
+            .history-pagination {
+                justify-content: center;
+            }
+        }
     </style>
 </head>
 <body class="ps-app" style="background:var(--ps-bg,#0f1117);">
@@ -167,8 +228,7 @@
                         <thead>
                             <tr>
                                 <th>Name</th>
-                                <th>Party</th>
-                                <th>Topic(s)</th>
+                                <th>Topics</th>
                                 <th>Summary</th>
                                 <th>Quote</th>
                                 <th>Source</th>

@@ -675,9 +675,20 @@
   white-space: nowrap;
 }
 
-#resultsTable .ps-member {
+#resultsTable .ps-member,
+#shareResultsTable .ps-member {
   white-space: normal;
   max-width: 150px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.ps-member__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
 }
 
 .ps-member__name {
@@ -981,7 +992,6 @@
   color: var(--ps-text-primary);
   line-height: 1.4;
   max-width: 100%;
-  word-break: break-all;
 }
 
 .ps-email-input__tag-remove {
@@ -1038,6 +1048,40 @@
 
 .ps-email-input__error:empty {
   display: none;
+}
+
+
+/* ============================================================================
+   GLOBAL PILL RULE
+   All pill/badge/chip elements must never wrap their text onto a second line.
+   If there isn't enough space, the whole pill moves to the next line in its
+   flex container (flex-wrap: wrap handles this at the container level).
+   ============================================================================ */
+
+.ps-badge,
+.ps-chip,
+.ps-pill,
+.ps-chip-topic-wrap,
+.ps-email-input__tag,
+.pill,
+.kw-chip,
+.discard-pill,
+.count-badge,
+.new-badge,
+.history-status,
+.member-selected-pill,
+.topic-pill,
+.la-list-badge,
+.la-filter-badge,
+.la-recess-badge,
+.la-grid-untimed-pill,
+.pipe-box-badge,
+.atl-tip-badge,
+.ps-forum-date,
+.summaryScanDate,
+#summaryScanDate {
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 
