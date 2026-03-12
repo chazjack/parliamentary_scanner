@@ -50,10 +50,9 @@ function renderAdminDashboard(data) {
                                 <td>${formatLastOnline(u.last_online_at)}</td>
                                 <td>${u.scan_count || 0}</td>
                                 <td>${u.last_scan_at ? u.last_scan_at.split('T')[0] : '—'}</td>
-                                <td>
-                                    <div style="display:flex;gap:6px;justify-content:flex-end;">
-                                        <button class="ps-btn ps-btn--ghost ps-btn--sm" onclick="handleResetPassword(${u.id}, '${escapeHtml(u.username)}')">Reset password</button>
-                                        ${u.id === selfId ? '' : (u.is_admin && adminCount <= 1) ? '' : `<button class="ps-btn ps-btn--ghost ps-btn--sm" style="color:var(--ps-danger);border-color:var(--ps-danger-border);" onclick="handleDeleteUser(${u.id}, '${escapeHtml(u.username)}')">Delete</button>`}
+                                <td style="text-align:right;">
+                                    <div class="audit-actions-dropdown">
+                                        <button class="ps-btn ps-btn--ghost ps-btn--sm audit-actions-trigger" onclick="toggleUserMenu(this, ${u.id}, '${escapeHtml(u.username)}', ${u.id === selfId}, ${u.is_admin && adminCount <= 1})">&#8942;</button>
                                     </div>
                                 </td>
                             </tr>
@@ -110,6 +109,83 @@ async function handleCreateUser(e) {
     } catch (e) {
         msg.style.color = 'var(--ps-danger)';
         msg.textContent = `Error: ${e.message}`;
+    }
+}
+
+function toggleUserMenu(btn, userId, username, isSelf, isLastAdmin) {
+    // Close any existing user menus
+    document.querySelectorAll('.user-actions-menu').forEach(m => m.remove());
+
+    const existing = btn._menuOpen;
+    btn._menuOpen = false;
+    if (existing) return;
+
+    const menu = document.createElement('div');
+    menu.className = 'audit-actions-menu user-actions-menu';
+
+    const renameBtn = document.createElement('button');
+    renameBtn.textContent = 'Rename user';
+    renameBtn.onclick = () => { menu.remove(); btn._menuOpen = false; handleRenameUser(userId, username); };
+    menu.appendChild(renameBtn);
+
+    const resetBtn = document.createElement('button');
+    resetBtn.textContent = 'Reset password';
+    resetBtn.onclick = () => { menu.remove(); btn._menuOpen = false; handleResetPassword(userId, username); };
+    menu.appendChild(resetBtn);
+
+    if (!isSelf && !isLastAdmin) {
+        const sep = document.createElement('div');
+        sep.style.cssText = 'height:1px;background:var(--ps-border-default);margin:4px 0;';
+        menu.appendChild(sep);
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.textContent = 'Delete user';
+        deleteBtn.style.color = 'var(--ps-danger)';
+        deleteBtn.onclick = () => { menu.remove(); btn._menuOpen = false; handleDeleteUser(userId, username); };
+        menu.appendChild(deleteBtn);
+    }
+
+    document.body.appendChild(menu);
+    btn._menuOpen = true;
+
+    const rect = btn.getBoundingClientRect();
+    const menuW = 160;
+    let left = rect.right - menuW;
+    let top = rect.bottom + 4;
+    if (left < 4) left = 4;
+    menu.style.left = left + 'px';
+    menu.style.top = top + 'px';
+    menu.style.minWidth = menuW + 'px';
+    menu.style.position = 'fixed';
+    menu.style.zIndex = '9999';
+
+    const close = (e) => {
+        if (!menu.contains(e.target) && e.target !== btn) {
+            menu.remove();
+            btn._menuOpen = false;
+            document.removeEventListener('mousedown', close);
+        }
+    };
+    setTimeout(() => document.addEventListener('mousedown', close), 0);
+}
+
+async function handleRenameUser(userId, currentUsername) {
+    const newUsername = prompt(`Rename '${currentUsername}' to:`, currentUsername);
+    if (!newUsername || newUsername.trim() === currentUsername) return;
+    try {
+        const res = await fetch(`/api/admin/users/${userId}/username`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: newUsername.trim() }),
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            alert(`Failed to rename user: ${err.detail || res.statusText}`);
+            return;
+        }
+        loadAdminDashboard();
+    } catch (e) {
+        alert(`Failed to rename user: ${e.message}`);
     }
 }
 

@@ -3005,6 +3005,17 @@ u    padding: 0;
     #resultsTable td {
         padding: 8px 6px;
     }
+
+    /* Share bar drops onto its own line below the tabs/buttons */
+    .results-header {
+        flex-wrap: wrap;
+    }
+
+    #shareBar {
+        order: 3;
+        flex: 1 1 100%;
+        margin: 4px 0 0;
+    }
 }
 
 /* Mobile devices (480px and below) */
@@ -5084,6 +5095,8 @@ u    padding: 0;
     border-radius: 999px;
     padding: 2px 10px;
     letter-spacing: 0;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .analysis-close-btn {
@@ -5115,6 +5128,7 @@ u    padding: 0;
 .atl-header-row {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 12px;
     margin-bottom: 16px;
 }

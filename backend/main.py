@@ -100,6 +100,7 @@ async def shutdown():
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
 NO_CACHE_HEADERS = {"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"}
+IMMUTABLE_CACHE_HEADERS = {"Cache-Control": "public, max-age=31536000, immutable"}
 
 # Generated once per server start — changes on every Railway redeploy,
 # which busts browser caches for all JS/CSS files.
@@ -107,12 +108,15 @@ _BUILD_ID = str(int(time.time()))
 
 # Pre-process index.html: stamp ?v=<build_id> onto every JS/CSS URL so browsers
 # always fetch fresh assets after a redeploy.
-_RAW_HTML = (FRONTEND_DIR / "index.html").read_text()
-_VERSIONED_HTML = re.sub(
-    r'((?:src|href)="(?:/[^"]+\.(?:js|css))")',
-    lambda m: m.group(1)[:-1] + f'?v={_BUILD_ID}"',
-    _RAW_HTML,
-)
+def _stamp_assets(html: str) -> str:
+    return re.sub(
+        r'((?:src|href)="(?:/[^"]+\.(?:js|css))")',
+        lambda m: m.group(1)[:-1] + f'?v={_BUILD_ID}"',
+        html,
+    )
+
+_VERSIONED_HTML = _stamp_assets((FRONTEND_DIR / "index.html").read_text())
+_VERSIONED_SHARE_HTML = _stamp_assets((FRONTEND_DIR / "share.html").read_text())
 
 # Static asset extensions that are served without an auth check.
 _STATIC_SUFFIXES = {".css", ".js", ".svg", ".ico", ".png", ".jpg", ".jpeg", ".woff", ".woff2", ".ttf"}
@@ -124,7 +128,7 @@ async def serve_spa(full_path: str, request: Request):
 
     # Always serve static assets without auth (CSS, JS, images, fonts).
     if file_path.is_file() and file_path.suffix in _STATIC_SUFFIXES:
-        return FileResponse(file_path, headers=NO_CACHE_HEADERS)
+        return FileResponse(file_path, headers=IMMUTABLE_CACHE_HEADERS)
 
     # Serve login page without auth.
     if full_path == "login":
@@ -132,7 +136,7 @@ async def serve_spa(full_path: str, request: Request):
 
     # Serve share page without auth.
     if full_path.startswith("share/"):
-        return FileResponse(FRONTEND_DIR / "share.html", headers=NO_CACHE_HEADERS)
+        return HTMLResponse(_VERSIONED_SHARE_HTML, headers=NO_CACHE_HEADERS)
 
     # All other routes require a valid session.
     token = request.cookies.get("session")

@@ -434,6 +434,26 @@ async def init_db():
             await db.commit()
             logger.info("Migrated topics: added user_id column")
 
+        # Migration: fix keywords FK if it was left pointing at _topics_old
+        cursor = await db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='keywords'")
+        row = await cursor.fetchone()
+        if row and "_topics_old" in (row[0] or ""):
+            await db.execute("PRAGMA foreign_keys = OFF")
+            await db.execute("""
+                CREATE TABLE _keywords_fixed (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    topic_id INTEGER NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+                    keyword TEXT NOT NULL,
+                    UNIQUE(topic_id, keyword)
+                )
+            """)
+            await db.execute("INSERT INTO _keywords_fixed (id, topic_id, keyword) SELECT id, topic_id, keyword FROM keywords")
+            await db.execute("DROP TABLE keywords")
+            await db.execute("ALTER TABLE _keywords_fixed RENAME TO keywords")
+            await db.execute("PRAGMA foreign_keys = ON")
+            await db.commit()
+            logger.info("Migrated keywords: fixed FK reference from _topics_old to topics")
+
         # Migration: scans - add user_id column
         cursor = await db.execute("PRAGMA table_info(scans)")
         scan_columns = [row[1] for row in await cursor.fetchall()]

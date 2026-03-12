@@ -26,6 +26,10 @@ class ResetPasswordRequest(BaseModel):
     password: str
 
 
+class RenameUserRequest(BaseModel):
+    username: str
+
+
 @router.get("/users")
 async def list_users(admin: dict = Depends(require_admin)):
     db = await get_db()
@@ -74,6 +78,28 @@ async def delete_user_endpoint(user_id: int, admin: dict = Depends(require_admin
                 raise HTTPException(400, "Cannot delete the last admin account")
         deleted = await delete_user(db, user_id)
         if not deleted:
+            raise HTTPException(404, "User not found")
+        return {"ok": True}
+    finally:
+        await db.close()
+
+
+@router.patch("/users/{user_id}/username")
+async def rename_user_endpoint(user_id: int, body: RenameUserRequest, admin: dict = Depends(require_admin)):
+    if not body.username.strip():
+        raise HTTPException(400, "Username cannot be empty")
+    db = await get_db()
+    try:
+        try:
+            cursor = await db.execute(
+                "UPDATE users SET username = ? WHERE id = ?", (body.username.strip(), user_id)
+            )
+            await db.commit()
+        except Exception as e:
+            if "UNIQUE" in str(e):
+                raise HTTPException(400, f"Username '{body.username.strip()}' already exists")
+            raise
+        if cursor.rowcount == 0:
             raise HTTPException(404, "User not found")
         return {"ok": True}
     finally:

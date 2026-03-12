@@ -237,6 +237,7 @@ function renderShareResultsPage() {
 
     for (const r of pageResults) {
         const tr = document.createElement('tr');
+        if (r.id) tr.id = `result-row-${r.id}`;
 
         let topics = r.topics;
         try { topics = JSON.parse(r.topics); } catch (e) {}
@@ -432,6 +433,35 @@ function shareSetView(view) {
     document.getElementById('shareMembersContent').style.display  = view === 'members'  ? '' : 'none';
     document.getElementById('shareMentionsViewBtn').classList.toggle('results-view-seg__btn--active', view === 'mentions');
     document.getElementById('shareMembersViewBtn').classList.toggle('results-view-seg__btn--active', view === 'members');
+}
+
+// ── Dot click: navigate to the row in the mentions table ──────────────────────
+// Overrides the version in member-profile.js (share.js loads second)
+
+function _atlDotClick(e) {
+    const resultId = parseInt(e.currentTarget.dataset.resultId);
+    if (!resultId) return;
+
+    const idx = _shareDisplayResults.findIndex(r => r.id === resultId);
+    if (idx === -1) return;
+
+    // Switch to mentions view in case members view is active
+    shareSetView('mentions');
+
+    const targetPage = Math.floor(idx / _SHARE_PER_PAGE) + 1;
+    if (targetPage !== _sharePage) {
+        _sharePage = targetPage;
+        renderShareResultsPage();
+    }
+
+    requestAnimationFrame(() => {
+        const row = document.getElementById(`result-row-${resultId}`);
+        if (row) {
+            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            row.classList.add('result-row--flash');
+            setTimeout(() => row.classList.remove('result-row--flash'), 2000);
+        }
+    });
 }
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────

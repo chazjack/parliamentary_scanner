@@ -5,7 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ParliScan — Shared Results</title>
     <link rel="icon" type="image/svg+xml" href="/icon-no-bg (1).svg">
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap"></noscript>
     <link rel="stylesheet" href="/css/parliscan-tokens.css">
     <link rel="stylesheet" href="/css/parliscan-components.css">
     <link rel="stylesheet" href="/css/styles.css">
@@ -127,6 +130,12 @@
 
         /* ── Mobile ────────────────────────────────────────────────────── */
         @media (max-width: 640px) {
+            /* Prevent page-level horizontal overflow */
+            body {
+                overflow-x: hidden;
+                max-width: 100vw;
+            }
+
             .share-page-wrap {
                 padding: 14px 12px 48px;
             }
@@ -140,47 +149,56 @@
                 font-size: 1rem;
             }
 
-            /* Pipe-box stat row: allow wrapping, shrink boxes */
+            /* Summary rows: tighten gap */
             .share-summary-row {
                 gap: 6px;
             }
 
+            /* Section labels (Member / Topics / Sources) go on their own line
+               so the pills below have the full row width to wrap into */
+            .share-summary-section-label {
+                flex-basis: 100%;
+                margin-right: 0;
+                margin-bottom: 2px;
+            }
+
+            /* Pipe-box stat row: let boxes flex and wrap */
             .share-summary-row .pipe-box {
                 flex: 1 1 auto;
                 min-width: 80px;
             }
 
-            /* Results section: remove clip so inner wrapper can scroll */
+            /* Results section */
             #share-results-section {
-                padding: 12px 12px;
+                padding: 12px;
                 overflow-x: visible;
             }
 
-            /* Table wrappers scroll horizontally */
-            #shareMentionsContent .table-container,
-            #shareMembersContent .table-container,
-            #shareMentionsContent .ps-table-wrapper,
-            #shareMembersContent .ps-table-wrapper {
+            /* Table containers: horizontal scroll (same as mobile.css for main app) */
+            .table-container,
+            .ps-table-wrapper {
                 overflow-x: auto;
                 -webkit-overflow-scrolling: touch;
             }
 
-            /* View-by toggle: tighten */
+            /* Analysis body: reduce padding so timeline track gets the same
+               compressed width as on the main app mobile layout */
+            .analysis-body {
+                padding: 14px 16px 12px;
+            }
+
+            .atl-header-row {
+                flex-wrap: wrap;
+                gap: 8px;
+                margin-bottom: 12px;
+            }
+
+            /* View-by toggle */
             #shareResultsViewSelector {
                 margin-bottom: 8px;
             }
 
-            /* Analysis panel */
-            #analysis-section .analysis-body {
-                padding: 12px;
-            }
-
-            /* Inline timeline: tighten */
-            #inlineAnalysisWrap {
-                margin-bottom: 10px;
-            }
-
-            /* Pagination: centre on mobile */
+            /* Pagination */
             .history-pagination {
                 justify-content: center;
             }
@@ -277,7 +295,7 @@
     </div>
 </div>
 
-<script src="/js/share.js"></script>
 <script src="/js/member-profile.js"></script>
+<script src="/js/share.js"></script>
 </body>
 </html>
