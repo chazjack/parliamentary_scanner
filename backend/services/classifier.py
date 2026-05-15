@@ -283,8 +283,8 @@ class TopicClassifier:
                 return None, "Invalid JSON response from classifier", "generic", {}
 
             except anthropic.RateLimitError:
-                wait = 2 ** (attempt + 2)
-                logger.warning("Anthropic rate limited, waiting %ds", wait)
+                wait = 15 * (2 ** attempt)  # 15s, 30s, 60s
+                logger.warning("Anthropic rate limited, waiting %ds (attempt %d/3)", wait, attempt + 1)
                 await asyncio.sleep(wait)
                 continue
 

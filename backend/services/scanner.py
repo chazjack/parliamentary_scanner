@@ -251,6 +251,14 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
     search_done = False
     api_failed: list[Contribution] = []  # items to retry after pipeline
     token_totals = {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0}
+    _rate_limit_ok = asyncio.Event()
+    _rate_limit_ok.set()
+    _rl_cooldown = [60]  # seconds; doubles on each successive rate-limit hit, capped at 300
+
+    async def _reset_rate_limit(wait: int) -> None:
+        await asyncio.sleep(wait)
+        stats["api_paused"] = False
+        _rate_limit_ok.set()
 
     # ---- Producer: keyword search with incremental dedup + pre-filter ----
 
@@ -363,14 +371,10 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
 
     async def _classify_one(contribution: Contribution):
         nonlocal classified_count, total_relevant
+        # Wait out any active rate-limit cooldown before competing for a semaphore slot
+        await _rate_limit_ok.wait()
         async with classify_sem:
             if cancel_event.is_set():
-                return
-            # If API is known to be down, skip the call and queue for retry
-            if stats["api_paused"]:
-                async with progress_lock:
-                    api_failed.append(contribution)
-                    stats["classifier_api_errors"] = len(api_failed)
                 return
             if CLASSIFIER_STAGGER > 0:
                 await asyncio.sleep(CLASSIFIER_STAGGER)
@@ -379,17 +383,23 @@ async def _run_scan_inner(scan_id: int, cancel_event: asyncio.Event, db):
             except ClassifierAPIError as e:
                 async with progress_lock:
                     api_failed.append(contribution)
+                    classified_count += 1
                     stats["classifier_api_errors"] = classifier.api_errors
                     err_str = str(e).lower()
                     if "rate" in err_str:
                         stats["api_error_reason"] = "Rate limit reached"
+                        if _rate_limit_ok.is_set():
+                            _rate_limit_ok.clear()
+                            stats["api_paused"] = True
+                            cooldown = _rl_cooldown[0]
+                            _rl_cooldown[0] = min(_rl_cooldown[0] * 2, 300)
+                            asyncio.create_task(_reset_rate_limit(cooldown))
                     elif "timeout" in err_str:
                         stats["api_error_reason"] = "API timeout"
                     elif "auth" in err_str or "key" in err_str:
                         stats["api_error_reason"] = "Authentication error — check API key"
                     else:
                         stats["api_error_reason"] = "API unavailable"
-                    stats["api_paused"] = True
                     prog = (
                         60 + (classified_count / max(queued_for_classify, 1)) * 35
                         if search_done
@@ -793,16 +803,21 @@ async def _run_member_topic_scan(
     api_failed: list = []
     token_totals = {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0}
     member_infos: dict = {}
+    _rate_limit_ok = asyncio.Event()
+    _rate_limit_ok.set()
+    _rl_cooldown = [60]  # seconds; doubles on each successive rate-limit hit, capped at 300
+
+    async def _reset_rate_limit(wait: int) -> None:
+        await asyncio.sleep(wait)
+        stats["api_paused"] = False
+        _rate_limit_ok.set()
 
     async def _classify_one(contribution):
         nonlocal classified_count, total_relevant
+        # Wait out any active rate-limit cooldown before competing for a semaphore slot
+        await _rate_limit_ok.wait()
         async with classify_sem:
             if cancel_event.is_set():
-                return
-            if stats["api_paused"]:
-                async with pipeline_lock:
-                    api_failed.append(contribution)
-                    stats["classifier_api_errors"] = len(api_failed)
                 return
             if CLASSIFIER_STAGGER > 0:
                 await asyncio.sleep(CLASSIFIER_STAGGER)
@@ -811,16 +826,22 @@ async def _run_member_topic_scan(
             except ClassifierAPIError as e:
                 async with pipeline_lock:
                     api_failed.append(contribution)
+                    classified_count += 1
                     err_str = str(e).lower()
                     if "rate" in err_str:
                         stats["api_error_reason"] = "Rate limit reached"
+                        if _rate_limit_ok.is_set():
+                            _rate_limit_ok.clear()
+                            stats["api_paused"] = True
+                            cooldown = _rl_cooldown[0]
+                            _rl_cooldown[0] = min(_rl_cooldown[0] * 2, 300)
+                            asyncio.create_task(_reset_rate_limit(cooldown))
                     elif "timeout" in err_str:
                         stats["api_error_reason"] = "API timeout"
                     elif "auth" in err_str or "key" in err_str:
                         stats["api_error_reason"] = "Authentication error — check API key"
                     else:
                         stats["api_error_reason"] = "API unavailable"
-                    stats["api_paused"] = True
                     stats["classifier_api_errors"] = classifier.api_errors
                     stats["phase"] = "Classification paused whilst API reconnects..."
                     prog = 20 + (classified_count / max(queued_for_classify, 1)) * 70
