@@ -202,6 +202,33 @@ class ParliamentAPIClient:
         self._member_cache[member_id] = result
         return result
 
+    async def get_member_contact(self, member_id: str) -> list[dict]:
+        """Fetch contact information for a member. Returns a list of contact entries."""
+        url = f"{MEMBERS_API_BASE}/api/Members/{member_id}/Contact"
+        data = await self._get(url, {})
+        if not data:
+            return []
+
+        contacts = []
+        for item in data.get("value", []):
+            contact = {}
+            if item.get("type"):
+                contact["type"] = item["type"]
+            address_parts = [
+                item.get("line1"), item.get("line2"), item.get("line3"),
+                item.get("line4"), item.get("line5"),
+            ]
+            address_lines = [p for p in address_parts if p]
+            if item.get("postcode"):
+                address_lines.append(item["postcode"])
+            if address_lines:
+                contact["address"] = address_lines
+            for field in ("phone", "fax", "email", "notes"):
+                if item.get(field):
+                    contact[field] = item[field]
+            contacts.append(contact)
+        return contacts
+
     async def get_parties(self) -> list[dict]:
         """Get all active parties from Commons and Lords, merged and sorted."""
         parties: dict[str, dict] = {}

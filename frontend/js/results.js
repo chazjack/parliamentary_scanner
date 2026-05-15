@@ -403,6 +403,9 @@ function renderResultsPage() {
                             data-constituency="${escapedConstituency}"
                             data-in-master="${inMaster ? '1' : '0'}"
                             >${inMaster ? SVG_CHECK + ' In record' : 'Add to record'}</button>
+                        <button class="result-menu-contact"
+                            data-member-id="${r.member_id || ''}"
+                            data-member-name="${escapedName}">Contact details</button>
                         <button class="result-menu-discard" data-result-id="${r.id}">Discard</button>
                     </div>
                 </div>
@@ -432,6 +435,12 @@ function renderResultsPage() {
                 addToMasterFromBtn(btn);
             }
         });
+        tr.querySelector('.result-menu-contact').addEventListener('click', (e) => {
+            closeResultMenu(r.id);
+            const btn = e.currentTarget;
+            loadMemberContact(btn.dataset.memberId, btn.dataset.memberName);
+        });
+
         tr.querySelector('.result-menu-discard').addEventListener('click', () => {
             closeResultMenu(r.id);
             discardResult(r.id, tr);
@@ -996,4 +1005,58 @@ async function loadHistory() {
             paginationEl.className = '';
         }
     }
+}
+
+// ── Member contact modal ──────────────────────────────────────────────────────
+
+async function loadMemberContact(memberId, memberName) {
+    document.getElementById('contactModalTitle').textContent = memberName || 'Contact Details';
+    const body = document.getElementById('contactModalBody');
+    body.innerHTML = '<p style="color:var(--ps-text-muted);font-size:0.85rem;">Loading…</p>';
+    document.getElementById('contactModal').style.display = '';
+
+    if (!memberId) {
+        body.innerHTML = '<p style="color:var(--ps-text-muted);font-size:0.85rem;">No Parliament ID available for this member.</p>';
+        return;
+    }
+
+    try {
+        const data = await API.get(`/api/members/${memberId}/contact`);
+        renderContactModal(data.contacts || []);
+    } catch (err) {
+        body.innerHTML = '<p style="color:var(--ps-danger);font-size:0.85rem;">Failed to load contact details.</p>';
+    }
+}
+
+function renderContactModal(contacts) {
+    const body = document.getElementById('contactModalBody');
+    if (!contacts.length) {
+        body.innerHTML = '<p style="color:var(--ps-text-muted);font-size:0.85rem;">No contact information available.</p>';
+        return;
+    }
+
+    const sectionStyle = 'margin-bottom:1rem;padding-bottom:1rem;border-bottom:1px solid var(--ps-border);';
+    const labelStyle = 'font-weight:600;font-size:0.75rem;color:var(--ps-text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.4rem;';
+    const lineStyle = 'font-size:0.85rem;margin-bottom:0.2rem;';
+
+    let html = '';
+    for (let i = 0; i < contacts.length; i++) {
+        const c = contacts[i];
+        const isLast = i === contacts.length - 1;
+        html += `<div style="${isLast ? '' : sectionStyle}">`;
+        if (c.type) html += `<div style="${labelStyle}">${escapeHtml(c.type)}</div>`;
+        if (c.address && c.address.length) {
+            html += `<div style="${lineStyle}">${c.address.map(l => escapeHtml(l)).join('<br>')}</div>`;
+        }
+        if (c.phone) html += `<div style="${lineStyle}">T: ${escapeHtml(c.phone)}</div>`;
+        if (c.fax)   html += `<div style="${lineStyle}">F: ${escapeHtml(c.fax)}</div>`;
+        if (c.email) html += `<div style="${lineStyle}">E: <a href="mailto:${escapeHtml(c.email)}" style="color:var(--ps-accent);">${escapeHtml(c.email)}</a></div>`;
+        if (c.notes) html += `<div style="font-size:0.8rem;color:var(--ps-text-muted);margin-top:0.3rem;">${escapeHtml(c.notes)}</div>`;
+        html += '</div>';
+    }
+    body.innerHTML = html;
+}
+
+function closeContactModal() {
+    document.getElementById('contactModal').style.display = 'none';
 }

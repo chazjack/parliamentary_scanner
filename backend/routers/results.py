@@ -14,7 +14,7 @@ from backend.config import ANTHROPIC_API_KEY, ANTHROPIC_MODEL
 from backend.database import (
     get_db, get_scan, get_scan_results, get_audit_log,
     get_audit_summary, get_audit_entry, get_all_topics, insert_result,
-    discard_result,
+    discard_result, get_cached_member_contact, cache_member_contact,
 )
 from backend.deps import get_current_user
 from backend.models import AuditReclassifyRequest
@@ -72,7 +72,8 @@ async def scan_stats(scan_id: int, user: dict = Depends(get_current_user)):
 @router.get("/scans/{scan_id}/export")
 async def export_excel(scan_id: int, user: dict = Depends(get_current_user)):
     """Export scan results as an Excel file."""
-    from backend.services.exporter import create_excel_export
+    from backend.services.exporter import create_excel_export, _pick_email
+    from backend.services.parliament import ParliamentAPIClient
 
     db = await get_db()
     try:
@@ -80,10 +81,31 @@ async def export_excel(scan_id: int, user: dict = Depends(get_current_user)):
         if not scan:
             raise HTTPException(404, "Scan not found")
         results = await get_scan_results(db, scan_id)
+
+        # Build member_id -> email map, using DB cache where available
+        member_emails: dict[str, str] = {}
+        unique_ids = {r["member_id"] for r in results if r.get("member_id")}
+        uncached_ids = []
+        for mid in unique_ids:
+            cached = await get_cached_member_contact(db, mid)
+            if cached is not None:
+                member_emails[mid] = _pick_email(cached)
+            else:
+                uncached_ids.append(mid)
+
+        if uncached_ids:
+            client = ParliamentAPIClient()
+            try:
+                for mid in uncached_ids:
+                    contacts = await client.get_member_contact(mid)
+                    await cache_member_contact(db, mid, contacts)
+                    member_emails[mid] = _pick_email(contacts)
+            finally:
+                await client.close()
     finally:
         await db.close()
 
-    buffer = create_excel_export(results, scan)
+    buffer = create_excel_export(results, scan, member_emails=member_emails)
     filename = f"parliamentary_scan_{scan['start_date']}_to_{scan['end_date']}.xlsx"
 
     return StreamingResponse(
@@ -104,6 +126,32 @@ async def scan_audit(scan_id: int, include_duplicates: bool = False, user: dict 
         summary = await get_audit_summary(db, scan_id)
         entries = await get_audit_log(db, scan_id, include_duplicates=include_duplicates)
         return {"summary": summary, "entries": entries}
+    finally:
+        await db.close()
+
+
+@router.get("/members/{member_id}/contact")
+async def get_member_contact(member_id: str, user: dict = Depends(get_current_user)):
+    """Return contact details for a Parliament member, using a 7-day DB cache."""
+    if not member_id.isdigit():
+        raise HTTPException(400, "Invalid member ID")
+
+    from backend.services.parliament import ParliamentAPIClient
+
+    db = await get_db()
+    try:
+        cached = await get_cached_member_contact(db, member_id)
+        if cached is not None:
+            return {"member_id": member_id, "contacts": cached}
+
+        client = ParliamentAPIClient()
+        try:
+            contacts = await client.get_member_contact(member_id)
+        finally:
+            await client.close()
+
+        await cache_member_contact(db, member_id, contacts)
+        return {"member_id": member_id, "contacts": contacts}
     finally:
         await db.close()
 

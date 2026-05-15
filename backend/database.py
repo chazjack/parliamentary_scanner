@@ -94,6 +94,12 @@ CREATE TABLE IF NOT EXISTS member_cache (
     cached_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS member_contacts (
+    member_id TEXT PRIMARY KEY,
+    contacts_json TEXT NOT NULL,
+    cached_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     scan_id INTEGER NOT NULL REFERENCES scans(id) ON DELETE CASCADE,
@@ -1926,6 +1932,36 @@ async def delete_user(db: aiosqlite.Connection, user_id: int) -> bool:
     cursor = await db.execute("DELETE FROM users WHERE id = ?", (user_id,))
     await db.commit()
     return cursor.rowcount > 0
+
+
+async def get_cached_member_contact(
+    db: aiosqlite.Connection, member_id: str, max_age_days: int = 7
+) -> list | None:
+    """Return cached contact list if still fresh, else None."""
+    cursor = await db.execute(
+        "SELECT contacts_json, cached_at FROM member_contacts WHERE member_id = ?",
+        (member_id,),
+    )
+    row = await cursor.fetchone()
+    if not row:
+        return None
+    try:
+        cached_at = datetime.fromisoformat(row["cached_at"])
+        if (datetime.utcnow() - cached_at).days >= max_age_days:
+            return None
+    except Exception:
+        return None
+    return json.loads(row["contacts_json"])
+
+
+async def cache_member_contact(db: aiosqlite.Connection, member_id: str, contacts: list):
+    """Store contact data for a member, replacing any existing entry."""
+    await db.execute(
+        """INSERT OR REPLACE INTO member_contacts (member_id, contacts_json, cached_at)
+           VALUES (?, ?, CURRENT_TIMESTAMP)""",
+        (member_id, json.dumps(contacts)),
+    )
+    await db.commit()
 
 
 async def seed_default_topics_for_user(db: aiosqlite.Connection, user_id: int):
